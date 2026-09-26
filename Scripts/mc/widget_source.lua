@@ -29,8 +29,8 @@ function M.new(categories, api)
         ok,caps=pcall(bridge.GetCapabilities)
     end
 
-    -- Lifetime capture may be unavailable after a failed ABI probe. Keep the
-    -- source running, but never form an identity without a native serial.
+    -- Lifetime capture may be unavailable after a failed ABI probe. The
+    -- original map-scoped address/name identity remains usable in that case.
     assert(ok
         and type(caps)=='table'
         and (tonumber(caps.api or 0)>=5
@@ -64,6 +64,7 @@ function M.new(categories, api)
     local sink, getEpoch, subscribed, active = nil, nil, false, true
     local loading, currentWorld, generation = false, nil, 1
     local identityFailureReported=false
+    local lifetimeMode=nil
     local hooks = {}
     local function errorReport(stage, message)
         local error = {stage=stage,message=tostring(message)}
@@ -87,15 +88,24 @@ function M.new(categories, api)
         if type(address) ~= 'number' then return nil end
         local name = safe(object,'GetFullName')
         if type(name) ~= 'string' then return nil end
-        local captured,lifetime,why=pcall(lifetimes.captureObject,object)
-        if not captured or type(lifetime)~='string' then
-            if not identityFailureReported then
-                identityFailureReported=true
-                errorReport('identity',captured and (why or 'native lifetime unavailable') or lifetime)
-            end
-            return nil
+        if lifetimeMode=='legacy' then
+            return tostring(generation) .. ':' .. tostring(address) .. ':' .. name
         end
-        return tostring(generation) .. ':' .. lifetime .. ':' .. tostring(address) .. ':' .. name
+        local captured,lifetime,why=pcall(lifetimes.captureObject,object)
+        if captured and type(lifetime)=='string' then
+            lifetimeMode='native'
+            return tostring(generation) .. ':' .. lifetime .. ':' .. tostring(address) .. ':' .. name
+        end
+        if lifetimeMode==nil and captured and why=='object lifetime service is unavailable' then
+            lifetimeMode='legacy'
+            errorReport('identity', 'native object lifetimes unavailable; using map-scoped address identity')
+            return tostring(generation) .. ':' .. tostring(address) .. ':' .. name
+        end
+        if not identityFailureReported then
+            identityFailureReported=true
+            errorReport('identity',captured and (why or 'native lifetime unavailable') or lifetime)
+        end
+        return nil
     end
     source.identity = token
     local function world(object)

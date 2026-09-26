@@ -82,9 +82,12 @@ determines which templates it registers. Declare the properties changed by share
 
 Use UE4SS with Lua 5.4, Dawnwalker Mod Menu, ModCoreSettings for the documented
 menu presentation, and UE4SSLuaEventBridge API 5 with `lifetimes.captureObject`.
-MCT does not require the `object_lifetimes` capability flag at startup. If
-native lifetime capture is unavailable, it keeps running but does not attach
-templates to objects whose identity it cannot verify. Install under
+MCT does not require the `object_lifetimes` capability flag at startup. If the
+bridge reports that its native lifetime service is unavailable, MCT uses its
+earlier map-scoped address and full-name identity so templates can still attach.
+This fallback cannot distinguish an object recreated at the same address with
+the same name before a map change; native lifetime capture remains preferred.
+Other capture failures leave the affected object unattached. Install under
 `Mods/_ModCore_Templates` and enable the mod.
 Disable the old `_UE4SSTemplatingEngine` installation before starting the game.
 The Lua runtime starts on UE4SS's game thread. It discovers installed modules with a `Scripts/templates` folder, loading

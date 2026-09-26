@@ -82,12 +82,22 @@ do
     unavailable.RegisterHook=function() return 1,2 end
     unavailable.UnregisterHook=function() end
     unavailable.NotifyOnNewObject=function() end
-    unavailable.RegisterLoadMapPreHook=function() end
-    unavailable.RegisterLoadMapPostHook=function() end
-    unavailable.MCTOnError=function() end
+    unavailable.RegisterLoadMapPreHook=function(callback) unavailable.mapPre=callback end
+    unavailable.RegisterLoadMapPostHook=function(callback) unavailable.mapPost=callback end
+    local warnings={}
+    unavailable.MCTOnError=function(error) warnings[#warnings+1]=error end
     local degraded=Source.new({},unavailable)
-    assert(degraded.identity(root)==nil,
-        'failed native ABI probe must leave object identity unavailable')
+    local before=degraded.identity(root)
+    assert(type(before)=='string' and before:find(tostring(root.address),1,true),
+        'failed native ABI probe must use the map-scoped address identity')
+    assert(degraded.identity(root)==before and #warnings==1 and warnings[1].stage=='identity')
+    local fallbackHost=References.new(degraded)
+    local reference=assert(fallbackHost.capture(root))
+    assert(fallbackHost.valid(reference), 'fallback identity must permit attachment references')
+    unavailable.mapPre()
+    unavailable.mapPost(nil,{get=function() return world end})
+    assert(degraded.identity(root)~=before, 'map transition must invalidate fallback identity')
+    assert(not fallbackHost.valid(reference), 'old fallback reference must expire after map change')
     degraded.stop()
 end
 local function acceptsVersion(capabilityVersion, facadeVersion)
