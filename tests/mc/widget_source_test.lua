@@ -78,10 +78,38 @@ do
         'identity source must fail closed without serial-backed lifetimes')
     unavailable.UE4SSLuaEventBridge={API_VERSION=5,
         GetCapabilities=function()return {api=5,object_lifetimes=false}end,
-        lifetimes=api.UE4SSLuaEventBridge.lifetimes}
-    assert(not pcall(Source.new,{category},unavailable),
-        'failed native ABI probe must prevent attachment')
+        lifetimes={captureObject=function() return nil,'object lifetime service is unavailable' end}}
+    unavailable.RegisterHook=function() return 1,2 end
+    unavailable.UnregisterHook=function() end
+    unavailable.NotifyOnNewObject=function() end
+    unavailable.RegisterLoadMapPreHook=function() end
+    unavailable.RegisterLoadMapPostHook=function() end
+    unavailable.MCTOnError=function() end
+    local degraded=Source.new({},unavailable)
+    assert(degraded.identity(root)==nil,
+        'failed native ABI probe must leave object identity unavailable')
+    degraded.stop()
 end
+local function acceptsVersion(capabilityVersion, facadeVersion)
+    local candidate={}
+    for key,value in pairs(api) do candidate[key]=value end
+    candidate.RegisterHook=function() return 1,2 end
+    candidate.UnregisterHook=function() end
+    candidate.NotifyOnNewObject=function() end
+    candidate.RegisterLoadMapPreHook=function() end
+    candidate.RegisterLoadMapPostHook=function() end
+    candidate.UE4SSLuaEventBridge={API_VERSION=facadeVersion,
+        GetCapabilities=function()
+            return {api=capabilityVersion,object_lifetimes=true}
+        end,
+        lifetimes=api.UE4SSLuaEventBridge.lifetimes}
+    local ok,createdSource=pcall(Source.new,{},candidate)
+    if ok then createdSource.stop() end
+    return ok
+end
+assert(acceptsVersion(5,nil) and acceptsVersion(nil,5),
+    'either API 5 version field must allow the probed lifetime service')
+assert(not acceptsVersion(4,4), 'older API versions must be rejected')
 assert(created[classPath] and created['/Script/UMG.WidgetSwitcher'] and created['/Script/UMG.SlotWidget'])
 local host=References.new(source)
 local calls={}

@@ -46,9 +46,9 @@ invalidates the old set, records the new world and starts one new snapshot.
 Lua references check `IsValid` and object identity before callbacks. Identity
 includes the UE4SSLuaEventBridge object lifetime token, which distinguishes a
 reused address and full name through Unreal's object-item serial. The bridge
-must expose API 5 and `object_lifetimes`; a failed native ABI probe prevents
-MCT startup. If lifetime capture later fails, the source stops accepting that
-object and reports the failure once. A live
+must expose API 5 and `lifetimes.captureObject`. A failed native ABI probe does
+not prevent MCT startup; capture then fails and the source does not attach that
+object. The source reports identity failure once. A live
 hook survey found `UserWidget:Construct`, `Destruct` and `OnInitialized`
 unavailable to `RegisterHook`. Viewport, parenting and removal hooks registered
 successfully, but direct engine changes can bypass those reflected hooks.

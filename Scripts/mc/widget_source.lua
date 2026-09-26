@@ -28,11 +28,15 @@ function M.new(categories, api)
     if type(bridge)=='table' and type(bridge.GetCapabilities)=='function' then
         ok,caps=pcall(bridge.GetCapabilities)
     end
-    -- The source must not attach to a recycled address/name without a native
-    -- serial. The bridge enables this capability only after its ABI probe.
-    assert(ok and type(caps)=='table' and caps.object_lifetimes==true
-        and tonumber(caps.api or 0)>=5 and tonumber(bridge.API_VERSION or 0)>=5
-        and type(lifetimes)=='table' and type(lifetimes.captureObject)=='function',
+
+    -- Lifetime capture may be unavailable after a failed ABI probe. Keep the
+    -- source running, but never form an identity without a native serial.
+    assert(ok
+        and type(caps)=='table'
+        and (tonumber(caps.api or 0)>=5
+            or tonumber(bridge.API_VERSION or 0)>=5)
+        and type(lifetimes)=='table'
+        and type(lifetimes.captureObject)=='function',
         'MCT requires UE4SSLuaEventBridge API 5 object lifetimes')
     local source = {}
     local selectors, notifyClasses, hasGroups, hasWidgets = {}, {}, false, false
