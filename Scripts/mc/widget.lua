@@ -94,9 +94,26 @@ function M.snapshotSlot(widget, forReordering)
     local slot = assert(M.property(widget, 'Slot'), 'widget slot unavailable')
     local class = Objects.call(slot, 'GetClass')
     local className = class and Objects.call(class, 'GetName')
-    assert(type(className)=='string', 'widget slot class unavailable')
-    if className=='CanvasPanelSlot' then
-        local layout = assert(M.property(slot, 'LayoutData'), 'canvas slot layout unavailable')
+    local padding = M.property(slot, 'Padding')
+    if className~='CanvasPanelSlot' and padding ~= nil then
+        local readable, values = pcall(function()
+            return {
+                Left=M.number(padding, 'Left'), Top=M.number(padding, 'Top'),
+                Right=M.number(padding, 'Right'), Bottom=M.number(padding, 'Bottom'),
+            }
+        end)
+        if readable then
+            if forReordering and type(className)=='string' then
+                assert(className=='OverlaySlot' or className=='WidgetSwitcherSlot',
+                    'unsupported widget slot for reversible reordering: '..className)
+            end
+            return {kind='padding',padding=values,
+                horizontal=M.number(slot, 'HorizontalAlignment'),
+                vertical=M.number(slot, 'VerticalAlignment')}
+        end
+    end
+    local layout = M.property(slot, 'LayoutData')
+    if layout ~= nil then
         local offsets = assert(M.property(layout, 'Offsets'), 'canvas slot offsets unavailable')
         local anchors = assert(M.property(layout, 'Anchors'), 'canvas slot anchors unavailable')
         local minimum = assert(M.property(anchors, 'Minimum'), 'canvas slot minimum unavailable')
@@ -113,20 +130,7 @@ function M.snapshotSlot(widget, forReordering)
             Alignment={X=M.number(alignment,'X'),Y=M.number(alignment,'Y')},
         },zOrder=M.number(slot,'ZOrder'),autoSize=autoSize}
     end
-    local padding = M.property(slot, 'Padding')
-    assert(padding ~= nil, 'unsupported widget slot for reversible reordering')
-    if forReordering then
-        assert(className=='OverlaySlot' or className=='WidgetSwitcherSlot',
-            'unsupported widget slot for reversible reordering: '..className)
-    end
-    return {kind='padding',
-        padding = {
-            Left=M.number(padding, 'Left'), Top=M.number(padding, 'Top'),
-            Right=M.number(padding, 'Right'), Bottom=M.number(padding, 'Bottom'),
-        },
-        horizontal=M.number(slot, 'HorizontalAlignment'),
-        vertical=M.number(slot, 'VerticalAlignment'),
-    }
+    error('unsupported widget slot for reversible reordering')
 end
 
 function M.restoreSlot(widget, state)

@@ -25,7 +25,9 @@ local function widget(name)
         child.Slot={LayoutData={},Padding={Left=0,Top=0,Right=0,Bottom=0},
             HorizontalAlignment=0,VerticalAlignment=0}
         function child.Slot:IsValid() return true end
-        function child.Slot:GetClass() return {GetName=function() return 'WidgetSwitcherSlot' end} end
+        -- The installed UE4SS build can expose class lookup as a non-callable
+        -- placeholder even when the slot's padding fields are readable.
+        child.Slot.GetClass={}
         function child.Slot:SetPadding(value) self.Padding=value end
         function child.Slot:SetHorizontalAlignment(value) self.HorizontalAlignment=value end
         function child.Slot:SetVerticalAlignment(value) self.VerticalAlignment=value end
