@@ -1,5 +1,8 @@
 package.path='./Scripts/?.lua;'..package.path
 local State=require('mc.target_state')
+local Widget=require('mc.widget')
+assert(Widget.property({bAutoSize=false},'bAutoSize')==false)
+assert(Widget.property({bAutoSize={get=function() return false end}},'bAutoSize')==false)
 
 local function widget(name)
     local object={name=name,children={},active=0,
@@ -19,7 +22,7 @@ local function widget(name)
         assert(not child.parent)
         self.children[#self.children+1]=child
         child.parent=self
-        child.Slot={Padding={Left=0,Top=0,Right=0,Bottom=0},
+        child.Slot={LayoutData={},Padding={Left=0,Top=0,Right=0,Bottom=0},
             HorizontalAlignment=0,VerticalAlignment=0}
         function child.Slot:IsValid() return true end
         function child.Slot:GetClass() return {GetName=function() return 'WidgetSwitcherSlot' end} end
@@ -106,6 +109,7 @@ do
             Anchors={Minimum={X=0,Y=0},Maximum={X=0,Y=0}},
             Alignment={X=0,Y=0}},ZOrder=0,bAutoSize=false}
         function slot:IsValid() return true end
+        function slot:GetClass() return {GetName=function() return 'CanvasPanelSlot' end} end
         function slot:SetLayout(value) self.LayoutData=value end
         function slot:SetZOrder(value) self.ZOrder=value end
         function slot:SetAutoSize(value) self.bAutoSize=value end

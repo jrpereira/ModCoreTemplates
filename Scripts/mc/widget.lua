@@ -4,13 +4,14 @@ local M = {}
 function M.unwrap(value)
     if value == nil then return nil end
     local ok, result = pcall(function() return value:get() end)
-    return ok and result or value
+    if ok then return result end
+    return value
 end
 
 function M.property(object, name)
     if object == nil then return nil end
     local ok, value = pcall(function() return object[name] end)
-    return ok and M.unwrap(value) or nil
+    if ok then return M.unwrap(value) end
 end
 
 function M.number(object, name)
@@ -91,16 +92,18 @@ end
 
 function M.snapshotSlot(widget, forReordering)
     local slot = assert(M.property(widget, 'Slot'), 'widget slot unavailable')
-    local layout = M.property(slot, 'LayoutData')
-    if layout ~= nil then
+    local class = Objects.call(slot, 'GetClass')
+    local className = class and Objects.call(class, 'GetName')
+    assert(type(className)=='string', 'widget slot class unavailable')
+    if className=='CanvasPanelSlot' then
+        local layout = assert(M.property(slot, 'LayoutData'), 'canvas slot layout unavailable')
         local offsets = assert(M.property(layout, 'Offsets'), 'canvas slot offsets unavailable')
         local anchors = assert(M.property(layout, 'Anchors'), 'canvas slot anchors unavailable')
         local minimum = assert(M.property(anchors, 'Minimum'), 'canvas slot minimum unavailable')
         local maximum = assert(M.property(anchors, 'Maximum'), 'canvas slot maximum unavailable')
         local alignment = assert(M.property(layout, 'Alignment'), 'canvas slot alignment unavailable')
-        local present,autoSize = pcall(function() return slot.bAutoSize end)
-        if not present then autoSize=nil end
-        if type(autoSize) ~= 'boolean' then autoSize = slot:GetAutoSize() end
+        local autoSize = M.property(slot, 'bAutoSize')
+        if type(autoSize) ~= 'boolean' then autoSize = Objects.call(slot, 'GetAutoSize') end
         assert(type(autoSize)=='boolean', 'canvas slot auto size unavailable')
         return {kind='canvas',layout={
             Offsets={Left=M.number(offsets,'Left'),Top=M.number(offsets,'Top'),
@@ -113,10 +116,8 @@ function M.snapshotSlot(widget, forReordering)
     local padding = M.property(slot, 'Padding')
     assert(padding ~= nil, 'unsupported widget slot for reversible reordering')
     if forReordering then
-        local class = Objects.call(slot, 'GetClass')
-        local name = class and Objects.call(class, 'GetName')
-        assert(name=='OverlaySlot' or name=='WidgetSwitcherSlot',
-            'unsupported widget slot for reversible reordering: '..tostring(name))
+        assert(className=='OverlaySlot' or className=='WidgetSwitcherSlot',
+            'unsupported widget slot for reversible reordering: '..className)
     end
     return {kind='padding',
         padding = {
