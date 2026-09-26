@@ -68,6 +68,7 @@ IterateGameDirectories=function()
         __files={enabled={__name='enabled.txt'}},Scripts={
             __name='Scripts',templates={__name='templates',__files={
                 main={__name='mc.lua',__absolute_path='../Fangdango/Scripts/templates/mc.lua'},
+                minima={__name='mc_minima.lua',__absolute_path='../Fangdango/Scripts/templates/mc_minima.lua'},
                 wheels={__name='mc_wheels.lua',__absolute_path='../Fangdango/Scripts/templates/mc_wheels.lua'},
                 bar={__name='mc_bars.lua',__absolute_path='../Fangdango/Scripts/templates/mc_bars.lua'},
             }}}}}}
@@ -80,5 +81,6 @@ assert(#configured.templateFiles==1)
 local path=configured.templateFiles[1]
 assert(path:match('/Fangdango/Scripts/templates/mc%.lua$'))
 local loaded=assert(loadfile(path))()
-assert(#loaded==2 and loaded[1].name=='Wheels' and loaded[2].name=='Bar')
+assert(#loaded==3 and loaded[1].name=='Minima'
+    and loaded[2].name=='Wheels' and loaded[3].name=='Bar')
 print('PASS: active MCT entry point loads Fangdango template')

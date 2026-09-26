@@ -9,5 +9,5 @@ use [Lifecycle draft](LIFECYCLE-DRAFT.md), [Template menus](MENUS.md), and
 
 ModCoreControls owns native quickslot input and its `mcc.*` API.
 ModCoreTemplates owns visual template selection and lifecycle. The Fangdango
-Wheels and Bar declarations in `Fangdango/Scripts/templates/` are current
+Minima, Wheels and Bar declarations in `Fangdango/Scripts/templates/` are current
 examples of managed templates.

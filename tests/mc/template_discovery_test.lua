@@ -12,7 +12,7 @@ local function module(name,files)
         Scripts={__name='Scripts',templates={__name='templates',__files=listed}}}
 end
 local mods={__name='Mods',__absolute_path='C:/Game/Mods',
-    Fangdango=module('Fangdango',{'mc.lua','main.lua','mc_wheels.lua','mc_bars.lua'}),
+    Fangdango=module('Fangdango',{'mc.lua','main.lua','mc_minima.lua','mc_wheels.lua','mc_bars.lua'}),
     Bare=module('Bare',{'second.lua','first.lua','notes.txt'}),
     Disabled={__name='Disabled',__absolute_path='C:/Game/Mods/Disabled',
         Scripts={templates={__files={file('C:/Game/Mods/Disabled/Scripts/templates/mc.lua')}}}},
