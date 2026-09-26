@@ -206,12 +206,12 @@ function M.new(host, definitions, templates)
                 local record=category.templates[id]
                 if record.enabled then
                     local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
-                    -- A managed template may temporarily reparent a target (for
-                    -- example Fangdango's Distant ability wheel). Keep that
-                    -- valid, owned target available for the next settings update
-                    -- so the manager can restore it before applying the new style.
+                    -- A managed template may reparent its own targets (for
+                    -- example Fangdango's Distant wheel). Keep those valid
+                    -- targets in the resolved bundle until the manager detaches
+                    -- them, including reconciliations without a settings change.
                     for token,attached in pairs(record.attached) do
-                        if record.manager and attached.revision ~= record.revision
+                        if record.manager and record.manager:hasState(attached.root)
                             and objects[token] and host.identity(objects[token]) == host.identity(attached.object)
                             and targetsValid(attached.targets,host) then
                             for targetName,target in pairs(attached.targets) do
