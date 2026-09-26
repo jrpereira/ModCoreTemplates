@@ -102,6 +102,8 @@ From a template entry file, `MC.template('wheels')` loads its sibling
 `mc_wheels.lua` and returns the template table. A name ending in `.lua`, such as
 `MC.template('mc_wheels.lua')`, loads that exact sibling filename. Names cannot
 contain path separators.
+An optional second table supplies shared defaults. The loaded template's keys
+override those defaults, and each call receives its own copy of nested tables.
 
 All three callbacks receive effective settings: category values overlaid with
 template values, with the template taking precedence. Each callback receives its
