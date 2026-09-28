@@ -31,11 +31,12 @@ local function fixture(single, paths)
         subscribe=function(callback, getEpoch) sink, epoch = callback, getEpoch; return function() unsubs=unsubs+1 end end,
         onError=function(e) errors[#errors + 1] = e end,
     }
-    local categories = {{name='player.quickslots', single=single, targets=paths or {slots={class='Slot'}}}}
+    local categories = {{name='player.quickslots', single=single, objects=paths or {slots={source='lookup',class='Slot'}}}}
     local function template(id)
         local targets={}
-        for name in pairs(categories[1].targets) do targets[#targets+1]=name end
-        local t = {id=id, category='player.quickslots', targets=targets}
+        for name in pairs(categories[1].objects) do targets[#targets+1]=name end
+        local t = {id=id, category='player.quickslots', module='Test',
+            objects=targets, managed=false}
         t.attach = function(o, params)
             assert(o.valid ~= false)
             assert(params.screen.center == 960)
@@ -77,7 +78,7 @@ end)
 
 test('category targets are searched only when required or selected by a template', function()
     local searches={}
-    local roots={a={object='a',required=true},b={object='b'},unused={object='unused'}}
+    local roots={a={source='lookup',object='a',required=true},b={source='lookup',object='b'},unused={source='lookup',object='unused'}}
     local host={
         valid=function(o) return o~=nil end,identity=function(o) return o.id end,
         ready=function() return true end, parent=function() end,
@@ -87,9 +88,9 @@ test('category targets are searched only when required or selected by a template
         screen=function() return {width=1920,height=1080} end,
         subscribe=function() return function() end end,onError=function(e) error(e.message) end,
     }
-    local template={id='b',category='c',targets={'b'},
+    local template={id='b',category='c',objects={'b'},managed=false,
         attach=function() end,update=function() end,detach=function() end}
-    local runtime=Runtime.new(host,{{name='c',targets=roots}},{template})
+    local runtime=Runtime.new(host,{{name='c',objects=roots}},{template})
     runtime:start()
     assert(#searches==1 and searches[1]=='a')
     runtime:select('c',{b={}})
@@ -100,7 +101,7 @@ test('category targets are searched only when required or selected by a template
 end)
 
 test('overlapping selectors attach once', function()
-    local f = fixture(false, {one={object='one'}, all={class='Slot'}})
+    local f = fixture(false, {one={source='lookup',object='one'}, all={source='lookup',class='Slot'}})
     f.object('one')
     f.runtime:select('player.quickslots', {a={}})
     f.runtime:start()
@@ -118,7 +119,7 @@ test('settings invoke update, not attach or detach', function()
 end)
 
 test('readiness and late parent assignment; parent removal detaches descendants', function()
-    local f = fixture(false, {root={object='root'}, slots={class='Slot', within='root'}})
+    local f = fixture(false, {root={source='lookup',object='root'}, slots={source='lookup',class='Slot', within='root'}})
     local root = f.object('root', 'Root')
     local child = f.object('child', 'Slot', nil, false)
     f.runtime:select('player.quickslots', {a={}}); f.runtime:start()
@@ -131,7 +132,7 @@ test('readiness and late parent assignment; parent removal detaches descendants'
 end)
 
 test('reparenting valid objects detaches and can reattach', function()
-    local f = fixture(false, {root={object='root'}, slots={class='Slot', within='root'}})
+    local f = fixture(false, {root={source='lookup',object='root'}, slots={source='lookup',class='Slot', within='root'}})
     local root = f.object('root', 'Root')
     local child = f.object('child', 'Slot', root)
     f.runtime:select('player.quickslots', {a={}}); f.runtime:start()
@@ -241,9 +242,9 @@ test('shutdown cancels subscription, skips invalid refs, ignores late events', f
 end)
 
 test('selector graph rejects cycles and missing roots', function()
-    assert(not pcall(Selectors.compile, {a={class='Slot', within='b'}, b={class='Slot',within='a'}}))
-    assert(not pcall(Selectors.compile, {a={class='Slot', within='missing'}}))
-    assert(not pcall(Selectors.compile, {a={class='Slot',object='one'}}))
+    assert(not pcall(Selectors.compile, {a={source='lookup',class='Slot', within='b'}, b={source='lookup',class='Slot',within='a'}}))
+    assert(not pcall(Selectors.compile, {a={source='lookup',class='Slot', within='missing'}}))
+    assert(not pcall(Selectors.compile, {a={source='lookup',class='Slot',object='one'}}))
 end)
 
 test('startup defers template execution until barrier and accepts other modules', function()

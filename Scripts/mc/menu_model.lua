@@ -49,7 +49,7 @@ function M.build(definitions, templates, locations)
                 and template.settings.target == nil),
             'template menu declaration belongs in template.menu')
         local declaration = U.copy(template.menu or {})
-        if declaration.target == nil then declaration.target = 'templates' end
+        if declaration.target == nil then declaration.target = 'module' end
         if declaration.enabled == nil then declaration.enabled = true end
         local values = U.copy(template.settings or {})
         overrideDefaults(declaration, values)
@@ -59,7 +59,7 @@ function M.build(definitions, templates, locations)
         -- Preserve template identity: callbacks may close over this table.
         template.menu, template.settings = declaration, values
         local metadata = {name=template.name, category=template.category,
-            module=template.module, menu=declaration}
+            module=template.module, author=template.author, menu=declaration}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             single=category.single, location=assert(locations[index], 'template source path required')}
     end

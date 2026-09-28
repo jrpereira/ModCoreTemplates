@@ -52,14 +52,14 @@ local function fixture(template,targets)
         onError=function(e) errors[#errors+1]=e end,
     }
     template.id,template.category='t','c'
-    local runtime=Runtime.new(host,{{name='c',targets=targets or {root={class='Root'}}}},{template})
+    local runtime=Runtime.new(host,{{name='c',objects=targets or {root={source='lookup',class='Root'}}}},{template})
     runtime:select('c',{t={}})
     return runtime,o,host,errors
 end
 
 for _,kind in ipairs({'lost','world_invalidated'}) do
     local subscriptions,cleanups=0,0
-    local r,o=fixture({managed=true,targets={'root'},attach=function(_,params,saved)
+    local r,o=fixture({objects={'root'},attach=function(_,params,saved)
         subscriptions=subscriptions+1
         params.onCleanup(function() subscriptions=subscriptions-1;cleanups=cleanups+1 end)
         return saved
@@ -73,11 +73,11 @@ end
 
 do
     local seen={}
-    local r,o=fixture({targets={'child'},
+    local r,o=fixture({managed=false,objects={'child'},
         attach=function(_,_,targets) seen[#seen+1]=targets.child end,
         update=function(_,_,targets) seen[#seen+1]=targets.child end,
         detach=function() end,
-    },{root={class='Root'},child={from='root',member='child',required=true}})
+    },{root={source='lookup',class='Root'},child={source='reference',from='root',member='child',required=true}})
     local old,new=object('old-child'),object('new-child')
     o.child=old; r:start(); assert(seen[1]==old)
     o.child=new; r:event({kind='changed',object=o,epoch=r.epoch})
@@ -88,11 +88,11 @@ end
 
 do
     local seen={}
-    local r,o=fixture({targets={group={'child'}},
+    local r,o=fixture({managed=false,objects={group={'child'}},
         attach=function(_,_,targets) seen[#seen+1]=targets.group[1] end,
         update=function(_,_,targets) seen[#seen+1]=targets.group[1] end,
         detach=function() end,
-    },{root={class='Root'},child={from='root',member='child',required=true}})
+    },{root={source='lookup',class='Root'},child={source='reference',from='root',member='child',required=true}})
     local old,new=object('old-child'),object('new-child')
     o.child=old; r:start(); assert(seen[1]==old)
     old.valid=false; o.child=new
@@ -112,7 +112,7 @@ do
 end
 
 do
-    local r,o=fixture({managed=true,targets={root={properties={'opacity'}}},
+    local r,o=fixture({managed=true,objects={root={properties={'opacity'}}},
         attach=function(objects)
             objects.root:SetRenderOpacity(.2)
             objects.root.failRestore=true
@@ -135,15 +135,15 @@ do
         subscribe=function(fn,getEpoch)sink,epoch=fn,getEpoch;return function()end end,
         onError=function()end}
     local old={id='old',category='single',managed=true,
-        targets={root={properties={'opacity'}}},
+        objects={root={properties={'opacity'}}},
         attach=function(objects)
             objects.root:SetRenderOpacity(.2)
             objects.root.failRestore=true
             error('attach failed')
         end}
-    local replacement={id='replacement',category='single',targets={'root'},
+    local replacement={id='replacement',category='single',objects={'root'},managed=false,
         attach=function()activated=true end,update=function()end,detach=function()end}
-    local r=Runtime.new(host,{{name='single',single=true,targets={root={class='Root'}}}},
+    local r=Runtime.new(host,{{name='single',single=true,objects={root={source='lookup',class='Root'}}}},
         {old,replacement})
     r:select('single',{old={}});r:start()
     r:select('single',{replacement={}})
@@ -155,7 +155,7 @@ end
 
 do
     local detached=0
-    local r,o,host=fixture({targets={'root'},attach=function() end,update=function() end,
+    local r,o,host=fixture({managed=false,objects={'root'},attach=function() end,update=function() end,
         detach=function() detached=detached+1 end})
     r:start(); host.screen=function() return nil end
     r:select('c',{});r:stop()

@@ -68,7 +68,7 @@ function api.RegisterHook(path,pre,post) hooks[path]={pre=pre,post=post}; return
 function api.UnregisterHook(path) hooks[path]=nil end
 function api.RegisterLoadMapPreHook(callback) api.mapPre=callback end
 function api.RegisterLoadMapPostHook(callback) api.mapPost=callback end
-local category={name='quickslots',targets={switcher={object=objectPath},slots={class='/Script/UMG.SlotWidget',within='switcher'}}}
+local category={name='quickslots',objects={switcher={source='lookup',object=objectPath},slots={source='lookup',class='/Script/UMG.SlotWidget',within='switcher'}}}
 local source=Source.new({category},api)
 do
     local unavailable={}
@@ -123,7 +123,7 @@ assert(not acceptsVersion(4,4), 'older API versions must be rejected')
 assert(created[classPath] and created['/Script/UMG.WidgetSwitcher'] and created['/Script/UMG.SlotWidget'])
 local host=References.new(source)
 local calls={}
-local template={id='visual',category='quickslots',targets={'switcher','slots'}}
+local template={id='visual',category='quickslots',objects={'switcher','slots'},managed=false}
 for _,name in ipairs({'attach','update','detach'}) do
     template[name]=function(o,params) calls[#calls+1]={name,o,params} end
 end
@@ -215,11 +215,11 @@ do
     assert(#sourceErrors==1 and sourceErrors[1].stage=='identity')
     serialByAddress[replacement.address]=currentSerial
 end
-local singleton=Source.new({{name='singleton',targets={switcher={object=objectPath}}}},api)
+local singleton=Source.new({{name='singleton',objects={switcher={source='lookup',object=objectPath}}}},api)
 assert(hooks['/Script/UMG.PanelWidget:AddChild']) -- leaf can join after creation
 singleton.stop()
 assert(next(hooks)==nil)
-local unloaded=Source.new({{name='unloaded',targets={widget={class='/Game/HUD/Missing.Missing_C'}}}},api)
+local unloaded=Source.new({{name='unloaded',objects={widget={source='lookup',class='/Game/HUD/Missing.Missing_C'}}}},api)
 assert(#unloaded.find({class='/Game/HUD/Missing.Missing_C'})==0)
 unloaded.stop()
 print('PASS: widget construction, group parenting, valid detach and hook cleanup')

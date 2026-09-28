@@ -20,16 +20,17 @@ end
 local function field(id, default)
     return {id=id, label=id, group='Layout', type='integer', min=0, max=100, default=default}
 end
-local function fixture(single)
+local function fixture(single, alphaTarget, betaTarget)
     local calls, errors = {}, {}
-    local category = {name='player.quickslots', single=single, targets={root={object='switcher'}},
+    local category = {name='player.quickslots', single=single, objects={root={source='lookup',object='switcher'}},
         settings={constant=false}, menu={fields={field('Size', 10), field('Opacity', 50)},
             groups={{id='Layout', label='Layout'}}}}
     local function template(id, target)
-        local t = {id=id, name=id, category=category.name, targets={'root'},
+        local t = {id=id, name=id, category=category.name, objects={'root'},managed=false,
             menu={enabled=true, target=target,
             groups={{id='Layout',label='Layout'}}, fields={field('Size',20),
-                {id='Tab',label='Tab',group='Layout',type='navigation',values={0,1},labels={'One','Two'},default=0}}}}
+                {id='Tab',label='Tab',group='Layout',type='navigation',values={0,1},labels={'One','Two'},default=0,
+                    linkProvider='ModCoreControls'}}}}
         for _, operation in ipairs({'attach','update','detach'}) do
             t[operation] = function(object, params)
                 assert(params.screen.width==1920 and params.screen.top==1080)
@@ -38,7 +39,8 @@ local function fixture(single)
         end
         return t
     end
-    local a,b = template('Alpha','templates'), template('Beta','module')
+    local a,b = template('Alpha',alphaTarget or 'templates'), template('Beta',betaTarget)
+    b.author='Example Author'
     local locations = {'/Mods/Alpha/Scripts/templates/template.lua','/Mods/Beta/Scripts/templates/template.lua'}
     local model = Model.build({category}, {a,b}, locations)
     local menu = Menu.generate(model.registry)
@@ -87,6 +89,28 @@ test('copied manifests parse with actual DMM and ModCoreSettings', function()
         assert(#choices==#provider.rows)
     end
     assert(f.menu.pageByCategory['player.quickslots'] and f.menu.pageByModule.Beta)
+    assert(f.b.menu.target=='module', 'omitted menu target defaults to the module page')
+    assert(f.menu.pageByModule.Beta.author=='Example Author')
+end)
+
+test('module-target templates do not add controls to the MCT aggregate page', function()
+    local mixed=fixture(true)
+    assert(#mixed.menu.aggregate.rows==0)
+    assert(#mixed.menu.pageByModule.Beta.rows>0)
+    local moduleOnly=fixture(true,'module','module')
+    assert(#moduleOnly.menu.aggregate.rows==0 and #moduleOnly.menu.pages==2)
+    assert(moduleOnly.menu.pageByModule.Alpha and moduleOnly.menu.pageByModule.Beta)
+    local extension=Extension.new(testRoot,moduleOnly.menu)
+    local api={choices=Choices,pages={build=function(_,providers) return providers end}}
+    extension.install(api)
+    local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
+        {id='detected:ue4ss:alpha',name='Alpha',testOnly=false,noSettings=true},
+        {id='detected:ue4ss:beta',name='Beta',testOnly=false,noSettings=true}}
+    api.pages.build({},providers,{},{})
+    assert(#providers==2)
+    for _,provider in ipairs(providers) do
+        assert(provider.id~='ModCoreTemplates' and provider.settingsCount>0)
+    end
 end)
 
 test('Apply activates and updates with merged settings, without navigation metadata', function()
@@ -113,7 +137,7 @@ test('category and template edits produce one coherent update per object', funct
 end)
 
 test('aggregate Apply preserves template values from other pages', function()
-    local f=fixture(true)
+    local f=fixture(true,'templates','templates')
     local page=f.menu.pageByCategory['player.quickslots']
     f.controller:apply(event(f,page,1,function(v) f.choose(v,'Alpha',true); v[f.definitions.Alpha.settings.Size]=77 end))
     f.controller:apply(event(f,f.menu.aggregate,1,function(v)
@@ -194,6 +218,61 @@ test('DMM extension adds pages once and replaces module placeholder', function()
     local seen={}
     for _,p in ipairs(providers) do assert(not seen[p.id]); seen[p.id]=true end
     assert(seen['ModCoreTemplates.module.Beta'])
+    for _,provider in ipairs(providers) do
+        if provider.id=='ModCoreTemplates.module.Beta' then assert(provider.author=='Example Author') end
+    end
+end)
+
+test('provider link opens the existing page without saving a second value', function()
+    local f=fixture(true)
+    local linkId=f.definitions.Beta.navigation.Tab
+    local row
+    for _,candidate in ipairs(f.menu.rows) do if candidate.Id==linkId then row=candidate end end
+    assert(row and row.mcNavigation==1 and row.mcLinkProvider=='ModCoreControls')
+    local extension=Extension.new(testRoot,f.menu)
+    local page
+    local api={choices=Choices,pages={build=function(_,providers)
+        page={rows={},controlStatus={}}
+        for index in ipairs(providers) do page.rows[index]={providerIndex=index} end
+        page.controls={show=function(self,index)
+            self.active=index
+            self.model={saved=0,dirtyValue=false,
+                set=function(model) model.saved=model.saved+1 end,
+                dirty=function(model) return model.dirtyValue end}
+        end,tick=function(_,activate) activate() end}
+        function page:showDetail(index)
+            self.opened=providers[self.rows[index].providerIndex].id
+            self.controls:show(self.rows[index].providerIndex)
+        end
+        return page
+    end}}
+    extension.install(api)
+    local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
+        {id='ModCoreControls',name='ModCore Controls',testOnly=false}}
+    local view=api.pages.build({},providers,{},
+        {setText=function(widget,value) widget.text=value end})
+    local betaIndex,linkIndex
+    for index,provider in ipairs(providers) do
+        if provider.id=='ModCoreTemplates.module.Beta' then
+            betaIndex=index
+            for settingIndex,choice in ipairs(provider.choices) do
+                if choice.id==linkId then
+                    assert(choice.mcLinkProvider=='ModCoreControls')
+                    linkIndex=settingIndex
+                end
+            end
+        end
+    end
+    assert(betaIndex and linkIndex)
+    view:showDetail(betaIndex)
+    local model=view.controls.model
+    assert(view.controls:tick(function() model:set(linkIndex,0) end)==true)
+    assert(view.opened=='ModCoreControls' and model.saved==0)
+    view:showDetail(betaIndex)
+    model=view.controls.model;model.dirtyValue=true
+    assert(view.controls:tick(function() model:set(linkIndex,0) end)==true)
+    assert(view.opened=='ModCoreTemplates.module.Beta' and model.saved==0)
+    assert(view.controlStatus.text:find('Apply or discard',1,true))
 end)
 
 test('published menus and catalog can be reloaded; user config is preserved', function()
@@ -209,7 +288,8 @@ test('published menus and catalog can be reloaded; user config is preserved', fu
     assert(values[f.definitions.Alpha.settings.Size]==20)
     local input=assert(io.open(config)); local content=input:read('*a'); input:close()
     assert(content:find('Keep=42',1,true) and content:find('Unknown=55',1,true))
-    assert(#assert(loadfile(Layout.paths(testRoot).pages))().pages==2)
+    local savedPages=assert(loadfile(Layout.paths(testRoot).pages))().pages
+    assert(#savedPages==2 and savedPages[2].author=='Example Author')
 end)
 
 test('queued Apply is ignored after unsubscribe', function()
@@ -315,7 +395,7 @@ test('invalid saved config is reported without replacing user values', function(
 end)
 
 test('generated data goes into Scripts/cache and DMM resolves its nested config', function()
-    local f=fixture(true)
+    local f=fixture(true,'templates','templates')
     local root=testRoot..'/new-layout'
     local paths=Layout.prepare(root)
     Files.publish(root,f.menu)

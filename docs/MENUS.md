@@ -27,8 +27,8 @@ settings and stable IDs, so its contents must not be discarded as disposable dat
 ## Where pages appear
 
 - **ModCore Templates:** category selectors, template toggles and shared category settings.
-- **Category page:** fields for templates whose menu target is `templates`.
-- **Module page:** fields for templates whose menu target is `module`; the module
+- **Category page:** fields for templates explicitly targeting `templates`.
+- **Module page:** the default location for template fields; the module
   name comes from the registered `<Module>/Scripts/templates/<file>.lua` path.
 
 Single categories get a template picker with `None`. Other categories get a toggle
@@ -49,7 +49,7 @@ local template = {
     settings = {RestoreOriginal = true},
     menu = {
         enabled = true,
-        target = 'templates',
+        -- target = 'templates' routes these fields to a category page instead.
         groups = {{id='Layout', label='Layout'}},
         fields = {
             {id='Size', label='Size', group='Layout', type='integer',
@@ -60,9 +60,9 @@ local template = {
     },
 }
 
-function template.attach(object, settings) end
-function template.update(object, settings) end
-function template.detach(object, settings) end
+function template.attach(objects, params, original)
+    return original
+end
 return template
 ```
 

@@ -32,7 +32,7 @@ function M.normalize(declaration)
     assert(type(declaration) == 'table', 'menu must be a table')
     allowed(declaration, {enabled=true,target=true,groups=true,fields=true}, 'menu')
     assert(type(declaration.enabled)=='boolean', 'menu.enabled must be boolean')
-    assert(declaration.target == 'templates' or declaration.target == 'module',
+    assert(declaration.target == nil or declaration.target == 'templates' or declaration.target == 'module',
         'menu.target must be templates or module')
     local declaredGroups=declaration.groups or {}
     local declaredFields=declaration.fields or {}
@@ -54,7 +54,8 @@ function M.normalize(declaration)
         assert(type(source) == 'table', 'provider field must be a table')
         allowed(source, {id=true,label=true,group=true,type=true,order=true,default=true,values=true,
             labels=true,min=true,max=true,step=true,suffix=true,tab=true,level=true,description=true,
-            after=true,visibleWhen=true,visibleValues=true,tabNavigation=true}, 'provider field')
+            after=true,visibleWhen=true,visibleValues=true,tabNavigation=true,
+            linkProvider=true}, 'provider field')
         identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
         level(source.level, source.type == 'picker' or source.type == 'navigation')
         if source.level == 1 then
@@ -67,6 +68,12 @@ function M.normalize(declaration)
         local field = U.copy(source)
         field.order, field.index = order(source.order,index), index
         if field.description ~= nil then text(field.description, 'provider description') end
+        if field.linkProvider ~= nil then
+            assert(field.type == 'navigation', 'linkProvider requires a navigation field')
+            text(field.linkProvider, 'provider link target')
+            assert(#field.linkProvider <= 128 and field.linkProvider:match('^[%w_.:-]+$'),
+                'invalid provider link target')
+        end
         if field.suffix ~= nil then text(field.suffix, 'provider suffix') end
         if field.visibleWhen ~= nil then identifier(field.visibleWhen, 'provider visibility source') end
         assert((field.visibleWhen == nil) == (field.visibleValues == nil),

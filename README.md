@@ -9,7 +9,7 @@ Mod data lives in `Scripts/templates`, `Scripts/categories`, and `Scripts/cache`
 Generated settings and page data use the cache; DMM's `mod_settings.ini` stays at root.
 
 Build modular game-feature and UI customizations as Lua templates. Register
-categories, expose settings, and implement `attach`, `update`, and `detach`.
+categories, expose settings, and implement `attach`.
 ModCoreTemplates manages selection and lifecycle; the template supplies behavior.
 
 ## Features
@@ -26,12 +26,22 @@ small working template and its `main.lua` loader.
 
 ### Categories and templates
 
-Choose a category by the targets it recognizes, then declare only the targets your
-template needs in `template.targets`. MCT resolves those targets and their selector
-dependencies before calling the template. A category's other targets are not looked
-up merely because they exist. Group related targets when order matters, for example
-`targets = {buttons = {'ability_left', 'ability_right'}}`; the callback receives the
+Choose a category by the objects it recognizes, then declare only the objects your
+template needs in `template.objects`. MCT resolves those objects and their
+dependencies before calling the template. A category's other objects are not looked
+up merely because they exist. Group related objects when order matters, for example
+`objects = {buttons = {'ability_left', 'ability_right'}}`; the callback receives the
 same structure as `objects.buttons`.
+
+Each category object declares a `source`: `lookup` finds a live object by path or
+class; `reference` reads a member from another declared object; `create` constructs
+a class with the WidgetTree of its declared `outer` as owner. For example,
+`actions = {source='create', class='/Script/UMG.CanvasPanel', outer='switcher', parent='hud_root'}`
+constructs a CanvasPanel and adds it to the declared `hud_root` before the first
+managed `attach`. The visual layout remains the template's responsibility. MCT
+reuses the panel across updates and removes it from its parent during cleanup.
+A template must include `switcher`, `hud_root`, and `actions` in its `objects`
+declaration to use them.
 
 If no category describes the objects you need, define one with its own target
 selectors. Put settings shared by its templates in the category's `menu.fields`
@@ -43,8 +53,8 @@ a template field of the same ID, without changing the category's copy.
 
 ### Attach and update
 
-Prefer a managed template (`managed = true`). Define
-`attach(objects, params, original)`, where `objects` contains the declared targets
+Templates use managed lifecycle by default. Define
+`attach(objects, params, original)`, where `objects` contains the declared objects
 and `original` contains the values MCT captured from their declared `properties`.
 Return `original` (or the same-shaped original values) so MCT can restore them on
 detach. Declare additional properties on a target or target group when the
@@ -61,7 +71,8 @@ Use the supplied `objects` rather than searching for widgets in the callback, an
 do not retain object references after it returns. MCT checks availability and
 handles their lifecycle. A managed template does not need an `update` function:
 when committed settings change, MCT restores the saved values and calls `attach`
-again with fresh `params`. If you opt for an unmanaged template, implement
+again with fresh `params`. Set `managed = false` only if the template must own
+its lifecycle; then implement
 `attach(root, params, objects)`, `update(root, params, objects)`, and
 `detach(root, params, objects)` yourself; `update` must reapply the new settings
 without accumulating changes from the previous call.
@@ -73,10 +84,10 @@ When several templates use the same widget operations, load their declarations i
 callbacks and return the loaded templates. The [example main.lua](examples/wheel-nudge/Scripts/templates/main.lua)
 shows that pattern with one template; more templates can reuse the same helper.
 
-Keep each template's target and menu declarations in its own file. MCT loads only
+Keep each template's object and menu declarations in its own file. MCT loads only
 `mc.lua` when present, or `main.lua` for existing modules, so the returned list
 determines which templates it registers. Declare the properties changed by shared helpers in each template's
-`targets`, allowing MCT to restore them.
+`objects`, allowing MCT to restore them.
 
 ## Requirements and installation
 
@@ -98,7 +109,7 @@ its input bindings into the template; one wheel should not need two steering col
 
 ## Lifecycle contract
 
-MCT calls `attach` when a selected template's targets are available. Committed
+MCT calls `attach` when a selected template's objects are available. Committed
 settings changes update the attachment using the callback form described above.
 For managed templates, MCT restores declared properties on detach; unmanaged
 templates own their detach behavior. Invalid objects are forgotten without a

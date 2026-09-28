@@ -17,7 +17,7 @@ local function merge(base, extra)
 end
 
 function M.compile(graph, declaration)
-    assert(type(declaration)=='table', 'template.targets must be a table')
+    assert(type(declaration)=='table', 'template.objects must be a table')
     local names, seen, visiting = {}, {}, {}
     local function leaf(name, properties)
         local selector=graph.byName[name]
@@ -25,7 +25,8 @@ function M.compile(graph, declaration)
         assert(not seen[name], 'duplicate template target: '..name)
         seen[name]=true
         names[#names+1]=name
-        return {name=name,properties=merge(selector.properties,properties)}
+        return {name=name,created=selector.create == true,
+            properties=merge(selector.properties,properties)}
     end
     local function group(value, inherited, root)
         assert(type(value)=='table', 'target group must be a table')
@@ -79,9 +80,10 @@ function M.arrange(tree, flat, unwrap, valid)
     return visit(tree)
 end
 
-function M.missing(tree, objects, valid)
+function M.missing(tree, objects, valid, ignoreCreated)
     local function visit(node, value)
         if node.name then
+            if ignoreCreated and node.created then return nil end
             if not valid(value) then return node.name end
             return nil
         end
@@ -91,6 +93,28 @@ function M.missing(tree, objects, valid)
         end
     end
     return visit(tree,objects)
+end
+
+function M.find(tree, objects, name)
+    local function visit(node, value)
+        if node.name then return node.name == name and value or nil end
+        for _, key in ipairs(node.order) do
+            local found = visit(node.children[key], value and value[key])
+            if found then return found end
+        end
+    end
+    return visit(tree, objects)
+end
+
+function M.assign(tree, objects, name, value)
+    local function visit(node, group)
+        for _, key in ipairs(node.order) do
+            local child = node.children[key]
+            if child.name == name then group[key] = value; return true end
+            if child.children and visit(child, group[key]) then return true end
+        end
+    end
+    assert(visit(tree, objects), 'created object not declared by template: ' .. name)
 end
 
 return M

@@ -2,11 +2,11 @@ package.path='./Scripts/?.lua;'..package.path
 local Selectors=require('mc.selectors')
 local Runtime=require('mc.runtime')
 local category=dofile('Scripts/categories/player_quickslots.lua')
-local graph=Selectors.compile(category.targets)
+local graph=Selectors.compile(category.objects)
 local radialCategory=dofile('Scripts/categories/player_radial.lua')
-local radialGraph=Selectors.compile(radialCategory.targets)
+local radialGraph=Selectors.compile(radialCategory.objects)
 assert(category.name=='player.quickslots' and radialCategory.name=='player.radial')
-assert(category.targets.radial==nil and radialCategory.targets.radial~=nil)
+assert(category.objects.radial==nil and radialCategory.objects.radial~=nil)
 local objects={}
 local function object(id,class)
     local value={id=id,class=class,children={},members={}}
@@ -16,6 +16,14 @@ end
 local switcher=object('switcher','WidgetSwitcher')
 local ability=object('ability','WBP_AA_Quickslots_C')
 local consumable=object('consumable','WBP_HUD_Quickslots_C')
+local hud=object('hud','WBP_GameHUD_C')
+switcher.owner=hud
+local hudTree=object('hudTree','WidgetTree')
+local hudRoot=object('hudRoot','Overlay')
+hud.members.WidgetTree=hudTree
+hudTree.members.RootWidget=hudRoot
+hud.members.WBP_AA_Quickslots=ability
+hud.members.WBP_HUD_Quickslots=consumable
 switcher.children={ability,consumable}
 local function directions(parent,prefix,bindings)
     local source=bindings or parent
@@ -69,7 +77,9 @@ host.child=function(parent,class)
 end
 host.member=function(parent,path)
     local value=parent
-    for key in path:gmatch('[^.]+') do value=value and value.members[key] end
+    for key in path:gmatch('[^.]+') do
+        value=value and (key=='@owner' and value.owner or value.members[key])
+    end
     return value
 end
 local lookedUp={}
@@ -85,13 +95,14 @@ end
 host.subscribe=function() return function() end end
 host.onError=function(error) error(error.message) end
 local candidates={}
-for _,selector in pairs(category.targets) do
-    if not selector.from then
+for _,selector in pairs(category.objects) do
+    if selector.source=='lookup' and not selector.from then
         for _,value in ipairs(host.find(selector)) do candidates[value.id]=value end
     end
 end
 local sets,attached,bundles=Selectors.resolve(graph,candidates,host)
 assert(bundles.switcher.ability_left.id=='abilityLeft')
+assert(bundles.switcher.hud_root==hudRoot)
 assert(bundles.switcher.consumable_right.id=='consumableRight')
 assert(attached.switcher and not sets.radial)
 assert(bundles.switcher.ability_button_left.id=='abilityButtonLeft')
@@ -99,8 +110,8 @@ assert(bundles.switcher.consumable_button_bottom.id=='consumableButtonBottom')
 assert(bundles.switcher.ability_panel.id=='abilityPanel')
 assert(bundles.switcher.consumable_box.id=='consumableBox')
 local radialCandidates={}
-for _,selector in pairs(radialCategory.targets) do
-    if not selector.from then
+for _,selector in pairs(radialCategory.objects) do
+    if selector.source=='lookup' and not selector.from then
         for _,value in ipairs(host.find(selector)) do radialCandidates[value.id]=value end
     end
 end
@@ -112,13 +123,13 @@ assert(not radialAttached.hudRadial and not radialAttached.hubRadial)
 lookedUp={}
 local categoryOnly=Runtime.new(host,{category},{})
 categoryOnly:start()
-assert(#lookedUp==1 and lookedUp[1].object==category.targets.switcher.object,
+assert(#lookedUp==1 and lookedUp[1].object==category.objects.switcher.object,
     'only required category targets are searched without a template')
 categoryOnly:stop()
 lookedUp={}
 local calls={}
-local template={id='layout',category=category.name,
-    targets={'switcher','abilities','consumables'},
+local template={id='layout',category=category.name,managed=false,
+    objects={'switcher','abilities','consumables'},
     attach=function(_,_,targets)
         assert(targets.abilities==ability and targets.consumables==consumable)
         calls[#calls+1]='attach'
@@ -132,15 +143,16 @@ local template={id='layout',category=category.name,
 local runtime=Runtime.new(host,{category},{template})
 runtime:select(category.name,{layout={}})
 runtime:start()
-assert(#lookedUp==1 and lookedUp[1].object==category.targets.switcher.object,
+assert(#lookedUp==1 and lookedUp[1].object==category.objects.switcher.object,
     'unused quickslot targets must not be searched')
 assert(#calls==1 and calls[1]=='attach')
 switcher.children={consumable} -- Distant layout moves the ability wheel.
 runtime:select(category.name,{layout={Style=1}})
-assert(#calls==2 and calls[2]=='detach')
+assert(#calls==2 and calls[2]=='update',
+    'HUD-owned wheel targets remain resolvable after reparenting')
 switcher.children={ability,consumable}
 runtime:event({kind='changed',object=switcher,epoch=runtime.epoch})
-assert(#calls==3 and calls[3]=='attach')
+assert(#calls==2, 'unchanged wheel identities must not reattach')
 runtime:stop()
-assert(#calls==4 and calls[4]=='detach')
+assert(#calls==3 and calls[3]=='detach')
 print('PASS: separate quickslot and radial targets, two radials, one attachment')

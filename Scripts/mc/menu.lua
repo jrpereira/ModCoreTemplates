@@ -149,9 +149,11 @@ function M.generate(registry, options)
         else
             currentCategory = category
             local categorySingle = available[1].single == true
+            local aggregateCategory = true
             for _, entry in ipairs(available) do
                 assert((entry.single == true) == categorySingle,
                     category .. ': templates disagree on single')
+                if entry.template.menu.target == 'module' then aggregateCategory = false end
             end
             assert(#available <= 63, category .. ': more than 63 templates exceeds picker capacity including None')
             local selector
@@ -176,7 +178,7 @@ function M.generate(registry, options)
                 picker(selector, title(suffix), aggregateGroup, values, labels, nil, nil,
                     not isQuickslots, isQuickslots and 1 or 2, not isQuickslots and 440 or nil)
                 rows[#rows]._control = true
-                aggregateRows[#aggregateRows + 1] = rows[#rows]
+                if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                 selectors[category] = {id = selector, byValue = byValue}
             else
                 multiSelectors[category] = {}
@@ -216,7 +218,7 @@ function M.generate(registry, options)
                     end
                     row(metadata)
                     rows[#rows]._control = true
-                    aggregateRows[#aggregateRows + 1] = rows[#rows]
+                    if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     if field.type ~= 'navigation' then sharedFields[field.id] = settingId end
                 end
             end
@@ -240,7 +242,7 @@ function M.generate(registry, options)
                     picker(ownerSelector, template.name, aggregateGroup, {0, 1}, {'No', 'Yes'},
                         nil, nil, true, 2, 440, 0)
                     rows[#rows]._control = true
-                    aggregateRows[#aggregateRows + 1] = rows[#rows]
+                    if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
                         id=ownerSelector, value=value, definition=definition}
                 end
@@ -259,7 +261,8 @@ function M.generate(registry, options)
                                     {'provider', identity, field.id})
                                 local metadata = {Id=settingId, Label=field.label, Group=groupId,
                                     Type=field.type == 'navigation' and 'picker' or field.type,
-                                    Default=field.default, Description=field.description, mcLevel=field.level}
+                                    Default=field.default, Description=field.description, mcLevel=field.level,
+                                    mcLinkProvider=field.linkProvider}
                                 if field.visibleWhen then
                                     local sourceId = providerFieldIds[field.visibleWhen]
                                     assert(sourceId, 'provider visibility source must precede dependent field: '
@@ -451,7 +454,7 @@ function M.generate(registry, options)
         end
         return selected
     end
-    local categoryOwned, moduleOwned, moduleCategories = {}, {}, {}
+    local categoryOwned, moduleOwned, moduleCategories, moduleAuthors = {}, {}, {}, {}
     for _, entry in ipairs(entries) do
         local template = entry.template
         if template.menu.target == 'templates' then
@@ -466,6 +469,11 @@ function M.generate(registry, options)
             module = module:gsub('^_', '')
             moduleOwned[module], moduleCategories[module] = moduleOwned[module] or {}, moduleCategories[module] or {}
             moduleOwned[module][entry.id], moduleCategories[module][template.category] = true, true
+            if template.author then
+                assert(not moduleAuthors[module] or moduleAuthors[module] == template.author,
+                    module .. ': templates disagree on author')
+                moduleAuthors[module] = text(template.author)
+            end
         end
     end
     for _, category in ipairs(registry.categories:list()) do
@@ -484,7 +492,7 @@ function M.generate(registry, options)
     for _, module in ipairs(moduleNames) do
         local providerId = aggregateId .. '.module.' .. publicName(module)
         local selectedRows = routedRows(moduleCategories[module], moduleOwned[module])
-        local page = {id=providerId, name=module, module=module, rows=selectedRows,
+        local page = {id=providerId, name=module, module=module, author=moduleAuthors[module], rows=selectedRows,
             manifest=providerManifest(providerId, module, selectedRows, false)}
         page.decode = makeDecoder(page.rows, moduleCategories[module], moduleOwned[module])
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page

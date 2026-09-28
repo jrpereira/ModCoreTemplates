@@ -148,4 +148,14 @@ function M.restoreSlot(widget, state)
     slot:SetVerticalAlignment(state.vertical)
 end
 
+function M.readback(widget)
+    local ok, result = pcall(function()
+        local position = M.translation(widget)
+        return 'opacity=' .. tostring(M.opacity(widget))
+            .. ' scale=' .. tostring(M.scale(widget).X)
+            .. ' x=' .. tostring(position.X) .. ' y=' .. tostring(position.Y)
+    end)
+    return ok and result or 'unavailable (' .. tostring(result) .. ')'
+end
+
 return M

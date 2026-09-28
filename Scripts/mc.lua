@@ -4,11 +4,7 @@ local U = require('mc.util')
 
 local modules = {objects = Objects}
 
-local base = {
-    settings = {},
-    enabled = true,
-    menu = {target = 'module', fields = {}, groups = {}},
-}
+local base = { settings = {}, enabled = true, menu = { target = 'module', fields = {}, groups = {} } }
 
 local function load(name)
     assert(type(name) == 'string', 'MC helper name required')

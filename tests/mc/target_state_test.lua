@@ -61,7 +61,7 @@ assert(switcher:GetChildAt(0)==first and switcher:GetChildAt(1)==second)
 assert(switcher:GetActiveWidgetIndex()==1)
 assert(first.RenderTransform.Translation.X==0 and first.RenderTransform.Translation.Y==0)
 local graph=require('mc.selectors').compile({
-    first={object='first'},second={object='second'},
+    first={source='lookup',object='first'},second={source='lookup',object='second'},
 })
 local declaration={buttons={row={'first','second'},properties={'parent','order','position'}}}
 local tree=require('mc.template_targets').compile(graph,declaration)

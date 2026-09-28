@@ -3,11 +3,10 @@
 return {
     name='Wheel Nudge',
     category='player.quickslots',
-    managed=true,
-    targets={abilities={}},
+    objects={abilities={}},
     settings={HorizontalPercent=0,VerticalPercent=0},
     menu={
-        target='module',enabled=true,
+        enabled=true,
         groups={{id='Position',label='Position'}},
         fields={
             {id='HorizontalPercent',group='Position',label='Horizontal offset',

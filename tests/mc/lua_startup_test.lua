@@ -38,9 +38,9 @@ local newer=assert(host.capture(object))
 assert(newer~=ref and host.valid(newer))
 
 local jobs={}
-local category={name='player.quickslots',targets={root={class='/Script/UMG.UserWidget'}}}
+local category={name='player.quickslots',objects={root={source='lookup',class='/Script/UMG.UserWidget'}}}
 local template={id='example.template',name='Template',category='player.quickslots',
-    targets={'root'},
+    module='Example',managed=false,objects={'root'},
     attach=function() end,update=function() end,detach=function() end}
 local opts={categoryFiles={'category'},templateFiles={'template'},
     execute=function(path) return path=='category' and category or template end,

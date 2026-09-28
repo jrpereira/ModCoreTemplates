@@ -41,8 +41,10 @@ function M.new(categories, api)
     local source = {}
     local selectors, notifyClasses, hasGroups, hasWidgets = {}, {}, false, false
     for _, category in ipairs(categories) do
-        for _, selector in pairs(category.targets or {}) do
-            if selector.from then
+        for _, selector in pairs(category.objects or {}) do
+            if selector.source == 'create' then
+                -- Construction belongs to the selected managed template.
+            elseif selector.from then
                 hasGroups, hasWidgets = true, true
             else
                 ObjectSelector.className(selector)
@@ -201,7 +203,8 @@ function M.new(categories, api)
         if not source.valid(parent) then return nil end
         local current = parent
         for name in path:gmatch('[^.]+') do
-            current = Widget.property(current, name)
+            if name=='@owner' then current=ObjectSelector.owner(current)
+            else current = Widget.property(current, name) end
             if not source.valid(current) then return nil end
         end
         return current

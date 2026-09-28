@@ -31,23 +31,31 @@ The callback subscription must return an unsubscribe function.
 Late template registration is rejected explicitly. Duplicate file registrations
 are ignored. Loading errors fail startup before discovery begins.
 
-## Selectors
+## Declared objects
 
-A category declares named selectors in `.targets`:
+A category declares named objects in `.objects`:
 
 ```lua
 return {
     name = 'player.quickslots',
     single = true,
-    targets = {
-        switcher = { object = 'WidgetSwitcher /Game/...:WidgetTree.QuickslotsSwitcher' },
-        slots = { class = '/Game/.../WBP_Quickslot.WBP_Quickslot_C', within = 'switcher' },
+    objects = {
+        switcher = { source = 'lookup', object = 'WidgetSwitcher /Game/...:WidgetTree.QuickslotsSwitcher' },
+        slots = { source = 'lookup', class = '/Game/.../WBP_Quickslot.WBP_Quickslot_C', within = 'switcher' },
+        hud_root = { source = 'reference', from = 'switcher', member = '@owner.WidgetTree.RootWidget' },
+        actions = { source = 'create', class = '/Script/UMG.CanvasPanel', outer = 'switcher', parent = 'hud_root' },
     },
 }
 ```
 
-The example paths are illustrative. The actual quickslots category currently
-contains only its existing switcher path; no unverified class selector was added.
+The example paths are illustrative. A `reference` source uses `from` and
+`member` to read a property from an already obtained object. A `create` source
+accepts a native `/Script/Module.Class` path, an `outer` object, and an optional
+visual `parent`. MCT uses the outer object's WidgetTree as the new object's
+owner and adds it to the declared parent before calling managed
+`attach(objects, params, original)`. Without `parent`, the created object remains
+unattached. The template must request the created name and its dependencies in
+`template.objects`.
 
 - `object` identifies an object; `class` selects a group of class instances.
 - `within` limits matches to descendants of every object selected by another entry.

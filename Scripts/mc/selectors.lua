@@ -2,36 +2,79 @@
 local M = {}
 local TemplateTargets = require('mc.template_targets')
 
-function M.compile(targets)
-    assert(type(targets) == 'table', 'category.targets must be a table')
+function M.compile(objects)
+    assert(type(objects) == 'table', 'category.objects must be a table')
     local graph, order, visiting, visited = {}, {}, {}, {}
-    for name, value in pairs(targets) do
-        assert(type(name) == 'string' and name ~= '', 'selector name required')
-        assert(type(value) == 'table', name .. ': selector must be a table')
+    for name, value in pairs(objects) do
+        assert(type(name) == 'string' and name ~= '', 'object name required')
+        assert(type(value) == 'table', name .. ': object declaration must be a table')
         for key in pairs(value) do
-            assert(key == 'object' or key == 'class' or key == 'within' or key == 'from'
-                or key == 'member' or key == 'attach' or key == 'required' or key == 'properties',
-                name .. ': unknown selector field ' .. tostring(key))
+            assert(key == 'source' or key == 'object' or key == 'class'
+                or key == 'within' or key == 'from' or key == 'member'
+                or key == 'outer' or key == 'parent'
+                or key == 'attach' or key == 'required'
+                or key == 'properties', name .. ': unknown object field ' .. tostring(key))
         end
-        assert(not (value.from and value.within), name .. ': from and within are exclusive')
-        if value.from then
-            assert(type(value.from) == 'string' and value.from ~= '', name .. ': invalid from')
-            assert(value.object == nil and (value.member ~= nil or value.class ~= nil),
-                name .. ': scoped selector needs a member or class')
+        local source = value.source
+        assert(source == 'lookup' or source == 'reference' or source == 'create',
+            name .. ': source must be lookup, reference, or create')
+        assert(value.properties == nil or type(value.properties) == 'table',
+            name .. ': invalid properties')
+        if source == 'create' then
+            assert(type(value.class) == 'string'
+                and value.class:match('^/Script/[%w_]+%.[%w_]+$'),
+                name .. ': created object needs a class path')
+            assert(type(value.outer) == 'string' and value.outer ~= '',
+                name .. ': created object needs an outer object')
+            assert(value.parent == nil or type(value.parent) == 'string'
+                and value.parent ~= '', name .. ': invalid created object parent')
+            assert(value.object == nil and value.from == nil and value.member == nil
+                and value.within == nil and value.attach == nil and value.required == nil
+                and value.properties == nil, name .. ': invalid created object declaration')
+            graph[name] = {source=source,create=true,class=value.class,outer=value.outer,
+                from=value.outer,parent=value.parent,attach=false,required=false,properties={}}
+        elseif source == 'reference' then
+            assert(type(value.from) == 'string' and value.from ~= ''
+                and type(value.member) == 'string' and value.member ~= '',
+                name .. ': reference needs from and member')
+            assert(value.object == nil and value.within == nil and value.outer == nil
+                and value.attach == nil and value.parent == nil,
+                name .. ': invalid reference declaration')
+            assert(value.class == nil or type(value.class) == 'string',
+                name .. ': invalid reference class')
+            assert(value.required == nil or type(value.required) == 'boolean',
+                name .. ': invalid required')
+            graph[name] = {source=source,from=value.from,member=value.member,
+                class=value.class,attach=false,required=value.required == true,
+                properties=value.properties}
         else
-            assert(value.member == nil and (value.object ~= nil) ~= (value.class ~= nil),
-                name .. ': declare object or class')
+            assert(value.member == nil and value.outer == nil and value.parent == nil,
+                name .. ': lookup cannot declare member or outer')
+            assert(not (value.from and value.within),
+                name .. ': from and within are exclusive')
+            if value.from then
+                assert(type(value.from) == 'string' and value.from ~= ''
+                    and value.object == nil and type(value.class) == 'string',
+                    name .. ': scoped lookup needs from and class')
+                assert(value.attach == nil and value.required == nil,
+                    name .. ': scoped lookup cannot attach independently')
+            else
+                assert((value.object ~= nil) ~= (value.class ~= nil),
+                    name .. ': lookup needs object or class')
+            end
+            local target=value.object or value.class
+            assert(type(target) == 'string' and target ~= '',
+                name .. ': invalid lookup target')
+            assert(value.within == nil or type(value.within) == 'string',
+                name .. ': invalid within')
+            assert(value.attach == nil or type(value.attach) == 'boolean',
+                name .. ': invalid attach')
+            assert(value.required == nil or type(value.required) == 'boolean',
+                name .. ': invalid required')
+            graph[name] = {source=source,object=value.object,class=value.class,
+                within=value.within,from=value.from,attach=value.attach ~= false,
+                required=value.required == true,properties=value.properties}
         end
-        local target = value.object or value.class or value.member
-        assert(type(target) == 'string' and target ~= '', name .. ': selector target required')
-        assert(value.within == nil or type(value.within) == 'string', name .. ': invalid within')
-        assert(value.attach == nil or type(value.attach) == 'boolean', name .. ': invalid attach')
-        assert(value.required == nil or type(value.required) == 'boolean', name .. ': invalid required')
-        assert(value.properties == nil or type(value.properties) == 'table', name .. ': invalid properties')
-        assert(not value.from or value.attach == nil, name .. ': scoped targets cannot attach independently')
-        graph[name] = {object=value.object, class=value.class, within=value.within,
-            from=value.from, member=value.member, attach=value.attach ~= false,
-            required=value.required == true,properties=value.properties}
     end
     local function visit(name)
         assert(graph[name], 'unknown within selector: ' .. name)
@@ -40,6 +83,7 @@ function M.compile(targets)
         visiting[name] = true
         if graph[name].within then visit(graph[name].within) end
         if graph[name].from then visit(graph[name].from) end
+        if graph[name].parent then visit(graph[name].parent) end
         visiting[name], visited[name] = nil, true
         order[#order + 1] = name
     end
@@ -65,6 +109,7 @@ function M.project(graph, targets)
         if wanted[name] then return end
         wanted[name]=true
         if selector.from then include(selector.from) end
+        if selector.parent then include(selector.parent) end
         if selector.within then include(selector.within) end
     end
     for _,name in ipairs(names) do include(name) end
@@ -95,7 +140,9 @@ function M.resolve(graph, candidates, host)
     end
     for _, name in ipairs(graph.order) do
         local selector, matches = graph.byName[name], {}
-        if selector.from then
+        if selector.create then
+            -- Managed templates construct these after existing selectors resolve.
+        elseif selector.from then
             for id, bundle in pairs(bundles) do
                 local parent = bundle[selector.from]
                 if parent and host.valid(parent) then

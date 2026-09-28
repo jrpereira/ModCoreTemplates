@@ -59,7 +59,7 @@ function M.new(host, definitions, templates)
     for _, definition in ipairs(definitions) do
         assert(type(definition.name) == 'string' and not categories[definition.name], 'duplicate/invalid category')
         assert(definition.settings == nil or type(definition.settings) == 'table', 'category settings must be a table')
-        local graph=Selectors.compile(definition.targets or {})
+        local graph=Selectors.compile(definition.objects or {})
         local mandatory={}
         for _,name in ipairs(graph.order) do
             if graph.byName[name].required then mandatory[#mandatory+1]=name end
@@ -72,15 +72,29 @@ function M.new(host, definitions, templates)
         assert(type(template.id) == 'string' and template.id ~= '' and not byId[template.id], 'duplicate/invalid template id')
         local category = assert(categories[template.category], 'unknown template category')
         assert(template.settings == nil or type(template.settings) == 'table', 'template settings must be a table')
-        local graph=Selectors.project(category.graph,template.targets)
-        local targetTree=TemplateTargets.compile(category.graph,template.targets)
-        assert(#graph.order>0, 'template must declare targets: '..template.id)
-        local managed=template.managed==true
+        local graph=Selectors.project(category.graph,template.objects)
+        local targetTree=TemplateTargets.compile(category.graph,template.objects)
+        assert(#graph.order>0, 'template must declare objects: '..template.id)
+        assert(template.managed == nil or type(template.managed) == 'boolean',
+            'template.managed must be boolean')
+        local managed=template.managed~=false
         local manager
         if managed then
-            local specs=TargetState.specs(graph,template.targets)
-            manager=ManagedTemplate.new(template,specs,graph.order)
+            local specs=TargetState.specs(graph,template.objects)
+            local created={}
+            for _,name in ipairs(graph.order) do
+                local selector=graph.byName[name]
+                if selector.create then
+                    created[#created+1]={name=name,class=selector.class,from=selector.from,
+                        parent=selector.parent}
+                end
+            end
+            manager=ManagedTemplate.new(template,specs,graph.order,created)
         else
+            for _,name in ipairs(graph.order) do
+                assert(not graph.byName[name].create,
+                    'created objects require managed template: '..template.id)
+            end
             assert(type(template.attach) == 'function' and type(template.update) == 'function'
                 and type(template.detach) == 'function', 'template requires attach, update and detach')
         end

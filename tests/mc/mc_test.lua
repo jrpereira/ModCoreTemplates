@@ -23,11 +23,11 @@ write('entry.lua','local value=require("mc").template("custom.lua"); return valu
 assert(assert(loadfile(directory..'/entry.lua'))().name=='custom')
 write('mc_defaults.lua','return {name="own",settings={Size=75}}\n')
 write('entry.lua',[[local MC=require('mc')
-local defaults={module='Fangdango',managed=true,name='shared',settings={Size=100}}
+local defaults={module='Fangdango',name='shared',settings={Size=100}}
 return MC.template('defaults',defaults),MC.template('defaults',defaults),defaults
 ]])
 local first,second,defaults=assert(loadfile(directory..'/entry.lua'))()
-assert(first.name=='own' and first.module=='Fangdango' and first.managed==true)
+assert(first.name=='own' and first.module=='Fangdango' and first.managed==nil)
 assert(first.enabled==true and first.menu.target=='module')
 assert(first.settings.Size==75 and defaults.settings.Size==100)
 first.menu.fields[1]={id='changed'}
