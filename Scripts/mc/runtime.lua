@@ -468,25 +468,38 @@ function M.new(host, definitions, templates)
             end)
             if not ok then
                 self.phase = 'failed'
-                if type(unsubscribe) == 'function' then pcall(unsubscribe) end
-                unsubscribe, candidates = nil, {}
+                if type(unsubscribe) == 'function' then
+                    local removed,result,detail=pcall(unsubscribe)
+                    if removed and result~=false then unsubscribe=nil
+                    else report('unsubscribe',nil,removed and detail or result) end
+                end
+                candidates = {}
                 error(why)
             end
         end)
     end
     function self:stop()
+        local failures={}
+        local function failed(stage,why)
+            failures[#failures+1]=stage..': '..tostring(why)
+            report(stage,nil,why)
+        end
         serialize(function()
             self.phase = 'stopped'
             if unsubscribe then
-                local ok, why = pcall(unsubscribe)
-                unsubscribe = nil
-                if not ok then report('unsubscribe', nil, why) end
+                local ok,result,detail = pcall(unsubscribe)
+                if ok and result~=false then unsubscribe=nil
+                else failed('unsubscribe',ok and detail or result) end
             end
             for _, record in pairs(byId) do record.enabled = false; record.waiting={} end
-            reconcile()
-            host.watch({})
+            local reconciled,why=pcall(reconcile)
+            if not reconciled then failed('reconcile',why) end
+            local watched,result,detail=pcall(host.watch,{})
+            if not watched or result==false then failed('watch',watched and detail or result) end
             candidates,activeRoots,searchSignature = {},{},nil
         end)
+        if #failures>0 then return false,table.concat(failures,'; ') end
+        return true
     end
     function self:attachments(id)
         local result = {}

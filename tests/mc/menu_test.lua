@@ -20,11 +20,14 @@ end
 local function field(id, default)
     return {id=id, label=id, values={min=0,max=100,step=1}, default=default}
 end
+local function categoryField(id,default)
+    return {id=id,label=id,type='integer',min=0,max=100,step=1,default=default}
+end
 local function fixture(single, alphaTarget, betaTarget, locationBase)
     local calls, errors = {}, {}
     local category = {name='player.quickslots', single=single, objects={root={source='lookup',object='switcher'}},
         settings={constant=false}, menu={groups={{id='Layout', label='Layout',
-            fields={field('Size', 10), field('Opacity', 50)}}}}}
+            fields={categoryField('Size', 10), categoryField('Opacity', 50)}}}}}
     local function template(id, target)
         local t = {id=id, name=id, category=category.name, objects={'root'},managed=false,
             menuTarget=target,menu={{id='Layout',label='Layout',fields={field('Size',20)}}}}
@@ -92,7 +95,7 @@ test('copied manifests parse with actual DMM and ModCoreSettings', function()
     assert(f.menu.pageByModule.Beta.author=='Example Author')
     assert(f.menu.pageByModule.Beta.moduleRoot=='/Mods/Beta')
     for _,choice in ipairs(Choices.parse(f.menu.pageByModule.Beta.manifest)) do
-        if not choice.mcNavigation then assert(choice.file=='config.ini') end
+        if choice.file then assert(choice.file=='config.ini') end
     end
 end)
 
@@ -204,7 +207,7 @@ end)
 
 test('menu metadata in runtime settings is rejected', function()
     local template={name='Old',category='player.quickslots',
-        settings={target='module',fields={field('Size',42)}},
+        settings={target='module',fields={categoryField('Size',42)}},
         attach=function() end,update=function() end,detach=function() end}
     local ok,why=pcall(Model.build,{{name='player.quickslots'}},{template},{'fixture.lua'})
     assert(not ok and tostring(why):find('template.menu',1,true))
@@ -460,7 +463,8 @@ test('module settings are initialized in each template module folder', function(
     local central=assert(io.open(menuRoot..'/Scripts/cache/config.ini','rb'))
     local centralContent=central:read('*a');central:close()
     assert(not centralContent:find(f.definitions.Alpha.settings.Size,1,true)
-        and not centralContent:find(f.definitions.Beta.settings.Size,1,true))
+        and centralContent:find(f.definitions.Beta.settings.Size..'=73',1,true),
+        'legacy central value must remain while new module defaults stay local')
     boot:stop()
 end)
 

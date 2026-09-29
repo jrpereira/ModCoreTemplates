@@ -53,8 +53,17 @@ function M.new(menu, runtime, options)
     end
     function self:stop()
         alive = false
-        for _, stop in ipairs(stops) do pcall(stop) end
-        stops = {}
+        local remaining,errors={},{}
+        for _, stop in ipairs(stops) do
+            local ok,result,detail=pcall(stop)
+            if not ok or result==false then
+                remaining[#remaining+1]=stop
+                errors[#errors+1]=tostring(ok and detail or result)
+            end
+        end
+        stops=remaining
+        if #errors>0 then return false,table.concat(errors,'; ') end
+        return true
     end
     function self:bind(settingsApi, queue)
         assert(alive and not bound, 'menu Apply subscription already bound or stopped')

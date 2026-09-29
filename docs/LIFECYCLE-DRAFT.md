@@ -41,10 +41,20 @@ the module ID, author, and version from the provider's `mod.json`. MCT executes 
 file at the game-thread barrier. It does not enumerate installed directories.
 
 Late template registration is rejected explicitly. Duplicate file registrations
-are ignored. Loading errors fail startup before discovery begins.
+are ignored. A provider file that fails execution, metadata validation, its
+loaded hook, or menu/runtime validation is reported and skipped; other providers
+continue loading. Invalid category definitions or shared startup services still
+fail startup before discovery begins.
 
-After applying module metadata, MCT calls an optional `template.loaded()` once.
-This happens before menu/runtime validation; an error fails startup.
+After applying module metadata, MCT calls an optional `template.loaded(onCleanup)`
+once. The hook may register cleanup functions with `onCleanup`, or return one.
+MCT calls them in reverse order when that provider fails or the session stops.
+Hooks that create side effects must register their release functions; MCT cannot
+undo unregistered effects. Failed cleanup functions remain available for a
+later stop attempt. Generated menu and config files are durable; a failed
+startup leaves the menu handoff unready and the next startup refreshes them.
+Manifest identity fields come from the top-level JSON object. `id` is required;
+`author` and `version` are used when present.
 
 ## Declared objects
 

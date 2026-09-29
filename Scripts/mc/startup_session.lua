@@ -7,13 +7,36 @@ local MenuController=require('mc.menu_controller')
 local U=require('mc.util')
 local M={}
 
-function M.new(options,categories,templates,locations)
+function M.validate(options,categories,templates,locations)
+    local model=MenuModel.build(categories,U.copy(templates),locations)
+    local menuOptions=U.copy(options.menu or {})
+    if options.menuRoot then menuOptions.catalog=MenuFiles.readCatalog(options.menuRoot) end
+    Menu.generate(model.registry,menuOptions)
+    Runtime.new(options.host,model.categories,model.templates)
+end
+
+function M.new(options,categories,templates,locations,own)
     assert(not options.settingsApi or (not options.categorySettings and not options.selections),
         'use menuValues/config for menu-controlled startup selections')
+    local self={}
+    function self:stop()
+        local errors={}
+        for _,component in ipairs({'menuController','runtime'}) do
+            local resource=self[component]
+            if resource then
+                local ok,result,detail=pcall(resource.stop,resource)
+                if not ok or result==false then
+                    errors[#errors+1]=component..': '..tostring(ok and detail or result)
+                end
+            end
+        end
+        if #errors>0 then return false,table.concat(errors,'; ') end
+        return true
+    end
+    if own then own(self) end
     local model=MenuModel.build(categories,templates,locations)
     local menuOptions=U.copy(options.menu or {})
     if options.menuRoot then menuOptions.catalog=MenuFiles.readCatalog(options.menuRoot) end
-    local self={}
     self.menu=Menu.generate(model.registry,menuOptions)
     self.runtime=Runtime.new(options.host,model.categories,model.templates)
     local savedValues=options.menuValues
@@ -74,10 +97,6 @@ function M.new(options,categories,templates,locations)
     function self:start()
         self.runtime:start()
         assert(self.runtime.phase=='running','lifecycle subscription failed')
-    end
-    function self:stop()
-        self.menuController:stop()
-        self.runtime:stop()
     end
     return self
 end

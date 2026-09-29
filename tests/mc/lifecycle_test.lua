@@ -364,6 +364,25 @@ test('shutdown can retry a failed detach without resubscribing', function()
     assert(next(f.runtime:attachments('a')) == nil and unsubs == 1)
 end)
 
+test('shutdown retains a failed host unsubscribe for retry', function()
+    local f=fixture()
+    local subscribe=f.host.subscribe
+    local attempts=0
+    f.host.subscribe=function(sink,epoch)
+        local release=subscribe(sink,epoch)
+        return function()
+            attempts=attempts+1
+            if attempts==1 then error('temporary host unsubscribe failure') end
+            release()
+        end
+    end
+    f.runtime:start()
+    assert(f.runtime:stop()==false and attempts==1)
+    assert(f.runtime:stop()==true and attempts==2)
+    local _,unsubs=f.counts()
+    assert(unsubs==1)
+end)
+
 test('failed update preserves attachment and retries without attaching again', function()
     local f = fixture()
     local o = f.object('one')

@@ -11,6 +11,8 @@ function M.new(options)
     local self={phase='registering',runtime=nil}
     local files,seen={},{}
     local stopBarrier,session
+    local providerCleanups={}
+    local hostClosed=false
     local menuHandoff
     if options.menuShared then
         assert(options.menuRoot,'cross-state menu handoff requires menuRoot')
@@ -25,13 +27,40 @@ function M.new(options)
         files[#files+1],seen[canonical]=path,true
         return true
     end
-    local function closeHost()
-        if options.closeHost then pcall(options.closeHost) end
+    local function report(stage,message,path)
+        pcall(options.host.onError,{stage=stage,message=tostring(message),provider=path})
+    end
+    local function releaseCleanups(cleanups)
+        local errors={}
+        for index=#cleanups,1,-1 do
+            local ok,result,detail=pcall(cleanups[index])
+            if ok and result~=false then table.remove(cleanups,index)
+            else errors[#errors+1]=tostring(ok and detail or result) end
+        end
+        return errors
     end
     local function stopSession()
-        if menuHandoff then menuHandoff:stop() end
-        if session then session:stop() end
-        closeHost()
+        local errors={}
+        local function attempt(label,callback)
+            local ok,result,detail=pcall(callback)
+            if not ok or result==false then
+                errors[#errors+1]=label..': '..tostring(ok and detail or result)
+            end
+        end
+        if menuHandoff then attempt('menu handoff',function() return menuHandoff:stop() end) end
+        if session then attempt('session',function() return session:stop() end) end
+        for _,why in ipairs(releaseCleanups(providerCleanups)) do
+            errors[#errors+1]='provider cleanup: '..why
+        end
+        if options.closeHost and not hostClosed then
+            attempt('host close',function()
+                local result=options.closeHost()
+                if result~=false then hostClosed=true end
+                return result
+            end)
+        end
+        for _,why in ipairs(errors) do report('cleanup',why) end
+        return #errors==0
     end
     function self:finishLoading()
         if self.phase~='registering' then return false end
@@ -39,30 +68,58 @@ function M.new(options)
             self.phase='loading'
             if stopBarrier then stopBarrier();stopBarrier=nil end
             local templates,locations={},{}
-            local function include(template,path)
-                assert(type(template)=='table' and template.category,
-                    path..': invalid template definition')
-                assert(template.loaded==nil or type(template.loaded)=='function',
-                    path..': template.loaded must be a function')
-                if template.loaded then template.loaded() end
-                templates[#templates+1],locations[#locations+1]=template,path
-            end
+            Session.validate(options,options.categories,{}, {})
             for _,path in ipairs(files) do
-                local loaded=execute(path)
-                assert(type(loaded)=='table',path..': expected template definition')
-                if loaded.category then
-                    ModuleMetadata.apply(loaded,path)
-                    include(loaded,path)
-                else
-                    local count=U.array(loaded,path..': template list')
-                    assert(count>0,path..': empty template list')
-                    for index=1,count do
-                        ModuleMetadata.apply(loaded[index],path)
-                        include(loaded[index],path)
+                local cleanups={}
+                local loadedOK,loadedError=pcall(function()
+                    local loaded=execute(path)
+                    assert(type(loaded)=='table',path..': expected template definition')
+                    local entries={}
+                    if loaded.category then entries[1]=loaded
+                    else
+                        local count=U.array(loaded,path..': template list')
+                        assert(count>0,path..': empty template list')
+                        for index=1,count do entries[index]=loaded[index] end
                     end
+                    for _,template in ipairs(entries) do
+                        assert(type(template)=='table' and template.category,
+                            path..': invalid template definition')
+                        assert(template.loaded==nil or type(template.loaded)=='function',
+                            path..': template.loaded must be a function')
+                        ModuleMetadata.apply(template,path)
+                    end
+                    local function onCleanup(callback)
+                        assert(type(callback)=='function',path..': cleanup callback must be a function')
+                        cleanups[#cleanups+1]=callback
+                    end
+                    for _,template in ipairs(entries) do
+                        if template.loaded then
+                            local cleanup=template.loaded(onCleanup)
+                            if type(cleanup)=='function' then onCleanup(cleanup) end
+                        end
+                    end
+                    local proposed,proposedLocations={},{}
+                    for index,template in ipairs(templates) do
+                        proposed[index],proposedLocations[index]=template,locations[index]
+                    end
+                    for _,template in ipairs(entries) do
+                        proposed[#proposed+1],proposedLocations[#proposedLocations+1]=template,path
+                    end
+                    Session.validate(options,options.categories,proposed,proposedLocations)
+                    templates,locations=proposed,proposedLocations
+                end)
+                if loadedOK then
+                    for _,cleanup in ipairs(cleanups) do providerCleanups[#providerCleanups+1]=cleanup end
+                else
+                    report('provider',loadedError,path)
+                    local cleanupErrors=releaseCleanups(cleanups)
+                    for _,cleanup in ipairs(cleanups) do providerCleanups[#providerCleanups+1]=cleanup end
+                    for _,error in ipairs(cleanupErrors) do report('cleanup',path..': '..error,path) end
                 end
             end
-            session=Session.new(options,options.categories,templates,locations)
+            session=Session.new(options,options.categories,templates,locations,function(partial)
+                session=partial
+            end)
             self.menu,self.runtime=session.menu,session.runtime
             self.menuController,self.extension=session.menuController,session.extension
             session:start()
@@ -72,13 +129,17 @@ function M.new(options)
         if not ok then
             self.phase='failed'
             stopSession()
-            pcall(options.host.onError,{stage='startup',message=tostring(why)})
+            report('startup',why)
             return nil,why
         end
         return true
     end
     function self:stop()
-        if stopBarrier then stopBarrier();stopBarrier=nil end
+        if stopBarrier then
+            local ok,result=pcall(stopBarrier)
+            if ok and result~=false then stopBarrier=nil
+            else report('cleanup','module-load barrier: '..tostring(result)) end
+        end
         stopSession()
         self.phase='stopped'
     end
