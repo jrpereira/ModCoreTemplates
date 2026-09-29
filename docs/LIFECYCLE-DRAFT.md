@@ -8,8 +8,8 @@ game thread and uses Lua references to check object validity and identity.
 
 ## Startup
 
-1. Load category definitions.
-2. Register MCT's own template files without executing them.
+1. Load category definitions once and construct the object source from them.
+2. Accept explicitly registered provider template files without executing them.
 3. Schedule the one-shot startup callback on the game thread.
 4. Accept registrations from other modules while waiting.
 5. At the barrier, close registration and execute all registered template files.
@@ -17,19 +17,34 @@ game thread and uses Lua references to check object validity and identity.
 7. Subscribe to lifecycle notifications before taking the initial object snapshot.
 8. Process existing objects and then continue through lifecycle events.
 
-`mc.bootstrap.new(options)` implements this sequence. `Scripts/main.lua`
-supplies source-controlled `categoryFiles` and `templateFiles`, and Lua startup
-supplies the `host` and `subscribeLoopStart(callback)`. Standalone
+`mc.bootstrap.new(options)` implements this sequence. Lua startup supplies the
+already-loaded categories, `host`, and `subscribeLoopStart(callback)`. Standalone
 hosts can supply those options directly, with optional initial
 `selections` and committed `categorySettings`. File lists are explicit; this draft does not search directories.
 `execute(path)` may be supplied for another loader; otherwise it uses `loadfile`.
-Category sources live in `Scripts/categories`; template sources live in
-`Scripts/templates`. Each category/template file returns one definition. The bootstrap object's
+Category sources live in `Scripts/categories`; providers normally keep template
+sources directly in their own `Scripts` folder. Each category/template file returns
+one definition. The bootstrap object's
 `registerTemplate(path)` accepts registrations until the startup callback fires.
 The callback subscription must return an unsubscribe function.
 
+Installed providers use the public helper from `Scripts/main.lua`:
+
+```lua
+local M = require('mc')
+M.addTemplate('layout')
+```
+
+`addTemplate` resolves `layout` to `mc_layout.lua` beside the calling file and
+registers its path directly with MCT. The template declares `category`; MCT reads
+the module ID, author, and version from the provider's `mod.json`. MCT executes the
+file at the game-thread barrier. It does not enumerate installed directories.
+
 Late template registration is rejected explicitly. Duplicate file registrations
 are ignored. Loading errors fail startup before discovery begins.
+
+After applying module metadata, MCT calls an optional `template.loaded()` once.
+This happens before menu/runtime validation; an error fails startup.
 
 ## Declared objects
 

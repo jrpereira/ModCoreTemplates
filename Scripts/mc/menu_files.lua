@@ -56,9 +56,13 @@ local function pagesSource(pages)
     for _, page in ipairs(pages) do
         local category = page.category and string.format('%q', page.category) or 'nil'
         local module = page.module and string.format('%q', page.module) or 'nil'
+        local moduleRoot = page.moduleRoot and string.format('%q', page.moduleRoot) or 'nil'
+        local providerPath = page.providerPath and string.format('%q', page.providerPath) or 'nil'
+        local configPath = page.configPath and string.format('%q', page.configPath) or 'nil'
         local author = page.author and string.format('%q', page.author) or 'nil'
-        lines[#lines + 1] = string.format('{id=%q,name=%q,category=%s,module=%s,author=%s,version=%q,manifest=%q},',
-            page.id, page.name, category, module, author, '0.0.20', page.manifest)
+        lines[#lines + 1] = string.format('{id=%q,name=%q,category=%s,module=%s,moduleRoot=%s,providerPath=%s,configPath=%s,author=%s,version=%q,manifest=%q},',
+            page.id, page.name, category, module, moduleRoot, providerPath, configPath,
+            author, page.version or '0.0.20', page.manifest)
     end
     lines[#lines + 1] = '}}\n'
     return table.concat(lines, '\n')
@@ -97,7 +101,7 @@ function M.publish(root, menu)
     writeChanged(paths.manifest, menu.aggregate.manifest)
 end
 
-local function ensureConfig(path, rows, textSettings)
+local function ensureConfig(path, rows, textSettings, initialValues)
     recover(path)
     local file = io.open(path, 'rb')
     local existed = file ~= nil
@@ -139,7 +143,8 @@ local function ensureConfig(path, rows, textSettings)
         if row.mcNavigation ~= 1 then
             local index = present[row.Id]
             if not index then
-                local default = tonumber(row.Default)
+                local default = initialValues and initialValues[row.Id] or tonumber(row.Default)
+                assert(accepted(row, default), 'invalid initial setting ' .. row.Id)
                 missing[#missing + 1] = row.Id .. '=' .. string.format('%.17g', default)
             else
                 local raw = lines[index]:match('=%s*([^;#]+)')
@@ -151,7 +156,9 @@ local function ensureConfig(path, rows, textSettings)
     for settingId, spec in pairs(textSettings or {}) do
         local index = present[settingId]
         if not index then
-            missing[#missing + 1] = settingId .. '=' .. spec.default
+            local default = initialValues and initialValues[settingId] or spec.default
+            Provider.validateText(spec.format, default)
+            missing[#missing + 1] = settingId .. '=' .. default
         else
             local raw = lines[index]:match('=%s*([^;#]*)')
             Provider.validateText(spec.format, raw and raw:match('^%s*(.-)%s*$'))

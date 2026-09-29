@@ -64,6 +64,7 @@ function M.new(categories, api)
     local pendingRemoval = {}
     local built = {}
     local sink, getEpoch, subscribed, active = nil, nil, false, true
+    local mutationDepth, wakePending = 0, false
     local loading, currentWorld, generation = false, nil, 1
     local identityFailureReported=false
     local lifetimeMode=nil
@@ -240,10 +241,34 @@ function M.new(categories, api)
         remember(object)
         emit('changed',object)
     end
-    local function wakeKnown()
+    local function wakeKnownNow()
         for object in pairs(known) do
-            if source.valid(object) then emit('changed',object) end
+            if source.valid(object) then
+                -- A lifecycle event reconciles every cached candidate. One
+                -- representative object is enough to wake the runtime.
+                emit('changed',object)
+                return
+            end
         end
+    end
+    local function wakeKnown()
+        if mutationDepth > 0 then
+            wakePending = true
+            return
+        end
+        wakeKnownNow()
+    end
+    function source.mutate(callback)
+        assert(type(callback) == 'function', 'mutation callback required')
+        mutationDepth = mutationDepth + 1
+        local ok, first, second, third = pcall(callback)
+        mutationDepth = mutationDepth - 1
+        if mutationDepth == 0 and wakePending then
+            wakePending = false
+            wakeKnownNow()
+        end
+        if not ok then error(first, 0) end
+        return first, second, third
     end
     local function knownObject(object)
         if not ObjectSelector.valid(object) then return false end
@@ -366,6 +391,7 @@ function M.new(categories, api)
     function source.stop()
         if not active then return end
         active, sink, getEpoch, subscribed = false,nil,nil,false
+        mutationDepth, wakePending = 0, false
         for i=#hooks,1,-1 do
             local h=hooks[i]; pcall(api.UnregisterHook,h.path,h.pre,h.post)
         end

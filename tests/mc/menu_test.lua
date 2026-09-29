@@ -18,19 +18,16 @@ local function test(name, body)
     passed = passed + 1
 end
 local function field(id, default)
-    return {id=id, label=id, group='Layout', type='integer', min=0, max=100, default=default}
+    return {id=id, label=id, values={min=0,max=100,step=1}, default=default}
 end
-local function fixture(single, alphaTarget, betaTarget)
+local function fixture(single, alphaTarget, betaTarget, locationBase)
     local calls, errors = {}, {}
     local category = {name='player.quickslots', single=single, objects={root={source='lookup',object='switcher'}},
-        settings={constant=false}, menu={fields={field('Size', 10), field('Opacity', 50)},
-            groups={{id='Layout', label='Layout'}}}}
+        settings={constant=false}, menu={groups={{id='Layout', label='Layout',
+            fields={field('Size', 10), field('Opacity', 50)}}}}}
     local function template(id, target)
         local t = {id=id, name=id, category=category.name, objects={'root'},managed=false,
-            menu={enabled=true, target=target,
-            groups={{id='Layout',label='Layout'}}, fields={field('Size',20),
-                {id='Tab',label='Tab',group='Layout',type='navigation',values={0,1},labels={'One','Two'},default=0,
-                    linkProvider='ModCoreControls'}}}}
+            menuTarget=target,menu={{id='Layout',label='Layout',fields={field('Size',20)}}}}
         for _, operation in ipairs({'attach','update','detach'}) do
             t[operation] = function(object, params)
                 assert(params.screen.width==1920 and params.screen.top==1080)
@@ -41,7 +38,9 @@ local function fixture(single, alphaTarget, betaTarget)
     end
     local a,b = template('Alpha',alphaTarget or 'templates'), template('Beta',betaTarget)
     b.author='Example Author'
-    local locations = {'/Mods/Alpha/Scripts/templates/template.lua','/Mods/Beta/Scripts/templates/template.lua'}
+    locationBase = locationBase or '/Mods'
+    local locations = {locationBase..'/Alpha/Scripts/templates/template.lua',
+        locationBase..'/Beta/Scripts/templates/template.lua'}
     local model = Model.build({category}, {a,b}, locations)
     local menu = Menu.generate(model.registry)
     local object = {id='instance:1'}
@@ -89,8 +88,12 @@ test('copied manifests parse with actual DMM and ModCoreSettings', function()
         assert(#choices==#provider.rows)
     end
     assert(f.menu.pageByCategory['player.quickslots'] and f.menu.pageByModule.Beta)
-    assert(f.b.menu.target=='module', 'omitted menu target defaults to the module page')
+    assert(f.b.menuTarget=='module', 'omitted menu target defaults to the module page')
     assert(f.menu.pageByModule.Beta.author=='Example Author')
+    assert(f.menu.pageByModule.Beta.moduleRoot=='/Mods/Beta')
+    for _,choice in ipairs(Choices.parse(f.menu.pageByModule.Beta.manifest)) do
+        if not choice.mcNavigation then assert(choice.file=='config.ini') end
+    end
 end)
 
 test('module-target templates do not add controls to the MCT aggregate page', function()
@@ -110,6 +113,7 @@ test('module-target templates do not add controls to the MCT aggregate page', fu
     assert(#providers==2)
     for _,provider in ipairs(providers) do
         assert(provider.id~='ModCoreTemplates' and provider.settingsCount>0)
+        assert(provider.path=='/Mods/'..provider.name..'/enabled.txt')
     end
 end)
 
@@ -225,14 +229,14 @@ end)
 
 test('provider link opens the existing page without saving a second value', function()
     local f=fixture(true)
-    local linkId=f.definitions.Beta.navigation.Tab
+    local linkId=f.definitions.Beta.navigation.ControlLayoutLink
     local row
     for _,candidate in ipairs(f.menu.rows) do if candidate.Id==linkId then row=candidate end end
     assert(row and row.mcNavigation==1 and row.mcLinkProvider=='ModCoreControls')
     local extension=Extension.new(testRoot,f.menu)
     local page
     local api={choices=Choices,pages={build=function(_,providers)
-        page={rows={},controlStatus={}}
+        page={rows={},controlStatus={},transitions={}}
         for index in ipairs(providers) do page.rows[index]={providerIndex=index} end
         page.controls={show=function(self,index)
             self.active=index
@@ -241,8 +245,13 @@ test('provider link opens the existing page without saving a second value', func
                 dirty=function(model) return model.dirtyValue end}
         end,tick=function(_,activate) activate() end}
         function page:showDetail(index)
+            self.transitions[#self.transitions + 1] = 'detail:' .. providers[self.rows[index].providerIndex].id
             self.opened=providers[self.rows[index].providerIndex].id
             self.controls:show(self.rows[index].providerIndex)
+        end
+        function page:showBrowser()
+            self.transitions[#self.transitions + 1] = 'browser'
+            self.controls.model:restore()
         end
         return page
     end}}
@@ -266,12 +275,20 @@ test('provider link opens the existing page without saving a second value', func
     assert(betaIndex and linkIndex)
     view:showDetail(betaIndex)
     local model=view.controls.model
+    function model:restore() self.restored=(self.restored or 0)+1 end
     assert(view.controls:tick(function() model:set(linkIndex,0) end)==true)
-    assert(view.opened=='ModCoreControls' and model.saved==0)
+    assert(view.opened=='ModCoreControls' and model.saved==0 and model.restored==1)
+    assert(view.transitions[#view.transitions-1]=='browser'
+        and view.transitions[#view.transitions]=='detail:ModCoreControls',
+        'provider link must tear down its source detail before opening its target')
+    local transitionCount=#view.transitions
+    assert(view.controls:tick(function() end)~=true and #view.transitions==transitionCount,
+        'provider link must not repeat after the target page opens')
     view:showDetail(betaIndex)
     model=view.controls.model;model.dirtyValue=true
+    function model:restore() self.restored=(self.restored or 0)+1 end
     assert(view.controls:tick(function() model:set(linkIndex,0) end)==true)
-    assert(view.opened=='ModCoreTemplates.module.Beta' and model.saved==0)
+    assert(view.opened=='ModCoreTemplates.module.Beta' and model.saved==0 and not model.restored)
     assert(view.controlStatus.text:find('Apply or discard',1,true))
 end)
 
@@ -320,10 +337,11 @@ test('bootstrap generates menus at barrier and routes committed Apply to runtime
     local barrier,callbacks=nil,{}
     local definitions={category=f.category, [f.locations[1]]=f.a,[f.locations[2]]=f.b}
     local values=f.controller:values(); f.choose(values,'Alpha',true)
-    local boot=Bootstrap.new({host=f.host,categoryFiles={'category'},templateFiles=f.locations,
+    local boot=Bootstrap.new({host=f.host,categories={f.category},
         execute=function(path) return definitions[path] end,menuValues=values,
         settingsApi={subscribe=function(id,cb) callbacks[id]=cb; return function() end end},queue=function(fn) fn() end,
         subscribeLoopStart=function(cb) barrier=cb; return function() end end})
+    for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
     assert(boot.menu==nil); barrier(); assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
     assert(boot.menu and boot.extension and #f.calls==1)
     local page=boot.menu.pageByCategory['player.quickslots']
@@ -354,7 +372,8 @@ end)
 
 test('category text settings inherit and refresh from committed config', function()
     local f=fixture(true)
-    f.category.menu.fields[#f.category.menu.fields+1]={id='Caption',type='text',default='Initial'}
+    local fields=f.category.menu.groups[1].fields
+    fields[#fields+1]={id='Caption',type='text',default='Initial'}
     local model=Model.build({f.category},{f.a,f.b},f.locations)
     local menu=Menu.generate(model.registry)
     local runtime=Runtime.new(f.host,model.categories,model.templates)
@@ -373,7 +392,7 @@ end)
 
 test('disabled template metadata prevents lifecycle calls even when selected', function()
     local f=fixture(true)
-    f.a.menu.enabled=false
+    f.a.enabled=false
     local model=Model.build({f.category},{f.a,f.b},f.locations)
     local menu=Menu.generate(model.registry)
     local runtime=Runtime.new(f.host,model.categories,model.templates)
@@ -411,6 +430,38 @@ test('generated data goes into Scripts/cache and DMM resolves its nested config'
         and io.open(root..'/config.ini')==nil)
     local manifest=assert(io.open(paths.manifest)); manifest:close()
     assert(Files.readCatalog(root).next==f.menu.catalog.next)
+end)
+
+test('module settings are initialized in each template module folder', function()
+    local modules=testRoot..'/module-configs'
+    Layout.prepare(modules..'/Alpha')
+    Layout.prepare(modules..'/Beta')
+    local f=fixture(true,'module','module',modules)
+    local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
+    local menuRoot=testRoot..'/module-menu'
+    local legacyPath=Layout.prepare(menuRoot).config
+    local legacy=assert(io.open(legacyPath,'wb'))
+    legacy:write('[Templates]\n'..f.definitions.Beta.settings.Size..'=73\n');legacy:close()
+    local barrier
+    local boot=Bootstrap.new({host=f.host,categories={f.category},
+        execute=function(path) return definitions[path] end,menuRoot=menuRoot,
+        subscribeLoopStart=function(cb) barrier=cb; return function() end end})
+    for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
+    barrier()
+    assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
+    for _,name in ipairs({'Alpha','Beta'}) do
+        local input=assert(io.open(modules..'/'..name..'/config.ini','rb'))
+        local content=input:read('*a');input:close()
+        assert(content:find('[Templates]',1,true))
+        if name=='Beta' then
+            assert(content:find(f.definitions.Beta.settings.Size..'=73',1,true))
+        end
+    end
+    local central=assert(io.open(menuRoot..'/Scripts/cache/config.ini','rb'))
+    local centralContent=central:read('*a');central:close()
+    assert(not centralContent:find(f.definitions.Alpha.settings.Size,1,true)
+        and not centralContent:find(f.definitions.Beta.settings.Size,1,true))
+    boot:stop()
 end)
 
 test('empty template menus still create a readable config', function()

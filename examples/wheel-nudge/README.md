@@ -5,10 +5,12 @@ width and height. It uses the existing `player.quickslots` category.
 
 It requires a working ModCore Templates installation and its menu integration.
 
-Place this example's `Scripts/templates` folder under an installed module, for example
-`Mods/WheelNudge/Scripts/templates`. MCT discovers `Scripts/templates/main.lua`, which
-loads [mc_nudge.lua](Scripts/templates/mc_nudge.lua), defines the callback, and
-returns the template. Select **Wheel Nudge** under `player.quickslots` in the menu.
+Place this example's `Scripts` folder under an installed module, for example
+`Mods/WheelNudge/Scripts`. UE4SS loads `Scripts/main.lua`, which registers
+[mc_nudge.lua](Scripts/mc_nudge.lua) with MCT through `M.addTemplate('nudge')`.
+The example `mod.json` supplies its module ID, author, and version; the template
+itself declares `category='player.quickslots'`.
+Select **Wheel Nudge** under `player.quickslots` in the menu.
 
 Apply that selection, then open the **WheelNudge** module settings page. Both
 offsets default to zero, so the wheel stays in place until you change them and
@@ -24,7 +26,7 @@ does not search for or retain widgets. MCT deep-copies category settings before
 overlaying this template's values. On a committed setting change, MCT restores
 the saved position and calls `attach` again. On detach, it restores the position.
 
-The full callback and shared helper are in [main.lua](Scripts/templates/main.lua).
+The full declaration and callback are in [mc_nudge.lua](Scripts/mc_nudge.lua).
 
 Managed attachments that subscribe to events register an unsubscribe callback with
 `params.onCleanup(unsubscribe)`. MCT runs cleanup before restoration on update,

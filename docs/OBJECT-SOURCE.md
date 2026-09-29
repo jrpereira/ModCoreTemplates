@@ -1,10 +1,10 @@
 # UE4SS object source
 
 `Scripts/main.lua` loads category names from `Scripts/categories/mc.lua` and
-uses `mc.template_discovery` to find installed modules with a
-`Scripts/templates` folder. `mc.lua` is the preferred template loader;
-`main.lua` remains supported. `mc.lua_startup` creates the Lua object source
-and reference host, then schedules startup on UE4SS's game thread.
+accepts template paths registered directly through `mc.addTemplate`. It performs
+no installed-module scan.
+`mc.lua_startup` creates the Lua object source and reference host, then schedules
+startup on UE4SS's game thread.
 
 The source subscribes to UE4SS notifications before the runtime's first
 snapshot. The initial snapshot and new-world snapshots use `FindAllOf` once

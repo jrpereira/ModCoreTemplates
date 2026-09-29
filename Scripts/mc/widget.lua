@@ -73,8 +73,11 @@ function M.reparent(widget, parent)
     return slot
 end
 
-function M.measure(widget)
+function M.prepareLayout(widget)
     widget:ForceLayoutPrepass()
+end
+
+function M.measure(widget)
     local size = widget:GetDesiredSize()
     local width, height = M.number(size, 'X'), M.number(size, 'Y')
     assert(width > 0 and height > 0, 'widget layout size is not ready')

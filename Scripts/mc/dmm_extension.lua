@@ -57,6 +57,12 @@ local function installLinks(page, providers, hostApi)
             if provider.id == target and not provider.noSettings then
                 for rowIndex, row in ipairs(page.rows) do
                     if row.providerIndex == index then
+                        -- DMM normally reaches a detail page from its browser. Preserve
+                        -- that lifecycle here: hiding the source detail restores its
+                        -- transient model and clears its input state before the linked
+                        -- provider is shown. A direct detail-to-detail replacement can
+                        -- leave the activating picker alive and repeatedly activate it.
+                        if type(page.showBrowser) == 'function' then page:showBrowser() end
                         page:showDetail(rowIndex)
                         return true
                     end
@@ -146,7 +152,7 @@ return {
                     description = page.description or ('Templates and settings for ' .. page.name .. '.'),
                     choices = choices,
                     settingsCount = #choices,
-                    path = root .. '/mod_settings.ini',
+                    path = page.providerPath or root .. '/mod_settings.ini',
                     testOnly = false,
                     logoFile = '',
                     logoAsset = '',

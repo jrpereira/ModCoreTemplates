@@ -128,12 +128,16 @@ function M.new(host, definitions, templates)
         record.definition.settings = copy(record.settings)
         record.revision = record.revision + 1
     end
+    local function mutate(callback)
+        if type(host.mutate) == 'function' then return host.mutate(callback) end
+        return callback()
+    end
     local function invoke(record, operation, object, settings, targets, oldScreen)
         settings = settings or record.settings
         -- Publish the same effective values for callbacks using template.settings.
         record.definition.settings = copy(settings)
         local screen
-        local ok, value, why = pcall(function()
+        local ok, value, why = pcall(function() return mutate(function()
             -- Templates receive the underlying UObject only after a final validity check.
             if not host.valid(object) then return false, 'not_ready' end
             if operation == 'detach' then screen=oldScreen end
@@ -150,7 +154,7 @@ function M.new(host, definitions, templates)
                 return record.manager[operation](record.manager,target,named,params)
             end
             return record.definition[operation](target, params, named)
-        end)
+        end) end)
         record.definition.settings = copy(record.settings)
         if ok and value ~= false then return true, screen end
         if not (ok and type(why)=='string' and
@@ -220,8 +224,7 @@ function M.new(host, definitions, templates)
                 local record=category.templates[id]
                 if record.enabled then
                     local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
-                    -- A managed template may reparent its own targets (for
-                    -- example Fangdango's Distant wheel). Keep those valid
+                    -- A managed template may reparent its own targets. Keep those valid
                     -- targets in the resolved bundle until the manager detaches
                     -- them, including reconciliations without a settings change.
                     for token,attached in pairs(record.attached) do
@@ -247,13 +250,13 @@ function M.new(host, definitions, templates)
                 local bundles=resolved[id] and resolved[id].bundles or {}
                 for _, token in ipairs(keys(record.pending)) do
                     local pending=record.pending[token]
-                    local ok,why=pcall(function()
+                    local ok,why=pcall(function() return mutate(function()
                         if host.valid(pending.object) and targetsValid(pending.targets,host) then
                             assert(record.manager:detach(pending.root))
                         else
                             record.manager:forget(pending.root)
                         end
-                    end)
+                    end) end)
                     if ok then record.pending[token]=nil
                     else
                         failedInTurn[record]=failedInTurn[record] or {}

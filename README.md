@@ -5,7 +5,8 @@ The fresh lifecycle design and executable draft are documented in
 routing described in [Template menus](docs/MENUS.md). The previous runtime remains available in Git history while this implementation
 is being tested in Dawnwalker.
 
-Mod data lives in `Scripts/templates`, `Scripts/categories`, and `Scripts/cache`.
+Mod data lives in `Scripts/categories` and `Scripts/cache`; providers keep their
+explicitly registered template entries in their own `Scripts` folders.
 Generated settings and page data use the cache; DMM's `mod_settings.ini` stays at root.
 
 Build modular game-feature and UI customizations as Lua templates. Register
@@ -44,12 +45,18 @@ A template must include `switcher`, `hud_root`, and `actions` in its `objects`
 declaration to use them.
 
 If no category describes the objects you need, define one with its own target
-selectors. Put settings shared by its templates in the category's `menu.fields`
+selectors. Put settings shared by its templates in the category's `menu.groups[].fields`
 (and defaults in `settings`). MCT deep-copies the category settings, then overlays
 deep-copied template defaults and committed values by key. Nested tables are copied
 too; overriding a key replaces that whole value rather than merging its members.
 A template can therefore use a category field directly or override its value with
 a template field of the same ID, without changing the category's copy.
+
+Template menus are ordered arrays of groups. Fields may use a leading-dot relative
+ID (`Wheels + .X` becomes `WheelsX`), and `values` may be a numeric range, a
+numeric-to-label picker map, or a named domain such as `percent`. Templates declare
+variations separately; variation branches belong to whole groups. MCT supplies the
+standard Control Layout link automatically. See [Template menus](docs/MENUS.md).
 
 ### Attach and update
 
@@ -77,16 +84,20 @@ its lifecycle; then implement
 `detach(root, params, objects)` yourself; `update` must reapply the new settings
 without accumulating changes from the previous call.
 
-### Share behavior in `main.lua`
+### Register templates
 
-When several templates use the same widget operations, load their declarations in
-`main.lua`, define the common functions once, then attach the template-specific
-callbacks and return the loaded templates. The [example main.lua](examples/wheel-nudge/Scripts/templates/main.lua)
-shows that pattern with one template; more templates can reuse the same helper.
+Keep each template's object, menu declaration, and callbacks in its own file. A
+provider's UE4SS `Scripts/main.lua` registers each sibling template; MCT does not
+scan installed modules:
 
-Keep each template's object and menu declarations in its own file. MCT loads only
-`mc.lua` when present, or `main.lua` for existing modules, so the returned list
-determines which templates it registers. Declare the properties changed by shared helpers in each template's
+```lua
+local M = require('mc')
+M.addTemplate('layout')
+```
+
+This registers `mc_layout.lua`; that template declares its own category. MCT loads
+it at the startup barrier and discovers the module ID, author, and version from
+the provider's `mod.json`. Declare the properties changed by shared helpers in each template's
 `objects`, allowing MCT to restore them.
 
 ## Requirements and installation
@@ -99,10 +110,10 @@ earlier map-scoped address and full-name identity so templates can still attach.
 This fallback cannot distinguish an object recreated at the same address with
 the same name before a map change; native lifetime capture remains preferred.
 Other capture failures leave the affected object unattached. Install under
-`Mods/_ModCore_Templates` and enable the mod.
+`Mods/_ModCore_3_Templates` and enable the mod.
 Disable the old `_UE4SSTemplatingEngine` installation before starting the game.
-The Lua runtime starts on UE4SS's game thread. It discovers installed modules with a `Scripts/templates` folder, loading
-each folder's `mc.lua` or `main.lua` when present and otherwise loading its Lua template files.
+The Lua runtime starts on UE4SS's game thread and consumes only explicit provider
+registrations made before its startup barrier.
 
 ModCoreControls owns input separately. Select a visual template without moving
 its input bindings into the template; one wheel should not need two steering columns.

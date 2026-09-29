@@ -12,8 +12,10 @@ local function defaults(groups, values)
     return result
 end
 local function overrideDefaults(declaration, values)
-    for _, field in ipairs(declaration.fields or {}) do
-        if field.type ~= 'navigation' and values[field.id] ~= nil then field.default = values[field.id] end
+    for _, group in ipairs(declaration.groups or {}) do
+        for _, field in ipairs(group.fields or {}) do
+            if field.type ~= 'navigation' and values[field.id] ~= nil then field.default = values[field.id] end
+        end
     end
 end
 
@@ -48,18 +50,20 @@ function M.build(definitions, templates, locations)
             or (template.settings.fields == nil and template.settings.groups == nil
                 and template.settings.target == nil),
             'template menu declaration belongs in template.menu')
-        local declaration = U.copy(template.menu or {})
-        if declaration.target == nil then declaration.target = 'module' end
-        if declaration.enabled == nil then declaration.enabled = true end
+        template.menuTarget = template.menuTarget or 'module'
+        local declaration = Provider.template(template.menu, template.variations)
+        declaration.target = template.menuTarget
+        declaration.enabled = template.enabled ~= false
         local values = U.copy(template.settings or {})
         overrideDefaults(declaration, values)
         values = defaults(Provider.normalize(declaration), values)
         template.id = template.id or U.identity(template)
         template.name = template.name or template.id
         -- Preserve template identity: callbacks may close over this table.
-        template.menu, template.settings = declaration, values
+        template.settings = values
         local metadata = {name=template.name, category=template.category,
-            module=template.module, author=template.author, menu=declaration}
+            module=template.module, author=template.author, version=template.version,
+            menu=declaration}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             single=category.single, location=assert(locations[index], 'template source path required')}
     end

@@ -253,8 +253,14 @@ function M.generate(registry, options)
                             if field.after == after then
                                 assert(not field.after or category == 'player.quickslots',
                                     'AccessMethod placement requires player.quickslots')
+                                local groupSource, groupValues = ownerSelector, ownerValue
+                                if providerGroup.variationSource then
+                                    groupSource = assert(providerFieldIds[providerGroup.variationSource],
+                                        'group variation source must precede its group')
+                                    groupValues = table.concat(providerGroup.variationValues, '|')
+                                end
                                 groupId = groupId or group(key({identity, 'provider', providerGroup.id}),
-                                    providerGroup.label, ownerSelector, ownerValue, ownerSelector, ownerValue,
+                                    providerGroup.label, ownerSelector, ownerValue, groupSource, groupValues,
                                     providerGroup.level, providerGroup.heading == false and 0 or nil,
                                     scopePrefix .. publicName(providerGroup.id))
                                 local settingId = namedId(scopePrefix .. publicName(field.id),
@@ -263,6 +269,10 @@ function M.generate(registry, options)
                                     Type=field.type == 'navigation' and 'picker' or field.type,
                                     Default=field.default, Description=field.description, mcLevel=field.level,
                                     mcLinkProvider=field.linkProvider}
+                                if providerGroup.variationSource then
+                                    metadata.VisibleWhen = ownerSelector
+                                    metadata.VisibleValues = ownerValue
+                                end
                                 if field.visibleWhen then
                                     local sourceId = providerFieldIds[field.visibleWhen]
                                     assert(sourceId, 'provider visibility source must precede dependent field: '
@@ -307,7 +317,7 @@ function M.generate(registry, options)
         for _, name in ipairs(names) do target[#target + 1] = name .. '=' .. tostring(fields[name]) end
         target[#target + 1] = ''
     end
-    local function providerManifest(providerId, providerName, selectedRows, aggregatePage)
+    local function providerManifest(providerId, providerName, selectedRows, aggregatePage, configFile)
         local output = {}
         local headerPickers = 0
         for _, item in ipairs(selectedRows) do
@@ -331,7 +341,15 @@ function M.generate(registry, options)
                 append(output, 'Category.' .. groupId, fields)
             end
         end
-        for _, item in ipairs(selectedRows) do append(output, 'Setting.' .. item.Id, item) end
+        for _, item in ipairs(selectedRows) do
+            if configFile and item.mcNavigation ~= 1 then
+                local stored = U.copy(item)
+                stored.ConfigFile = configFile
+                append(output, 'Setting.' .. item.Id, stored)
+            else
+                append(output, 'Setting.' .. item.Id, item)
+            end
+        end
         local manifest = table.concat(output, '\n')
         assert(#manifest <= 256 * 1024, 'generated manifest exceeds 256 KiB')
         return manifest
@@ -454,7 +472,8 @@ function M.generate(registry, options)
         end
         return selected
     end
-    local categoryOwned, moduleOwned, moduleCategories, moduleAuthors = {}, {}, {}, {}
+    local categoryOwned, moduleOwned, moduleCategories, moduleAuthors, moduleVersions, moduleRoots =
+        {}, {}, {}, {}, {}, {}
     for _, entry in ipairs(entries) do
         local template = entry.template
         if template.menu.target == 'templates' then
@@ -463,16 +482,27 @@ function M.generate(registry, options)
         else
             local normalized = entry.location:gsub('\\', '/'):gsub('%[%d+%]$', '')
             local parent = normalized:match('^(.*)/Scripts/templates/[^/]+%.lua$')
+                or normalized:match('^(.*)/Scripts/[^/]+%.lua$')
             local module = template.module or (parent and parent:match('([^/]+)$'))
             assert(module and module ~= '', entry.location
-                .. ': target=module requires a <Module>/Scripts/templates/<file>.lua registration path')
+                .. ': target=module requires a <Module>/Scripts/<file>.lua registration path')
             module = module:gsub('^_', '')
             moduleOwned[module], moduleCategories[module] = moduleOwned[module] or {}, moduleCategories[module] or {}
+            if parent then
+                assert(not moduleRoots[module] or moduleRoots[module] == parent,
+                    module .. ': templates resolve to different module roots')
+                moduleRoots[module] = parent
+            end
             moduleOwned[module][entry.id], moduleCategories[module][template.category] = true, true
             if template.author then
                 assert(not moduleAuthors[module] or moduleAuthors[module] == template.author,
                     module .. ': templates disagree on author')
                 moduleAuthors[module] = text(template.author)
+            end
+            if template.version then
+                assert(not moduleVersions[module] or moduleVersions[module] == template.version,
+                    module .. ': templates disagree on version')
+                moduleVersions[module] = text(template.version)
             end
         end
     end
@@ -492,8 +522,13 @@ function M.generate(registry, options)
     for _, module in ipairs(moduleNames) do
         local providerId = aggregateId .. '.module.' .. publicName(module)
         local selectedRows = routedRows(moduleCategories[module], moduleOwned[module])
-        local page = {id=providerId, name=module, module=module, author=moduleAuthors[module], rows=selectedRows,
-            manifest=providerManifest(providerId, module, selectedRows, false)}
+        local moduleRoot = moduleRoots[module]
+        local page = {id=providerId, name=module, module=module, moduleRoot=moduleRoot,
+            providerPath=moduleRoot and moduleRoot .. '/enabled.txt' or nil,
+            configPath=moduleRoot and moduleRoot .. '/config.ini' or nil,
+            author=moduleAuthors[module],version=moduleVersions[module],rows=selectedRows,
+            manifest=providerManifest(providerId, module, selectedRows, false,
+                moduleRoot and 'config.ini' or nil)}
         page.decode = makeDecoder(page.rows, moduleCategories[module], moduleOwned[module])
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end

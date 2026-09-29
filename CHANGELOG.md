@@ -1,5 +1,13 @@
 # Changelog
 
+- Add caller-relative `mc.addTemplate(name)` registration, discover provider
+  metadata from `mod.json`, and add the one-shot optional `template.loaded()` initializer.
+- Load category definitions once and move menu/config/runtime assembly out of bootstrap.
+- Tear down the current settings detail page before following a provider link, preventing the activating picker from repeatedly reopening its target.
+- Store module-target template settings in that module's `config.ini` instead of ModCoreTemplates, migrating any matching values from the former shared config on first startup.
+- Replace installed-module template scanning with explicit provider registration and support provider entries directly under `Scripts/`.
+- Rename the installed mod folder to `_ModCore_3_Templates`.
+
 ## 0.0.20
 
 - Align category and lifecycle tests with visual-only quickslot ownership.

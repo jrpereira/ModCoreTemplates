@@ -251,16 +251,17 @@ test('startup defers template execution until barrier and accepts other modules'
     local f = fixture()
     f.object('one')
     local barrier, stopped, executed = nil, 0, {}
-    local definitions = {category=f.categories[1], own=f.a, external=f.b}
-    local boot = Bootstrap.new({host=f.host, categoryFiles={'category'}, templateFiles={'own'},
+    local definitions = {own=f.a, external=f.b}
+    local boot = Bootstrap.new({host=f.host,categories=f.categories,
         execute=function(path) executed[#executed+1] = path; return definitions[path] end,
         selections={['player.quickslots']={a={size=3},b={size=4}}},
         subscribeLoopStart=function(callback) barrier=callback; return function() stopped=stopped+1 end end})
-    assert(#executed == 1 and #f.calls == 0)
+    assert(#executed==0 and #f.calls==0)
+    assert(boot:registerTemplate('own'))
     assert(boot:registerTemplate('external') and not boot:registerTemplate('external'))
     barrier()
-    assert(boot.phase == 'running' and #executed == 3 and #f.calls == 2 and stopped == 1)
-    barrier(); assert(#executed == 3)
+    assert(boot.phase=='running' and #executed==2 and #f.calls==2 and stopped==1)
+    barrier();assert(#executed==2)
     assert(not pcall(function() boot:registerTemplate('late') end))
 end)
 
@@ -268,17 +269,39 @@ test('template main can return multiple definitions', function()
     local f=fixture()
     f.object('one')
     local barrier
-    local boot=Bootstrap.new({host=f.host,categoryFiles={'category'},templateFiles={'bundle'},
+    local boot=Bootstrap.new({host=f.host,categories=f.categories,
         execute=function(path)
-            if path=='category' then return f.categories[1] end
             return {f.a,f.b}
         end,
         selections={['player.quickslots']={a={size=3},b={size=4}}},
         subscribeLoopStart=function(callback) barrier=callback; return function() end end})
+    boot:registerTemplate('bundle')
     barrier()
     local count=0
     for _ in pairs(boot.menu.definitions['player.quickslots']) do count=count+1 end
     assert(boot.phase=='running' and count==2 and #f.calls==2)
+end)
+
+test('template loaded hook runs once before model construction', function()
+    local f=fixture()
+    local barrier,loads=nil,0
+    local template=f.a
+    template.loaded=function() loads=loads+1 end
+    local boot=Bootstrap.new({host=f.host,categories=f.categories,
+        execute=function(path)
+            local value={}
+            for key,entry in pairs(template) do value[key]=entry end
+            value.category='player.quickslots'
+            value.module='Test'
+            return value
+        end,
+        subscribeLoopStart=function(callback) barrier=callback;return function() end end})
+    boot:registerTemplate('template')
+    assert(loads==0 and boot.phase=='registering')
+    barrier()
+    assert(loads==1 and boot.phase=='running')
+    barrier()
+    assert(loads==1)
 end)
 
 test('subscription is active before snapshot and duplicate notifications are harmless', function()

@@ -1,10 +1,10 @@
--- _ModCore_Templates Lua entry point.
+-- _ModCore_3_Templates Lua entry point.
 local source = debug.getinfo(1, 'S').source:gsub('^@', '')
 local scripts = assert(source:match('^(.*)[/\\][^/\\]+$'), 'cannot locate MCT Scripts')
 local root = assert(scripts:match('^(.*)[/\\]Scripts$'), 'cannot locate MCT module')
 package.path = scripts .. '/?.lua;' .. package.path
-local TemplateDiscovery = require('mc.template_discovery')
-assert(type(IterateGameDirectories)=='function', 'UE4SS directory API unavailable')
+-- Install the public registrar before later provider mods load.
+local MC=require('mc')
 local function listedCategories()
     local names = assert(loadfile(root .. '/Scripts/categories/mc.lua'))()
     assert(type(names) == 'table', 'invalid category source list')
@@ -22,7 +22,9 @@ end
 local bootstrap = require('mc.lua_startup').start({
     menuRoot = root,
     categoryFiles = listedCategories(),
-    templateFiles = TemplateDiscovery.discover(root, IterateGameDirectories()),
     settingsApi = require('mc.settings_api'),
 })
+MC._setTemplateRegistrar(function(path)
+    return bootstrap:registerTemplate(path)
+end)
 return bootstrap

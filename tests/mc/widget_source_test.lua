@@ -122,6 +122,14 @@ assert(acceptsVersion(5,nil) and acceptsVersion(nil,5),
 assert(not acceptsVersion(4,4), 'older API versions must be rejected')
 assert(created[classPath] and created['/Script/UMG.WidgetSwitcher'] and created['/Script/UMG.SlotWidget'])
 local host=References.new(source)
+local lifecycleEvents=0
+local subscribe=host.subscribe
+host.subscribe=function(callback,epoch)
+    return subscribe(function(event)
+        lifecycleEvents=lifecycleEvents+1
+        callback(event)
+    end,epoch)
+end
 local calls={}
 local template={id='visual',category='quickslots',objects={'switcher','slots'},managed=false}
 for _,name in ipairs({'attach','update','detach'}) do
@@ -136,6 +144,13 @@ local wrap=function(o) return {get=function() return o end} end
 hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(owner))
 assert(#calls==1 and calls[1][1]=='attach' and calls[1][2]==root
     and calls[1][3].settings.size==2 and calls[1][3].screen.top==1080)
+source.mutate(function()
+    hooks['/Script/UMG.PanelWidget:AddChild'].post(wrap(root),wrap(child))
+    hooks['/Script/UMG.PanelWidget:RemoveChild'].post(wrap(root),wrap(child))
+    hooks['/Script/UMG.PanelWidget:ClearChildren'].post(wrap(root))
+end)
+assert(#calls==1, 'template-owned panel mutations must not repeat template callbacks')
+assert(lifecycleEvents==2, 'one template mutation must produce one follow-up lifecycle event')
 local previousMatches,selectorChecks=source.matches,0
 source.matches=function(...)
     selectorChecks=selectorChecks+1

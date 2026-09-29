@@ -1,0 +1,8 @@
+{
+  "manifest_version": 1,
+  "id": "WheelNudge",
+  "name": "Wheel Nudge",
+  "author": "Example",
+  "version": "1.0.0",
+  "description": "Example ModCoreTemplates provider."
+}

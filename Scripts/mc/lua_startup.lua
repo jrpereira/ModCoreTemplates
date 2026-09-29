@@ -6,13 +6,17 @@ function M.start(options, api)
     assert(type(api.ExecuteInGameThread) == 'function', 'game-thread dispatch unavailable')
     local configured = {}
     for key, value in pairs(options) do configured[key] = value end
-    if not configured.host and not configured.objectSource then
-        local definitions = {}
-        local execute = configured.execute or function(path) return assert(loadfile(path))() end
-        for _, path in ipairs(configured.categoryFiles or {}) do
-            definitions[#definitions+1] = execute(path)
+    if not configured.categories then
+        configured.categories={}
+        local execute=configured.execute or function(path) return assert(loadfile(path))() end
+        for _,path in ipairs(configured.categoryFiles or {}) do
+            local category=execute(path)
+            assert(type(category)=='table',path..': expected category definition')
+            configured.categories[#configured.categories+1]=category
         end
-        configured.objectSource = require('mc.widget_source').new(definitions, api)
+    end
+    if not configured.host and not configured.objectSource then
+        configured.objectSource = require('mc.widget_source').new(configured.categories, api)
     end
     if configured.objectSource then
         assert(not configured.host, 'supply either objectSource or host')
@@ -26,7 +30,6 @@ function M.start(options, api)
         api.ExecuteInGameThread(function() if active then callback() end end)
         return function() active = false end
     end
-    configured.startOnGameThread = api.ExecuteInGameThread
     configured.queue = api.ExecuteInGameThread
     if configured.menuRoot then configured.menuShared = assert(api.ModRef, 'ModRef unavailable') end
     return Bootstrap.new(configured)

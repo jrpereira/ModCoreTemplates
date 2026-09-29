@@ -23,19 +23,32 @@ write('entry.lua','local value=require("mc").template("custom.lua"); return valu
 assert(assert(loadfile(directory..'/entry.lua'))().name=='custom')
 write('mc_defaults.lua','return {name="own",settings={Size=75}}\n')
 write('entry.lua',[[local MC=require('mc')
-local defaults={module='Fangdango',name='shared',settings={Size=100}}
+local defaults={module='VisualExample',name='shared',settings={Size=100}}
 return MC.template('defaults',defaults),MC.template('defaults',defaults),defaults
 ]])
 local first,second,defaults=assert(loadfile(directory..'/entry.lua'))()
-assert(first.name=='own' and first.module=='Fangdango' and first.managed==nil)
-assert(first.enabled==true and first.menu.target=='module')
+assert(first.name=='own' and first.module=='VisualExample' and first.managed==nil)
+assert(first.enabled==true and first.menuTarget=='module')
 assert(first.settings.Size==75 and defaults.settings.Size==100)
-first.menu.fields[1]={id='changed'}
-assert(#second.menu.fields==0 and first.menu~=second.menu)
+first.menu[1]={id='changed'}
+assert(#second.menu==0 and first.menu~=second.menu)
 first.settings.Size=10
 assert(second.settings.Size==75 and defaults.settings.Size==100)
 ok,why=pcall(MC.template,'../sample')
 assert(not ok and tostring(why):find('simple file stem',1,true))
 ok,why=pcall(MC.template,'../sample.lua')
 assert(not ok and tostring(why):find('simple Lua filename',1,true))
-print('PASS: public MC object, widget, and sibling template helpers')
+local entries,seen={},{}
+MC._setTemplateRegistrar(function(path)
+    if seen[path] then return false end
+    seen[path]=true;entries[#entries+1]={path=path};return true
+end)
+write('provider.lua',[[local M=require('mc')
+return M.addTemplate('sample'),M.addTemplate('sample')
+]])
+local added,duplicate=assert(loadfile(directory..'/provider.lua'))()
+assert(added and duplicate==false)
+assert(#entries==1 and entries[1].path==directory..'/mc_sample.lua')
+ok,why=pcall(MC.addTemplate,'sample',{})
+assert(not ok and tostring(why):find('module manifest',1,true))
+print('PASS: public MC object, widget, sibling template, and registration helpers')

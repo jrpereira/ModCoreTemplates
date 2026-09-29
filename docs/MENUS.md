@@ -10,7 +10,7 @@ at the startup barrier, before attaching objects.
 ```text
 <Mod>/
 ├── Scripts/                  Lua entry points, runtime code, and mod data
-│   ├── templates/            Template source files
+│   ├── mc_<name>.lua         Explicitly registered template declarations
 │   ├── categories/           Category source files
 │   └── cache/
 │       ├── config.ini        Saved settings; preserve this file
@@ -19,44 +19,52 @@ at the startup barrier, before attaching objects.
 └── mod_settings.ini          Required here for DMM discovery
 ```
 
-Generated files go into `Scripts/cache` unless the host requires another location.
-DMM requires its discovery manifest at the mod root, but supports the relative
-`ConfigFile=Scripts/cache/config.ini` path. The cache directory also contains user
-settings and stable IDs, so its contents must not be discarded as disposable data.
+Generated catalogs, page metadata, and aggregate/category settings go into
+`Scripts/cache`. DMM requires its discovery manifest at the mod root and supports
+the relative `ConfigFile=Scripts/cache/config.ini` path. A module-target page instead
+uses `ConfigFile=config.ini` with the provider rooted in that template module, so
+Fangdango settings are stored in `_ModCore_X_Fangdango/config.ini`. On the first startup
+after this change, matching values in the former shared config are copied to the
+module config. Both locations contain user settings and must be preserved.
 
 ## Where pages appear
 
 - **ModCore Templates:** category selectors, template toggles and shared category settings.
 - **Category page:** fields for templates explicitly targeting `templates`.
 - **Module page:** the default location for template fields; the module
-  name comes from the registered `<Module>/Scripts/templates/<file>.lua` path.
+  name comes from the registered `<Module>/Scripts/<file>.lua` path.
+
+Set `menuTarget='templates'` on a template only when its fields belong on the
+category page rather than its module page.
 
 Single categories get a template picker with `None`. Other categories get a toggle
-per template. A template with `menu.enabled = false` remains represented in the
+per template. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
 
 ## Field declarations
 
-Keep runtime values in `settings` and UI declarations in `menu`. The field/group
-schema is copied from the previous implementation:
+Keep runtime values in `settings`. A template's `menu` is its ordered list of
+groups; MCT renders variations first, the standard Control Layout link second,
+and these groups last:
 
 ```lua
 local template = {
     id = 'example.quickslots',
     name = 'Example quickslots',
     category = 'player.quickslots',
-    settings = {RestoreOriginal = true},
-    menu = {
-        enabled = true,
-        -- target = 'templates' routes these fields to a category page instead.
-        groups = {{id='Layout', label='Layout'}},
-        fields = {
-            {id='Size', label='Size', group='Layout', type='integer',
-                min=10, max=200, default=100, suffix='%'},
-            {id='Style', label='Style', group='Layout', type='picker',
-                values={0,1}, labels={'Swap','Stack'}, default=0},
+    variations = {
+        style = {
+            description = 'Choose the visual arrangement.',
+            values = {[0]='Swap', [1]='Stack'},
+            default = 0,
         },
+    },
+    menu = {
+        {id='Layout', label='Layout', variation={style=1}, fields={
+            {id='.Size', label='Size',
+                values={min=10,max=200,step=1,suffix='%'}, default=100},
+        }},
     },
 }
 
@@ -66,17 +74,34 @@ end
 return template
 ```
 
-Categories use the same `menu.groups` / `menu.fields` declarations, without
-`target` or `enabled`. Their values are shared and templates override matching keys.
-Numeric fields, choice fields, grouping, conditional visibility, tabs and navigation
-pickers retain the copied schema. Category text fields remain config-only.
-Navigation fields are neither persisted nor delivered to callbacks.
+The leading dot makes a child ID relative and is removed when IDs are composed:
+`Layout + .Size` becomes the existing flat key `LayoutSize`. An absolute child ID
+is left unchanged. A group under a variation may likewise use a relative ID, but
+an absolute group ID is usually clearer and preserves existing keys.
 
-The prior `settings={target=..., enabled=..., groups=..., fields=...}` declaration
-shape is also accepted at the bootstrap boundary. It is normalized into menu
-metadata plus default runtime values before the lifecycle starts. This does not
-adapt old callback signatures: templates still need the fresh attach/update/detach
-contract. Category `single` controls selection multiplicity.
+`values` defines the field domain and `default` remains a separate, explicit field
+property. A range table such as `{min=-1000,max=1000,step=10}` produces an integer.
+A numeric-keyed label map such as `{[85]='Small',[100]='Medium'}` produces a picker,
+ordered by numeric value. A named internal domain such as `values='percent'`
+expands to the validated 0..100 integer range with a `%` suffix. `tab=true` renders
+a picker as tabs. MCT infers the field type; templates do not declare `type`,
+parallel `labels`, or field-level visibility metadata.
+
+A field may also appear directly in the `menu` array when it needs no visual group.
+Its ID must be absolute. MCT places it in an unheaded generated section while
+preserving its position in the menu declaration.
+
+A group with `variation={style=1}` is a branch of that variation. MCT applies the
+condition to the generated group; all its fields inherit it. A group without
+`variation` is shared. Variation values remain ordinary effective settings using
+the title-cased variation ID (`style` becomes `Style`).
+
+Categories retain their shared `menu.groups[].fields` declaration. Their values
+are shared and templates override matching keys. Category text fields remain
+config-only. Generated navigation fields are neither persisted nor delivered to
+callbacks.
+
+Category `single` controls selection multiplicity.
 
 ## Startup integration
 
@@ -93,12 +118,13 @@ options, provide:
 | `menu` | Generator options, such as `description` or an in-memory identity catalog |
 | `menuValues` | Initial committed setting-ID values for an in-memory host without `menuRoot` |
 
-When `menuRoot` is supplied, its saved configuration takes precedence over
-`menuValues`. Missing config keys are added; existing values and unrelated sections
-are preserved. Invalid saved values are reported rather than silently overwritten.
-Startup creates `Scripts/templates`, `Scripts/categories` and `Scripts/cache` as
-needed. Generated config, identity catalog, and pages are stored directly in
-`Scripts/cache`. Without `menuRoot`,
+When `menuRoot` is supplied, saved central and module configurations take precedence
+over `menuValues`. Missing config keys are added; existing values and unrelated
+sections are preserved. Invalid saved values are reported rather than silently
+overwritten.
+Startup creates `Scripts/categories` and `Scripts/cache` as
+needed. The central config, identity catalog, and pages are stored directly in
+`Scripts/cache`; module-target configs are stored at their module roots. Without `menuRoot`,
 generation and Apply routing work in memory and do not write any files.
 
 For direct in-memory integration, pass `bootstrap.extension` to DMM's extension

@@ -3,7 +3,7 @@ local M = {configFile='Scripts/cache/config.ini'}
 function M.paths(root)
     assert(type(root) == 'string' and root ~= '', 'mod root required')
     root = root:gsub('[/\\]+$', '')
-    return {root=root, templates=root .. '/Scripts/templates', categories=root .. '/Scripts/categories',
+    return {root=root, categories=root .. '/Scripts/categories',
         cache=root .. '/Scripts/cache', config=root .. '/' .. M.configFile,
         catalog=root .. '/Scripts/cache/identity-catalog.lua', pages=root .. '/Scripts/cache/menu-pages.lua',
         manifest=root .. '/mod_settings.ini'}
@@ -24,7 +24,7 @@ end
 function M.prepare(root, createDirectory)
     local paths = M.paths(root)
     createDirectory = createDirectory or mkdir
-    for _, path in ipairs({paths.templates,paths.categories,paths.cache}) do createDirectory(path) end
+    for _, path in ipairs({paths.categories,paths.cache}) do createDirectory(path) end
     return paths
 end
 return M

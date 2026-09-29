@@ -61,6 +61,10 @@ function M.new(source)
         return result
     end
     function host.watch(roots) return source.watch(roots) end
+    function host.mutate(callback)
+        if source.mutate then return source.mutate(callback) end
+        return callback()
+    end
     function host.child(reference, class)
         local object = host.unwrap(reference)
         if object then return host.capture(source.child(object, class)) end

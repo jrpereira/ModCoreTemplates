@@ -1,10 +1,9 @@
 -- Public helpers available to templates loaded in MCT's Lua state.
 local Objects = require('mc.objects')
-local U = require('mc.util')
+local TemplateDefaults=require('mc.template_defaults')
 
 local modules = {objects = Objects}
-
-local base = { settings = {}, enabled = true, menu = { target = 'module', fields = {}, groups = {} } }
+local templateRegistrar
 
 local function load(name)
     assert(type(name) == 'string', 'MC helper name required')
@@ -37,14 +36,37 @@ local function template(name, defaults)
     local chunk = assert(loadfile(path, 't'))
     local value = chunk()
     assert(type(value) == 'table', path .. ': expected a template table')
-    assert(defaults == nil or type(defaults) == 'table', 'MC template defaults must be a table')
-    local result = U.copy(base)
-    for key, entry in pairs(defaults or {}) do result[key] = U.copy(entry) end
-    for key, entry in pairs(value) do result[key] = U.copy(entry) end
-    return result
+    return TemplateDefaults.apply(value,defaults)
 end
 
-return setmetatable({load = load, template = template}, {
+local function addTemplate(name,...)
+    assert(type(name)=='string','MC template name required')
+    assert(select('#',...)==0,'MC.addTemplate metadata belongs in the template or module manifest')
+    local filename
+    if name:sub(-4)=='.lua' then
+        assert(name:match('^[%w_%-]+%.lua$'),
+            'MC template filename must be a simple Lua filename')
+        filename=name
+    else
+        assert(name:match('^[%w_%-]+$'),'MC template name must be a simple file stem')
+        filename='mc_'..name..'.lua'
+    end
+    local caller=assert(debug.getinfo(2,'S'),'MC template registrar unavailable')
+    local source=assert(caller.source:match('^@(.+)$'),
+        'MC.addTemplate must be called from a Lua file')
+    local folder=assert(source:match('^(.*)[/\\][^/\\]+$'),
+        'MC template registrar has no directory')
+    assert(type(templateRegistrar)=='function','MCT template registration is unavailable')
+    return templateRegistrar(folder..'/'..filename)
+end
+
+local function setTemplateRegistrar(registrar)
+    assert(type(registrar)=='function','MC template registrar must be a function')
+    templateRegistrar=registrar
+end
+
+return setmetatable({load=load,template=template,addTemplate=addTemplate,
+    _setTemplateRegistrar=setTemplateRegistrar}, {
     __index = Objects,
     __call = function(_, name) return load(name) end,
 })
