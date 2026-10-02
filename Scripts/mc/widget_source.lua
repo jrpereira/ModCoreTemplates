@@ -19,7 +19,8 @@ end
 function M.new(categories, api)
     api = api or _G
     for _, name in ipairs({'FindAllOf','NotifyOnNewObject','RegisterHook','UnregisterHook',
-        'RegisterLoadMapPreHook','RegisterLoadMapPostHook','IsInGameThread'}) do
+        'RegisterLoadMapPreHook','RegisterLoadMapPostHook','IsInGameThread',
+        'ExecuteInGameThread'}) do
         assert(type(api[name]) == 'function', 'UE4SS object source requires ' .. name)
     end
     local bridge=api.UE4SSLuaEventBridge
@@ -39,7 +40,7 @@ function M.new(categories, api)
         and type(lifetimes.captureObject)=='function',
         'MCT requires UE4SSLuaEventBridge API 5 object lifetimes')
     local source = {}
-    local selectors, notifyClasses, hasGroups, hasWidgets = {}, {}, false, false
+    local selectors, notifyClasses, ownerClasses, hasGroups, hasWidgets = {}, {}, {}, false, false
     for _, category in ipairs(categories) do
         for _, selector in pairs(category.objects or {}) do
             if selector.source == 'create' then
@@ -56,6 +57,7 @@ function M.new(categories, api)
                 local first, second = eventClass(selector)
                 if first then notifyClasses[first] = true end
                 if second then notifyClasses[second] = true end
+                if second and first then ownerClasses[first] = true end
             end
         end
     end
@@ -215,13 +217,17 @@ function M.new(categories, api)
         if not source.valid(object) or type(api.StaticFindObject) ~= 'function' then return nil end
         local layout = api.StaticFindObject('/Script/UMG.Default__WidgetLayoutLibrary')
         if not ObjectSelector.valid(layout) then return nil end
-        local size = safe(layout, 'GetViewportSize', ObjectSelector.owner(object) or object)
+        local hud=ObjectSelector.owner(object) or object
+        local size = safe(layout, 'GetViewportSize', hud)
+        local scale=tonumber(safe(layout,'GetViewportScale',hud))
         local width, height = size and tonumber(Widget.property(size, 'X')),
             size and tonumber(Widget.property(size, 'Y'))
         if not width or not height or width <= 0 or height <= 0
-            or width == math.huge or height == math.huge then return nil end
+            or width == math.huge or height == math.huge
+            or not scale or scale<=0 or scale==math.huge then return nil end
+        width,height=width/scale,height/scale
         return {width=width,height=height,left=0,center=width/2,right=width,
-            bottom=0,middle=height/2,top=height}
+            bottom=0,middle=height/2,top=height,scale=scale}
     end
     local function emit(kind, object)
         if not active or not sink then return end
@@ -294,11 +300,28 @@ function M.new(categories, api)
         hooks[#hooks+1] = {path=path,pre=pre,post=post}
     end
     local function install()
+        local function revisitOwner(class,remaining)
+            api.ExecuteInGameThread(function()
+                if not active or not subscribed then return end
+                for _,selector in ipairs(selectors) do
+                    if eventClass(selector)==class then
+                        for _,candidate in ipairs(source.find(selector)) do changed(candidate) end
+                    end
+                end
+                if remaining>1 then revisitOwner(class,remaining-1) end
+            end)
+        end
         for class in pairs(notifyClasses) do
             api.NotifyOnNewObject(class,function(object)
                 if not active then return end
                 local current = unwrap(object)
                 if source.valid(current) then changed(current) end
+                if ownerClasses[class] then
+                    -- The owner notification can precede construction of its
+                    -- WidgetTree children. Revisit exact child selectors on
+                    -- the next game-thread dispatch, after that tree exists.
+                    revisitOwner(class,3)
+                end
             end)
         end
         -- Verified in the installed UE4SS build: Construct/Destruct and

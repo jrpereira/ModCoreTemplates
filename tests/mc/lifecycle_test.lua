@@ -265,6 +265,20 @@ test('startup defers template execution until barrier and accepts other modules'
     assert(not pcall(function() boot:registerTemplate('late') end))
 end)
 
+test('startup drains cross-state registrations before loading templates', function()
+    local f=fixture()
+    f.object('one')
+    local barrier,collected,executed=nil,0,{}
+    local definitions={external=f.a}
+    local boot=Bootstrap.new({host=f.host,categories=f.categories,
+        execute=function(path) executed[#executed+1]=path;return definitions[path] end,
+        collectTemplates=function() collected=collected+1;return {'external'} end,
+        subscribeLoopStart=function(callback) barrier=callback;return function() end end})
+    assert(boot.phase=='registering' and collected==0 and #executed==0)
+    barrier()
+    assert(boot.phase=='running' and collected==1 and #executed==1 and executed[1]=='external')
+end)
+
 test('template main can return multiple definitions', function()
     local f=fixture()
     f.object('one')
@@ -284,9 +298,14 @@ end)
 
 test('template loaded hook runs once before model construction', function()
     local f=fixture()
-    local barrier,loads=nil,0
+    local barrier,loads,registrations,cleanups=nil,0,0,0
     local template=f.a
     template.loaded=function() loads=loads+1 end
+    local events={register=function(_,loaded)
+        assert(loads==1 and loaded.id==template.id,'events registered before template loaded')
+        registrations=registrations+1
+        return function() cleanups=cleanups+1;return true end
+    end}
     local boot=Bootstrap.new({host=f.host,categories=f.categories,
         execute=function(path)
             local value={}
@@ -294,14 +313,15 @@ test('template loaded hook runs once before model construction', function()
             value.category='player.quickslots'
             value.module='Test'
             return value
-        end,
+        end,events=events,
         subscribeLoopStart=function(callback) barrier=callback;return function() end end})
     boot:registerTemplate('template')
     assert(loads==0 and boot.phase=='registering')
     barrier()
-    assert(loads==1 and boot.phase=='running')
+    assert(loads==1 and registrations==1 and boot.phase=='running')
     barrier()
-    assert(loads==1)
+    assert(loads==1 and registrations==1)
+    boot:stop();assert(cleanups==1)
 end)
 
 test('subscription is active before snapshot and duplicate notifications are harmless', function()
@@ -481,6 +501,47 @@ test('template defaults override category settings and saved values override def
     r:select('player.quickslots', {a={size=30}}); r:start()
     assert(seen.size == 30 and seen.opacity == 0.4)
     assert(seen.nested.template == true and seen.nested.category == nil)
+end)
+
+test('control state is copied into callbacks and refreshes active templates', function()
+    local f=fixture()
+    f.object('one')
+    local state={revision=0,controls={group={from=1,to=1}}}
+    local seen,events={},{ }
+    f.a.attach=function(_,params) seen[#seen+1]=params.state.controls.group.to end
+    f.a.update=function(_,params)
+        seen[#seen+1]=params.state.controls.group.to
+        params.state.controls.group.to=99
+    end
+    f.a.events={['controls.group.focus']=function(event,current)
+        events[#events+1]={from=event.group.from,to=event.group.to,
+            current=current.controls.group.to}
+        current.controls.group.to=99
+    end}
+    local runtime=Runtime.new(f.host,f.categories,{f.a},state)
+    runtime:select('player.quickslots',{a={}});runtime:start()
+    state.revision=1;state.controls.group.from=1;state.controls.group.to=2
+    runtime:stateChanged({name='controls.group.focus',revision=1,group={from=1,to=2}})
+    assert(seen[1]==1 and seen[2]==2 and state.controls.group.to==2)
+    assert(#events==1 and events[1].from==1 and events[1].to==2 and events[1].current==2)
+    runtime:select('player.quickslots',{})
+    state.revision=2;state.controls.group.from=2;state.controls.group.to=1
+    runtime:stateChanged({name='controls.group.focus',revision=2,group={from=2,to=1}})
+    assert(#events==1,'inactive template received an event')
+end)
+
+test('event callback failures are isolated between active templates', function()
+    local f=fixture()
+    f.object('one')
+    local delivered=0
+    f.a.events={['controls.group.focus']=function() error('event failure') end}
+    f.b.events={['controls.group.focus']=function() delivered=delivered+1 end}
+    local state={revision=1,controls={group={from=1,to=2}}}
+    local runtime=Runtime.new(f.host,f.categories,{f.a,f.b},state)
+    runtime:select('player.quickslots',{a={},b={}});runtime:start()
+    runtime:stateChanged({name='controls.group.focus',revision=1,group={from=1,to=2}})
+    assert(delivered==1 and #runtime.errors==1 and runtime.errors[1].stage=='event'
+        and runtime.errors[1].template=='a')
 end)
 
 print('PASS: ' .. passed .. ' MCT lifecycle tests')

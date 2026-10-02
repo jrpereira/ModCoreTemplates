@@ -12,6 +12,10 @@ function M.compile(objects)
             assert(key == 'source' or key == 'object' or key == 'class'
                 or key == 'within' or key == 'from' or key == 'member'
                 or key == 'outer' or key == 'parent'
+                or key == 'reparent' or key == 'destination' or key == 'content'
+                or key == 'layout' or key == 'opacity' or key == 'prepass'
+                or key == 'brushColor' or key == 'clickRelay'
+                or key == 'reparentLayout' or key == 'reparentOpacity'
                 or key == 'attach' or key == 'required'
                 or key == 'properties', name .. ': unknown object field ' .. tostring(key))
         end
@@ -28,17 +32,55 @@ function M.compile(objects)
                 name .. ': created object needs an outer object')
             assert(value.parent == nil or type(value.parent) == 'string'
                 and value.parent ~= '', name .. ': invalid created object parent')
+            assert((value.reparent == nil and value.destination == nil)
+                or type(value.reparent) == 'string' and value.reparent ~= ''
+                and type(value.destination) == 'string' and value.destination ~= '',
+                name .. ': created object reparent needs object and destination')
+            assert(value.content == nil or type(value.content) == 'string'
+                and value.content ~= '', name .. ': invalid created object content')
+            assert(value.content == nil or value.reparent == nil,
+                name .. ': content and reparent are exclusive')
+            assert(value.layout == nil or value.layout == 'fill',
+                name .. ': invalid created object layout')
+            assert(value.opacity == nil or type(value.opacity) == 'number',
+                name .. ': invalid created object opacity')
+            if value.brushColor ~= nil then
+                assert(type(value.brushColor)=='table',name .. ': invalid brush color')
+                for _,component in ipairs({'R','G','B','A'}) do
+                    local channel=value.brushColor[component]
+                    assert(type(channel)=='number' and channel>=0 and channel<=1,
+                        name .. ': invalid brush color component ' .. component)
+                end
+            end
+            assert(value.prepass == nil or type(value.prepass) == 'boolean',
+                name .. ': invalid created object prepass')
+            assert(value.clickRelay == nil or type(value.clickRelay) == 'boolean',
+                name .. ': invalid created object click relay')
+            assert(value.reparentLayout == nil or value.reparentLayout == 'canvas',
+                name .. ': invalid reparent layout')
+            assert(value.reparentOpacity == nil or type(value.reparentOpacity) == 'number',
+                name .. ': invalid reparent opacity')
             assert(value.object == nil and value.from == nil and value.member == nil
                 and value.within == nil and value.attach == nil and value.required == nil
                 and value.properties == nil, name .. ': invalid created object declaration')
             graph[name] = {source=source,create=true,class=value.class,outer=value.outer,
-                from=value.outer,parent=value.parent,attach=false,required=false,properties={}}
+                from=value.outer,parent=value.parent,reparent=value.reparent,
+                destination=value.destination,content=value.content,
+                layout=value.layout,opacity=value.opacity,
+                brushColor=value.brushColor,prepass=value.prepass,clickRelay=value.clickRelay,
+                reparentLayout=value.reparentLayout,
+                reparentOpacity=value.reparentOpacity,
+                attach=false,required=false,properties={}}
         elseif source == 'reference' then
             assert(type(value.from) == 'string' and value.from ~= ''
                 and type(value.member) == 'string' and value.member ~= '',
                 name .. ': reference needs from and member')
             assert(value.object == nil and value.within == nil and value.outer == nil
-                and value.attach == nil and value.parent == nil,
+                and value.attach == nil and value.parent == nil
+                and value.reparent == nil and value.destination == nil
+                and value.layout == nil and value.opacity == nil and value.prepass == nil
+                and value.brushColor == nil and value.clickRelay == nil
+                and value.reparentLayout == nil and value.reparentOpacity == nil,
                 name .. ': invalid reference declaration')
             assert(value.class == nil or type(value.class) == 'string',
                 name .. ': invalid reference class')
@@ -48,7 +90,11 @@ function M.compile(objects)
                 class=value.class,attach=false,required=value.required == true,
                 properties=value.properties}
         else
-            assert(value.member == nil and value.outer == nil and value.parent == nil,
+            assert(value.member == nil and value.outer == nil and value.parent == nil
+                and value.reparent == nil and value.destination == nil
+                and value.layout == nil and value.opacity == nil and value.prepass == nil
+                and value.brushColor == nil and value.clickRelay == nil
+                and value.reparentLayout == nil and value.reparentOpacity == nil,
                 name .. ': lookup cannot declare member or outer')
             assert(not (value.from and value.within),
                 name .. ': from and within are exclusive')
@@ -84,6 +130,9 @@ function M.compile(objects)
         if graph[name].within then visit(graph[name].within) end
         if graph[name].from then visit(graph[name].from) end
         if graph[name].parent then visit(graph[name].parent) end
+        if graph[name].reparent then visit(graph[name].reparent) end
+        if graph[name].destination then visit(graph[name].destination) end
+        if graph[name].content then visit(graph[name].content) end
         visiting[name], visited[name] = nil, true
         order[#order + 1] = name
     end
@@ -110,6 +159,9 @@ function M.project(graph, targets)
         wanted[name]=true
         if selector.from then include(selector.from) end
         if selector.parent then include(selector.parent) end
+        if selector.reparent then include(selector.reparent) end
+        if selector.destination then include(selector.destination) end
+        if selector.content then include(selector.content) end
         if selector.within then include(selector.within) end
     end
     for _,name in ipairs(names) do include(name) end

@@ -3,6 +3,7 @@ local Selectors = require('mc.selectors')
 local ManagedTemplate = require('mc.managed_template')
 local TargetState = require('mc.target_state')
 local TemplateTargets = require('mc.template_targets')
+local array = require('mc.util').array
 local copy = require('mc.util').copy
 local M = {}
 -- Overlay complete setting values by key; nested values are copied, not merged.
@@ -46,16 +47,35 @@ local function targetNames(targets)
     return names
 end
 
-function M.new(host, definitions, templates)
+function M.new(host, definitions, templates, state)
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
         assert(type(host[name]) == 'function', 'host requires ' .. name)
     end
     assert(host.unwrap == nil or type(host.unwrap) == 'function', 'host.unwrap must be a function')
-    local self = {epoch=1, phase='new', errors={}}
+    state=state or {revision=0,controls={group={from=1,to=1}}}
+    local self = {epoch=1, phase='new', errors={},state=state}
     local categories, byId, candidates, queue = {}, {}, {}, {}
     local activeRoots, searchSignature = {}, nil
     local busy, unsubscribe, suspended = false, nil, false
     local failedInTurn = nil
+    local function managedRecord(definition, graph, targets, externallyCreated)
+        local specs=TargetState.specs(graph,targets)
+        local created={}
+        for _,name in ipairs(graph.order) do
+            local selector=graph.byName[name]
+            if selector.create and not (externallyCreated and externallyCreated[name]) then
+                created[#created+1]={name=name,class=selector.class,from=selector.from,
+                    parent=selector.parent,reparent=selector.reparent,
+                    destination=selector.destination,content=selector.content,
+                    layout=selector.layout,
+                    opacity=selector.opacity,brushColor=selector.brushColor,
+                    prepass=selector.prepass,clickRelay=selector.clickRelay,
+                    reparentLayout=selector.reparentLayout,
+                    reparentOpacity=selector.reparentOpacity}
+            end
+        end
+        return ManagedTemplate.new(definition,specs,graph.order,created)
+    end
     for _, definition in ipairs(definitions) do
         assert(type(definition.name) == 'string' and not categories[definition.name], 'duplicate/invalid category')
         assert(definition.settings == nil or type(definition.settings) == 'table', 'category settings must be a table')
@@ -64,44 +84,56 @@ function M.new(host, definitions, templates)
         for _,name in ipairs(graph.order) do
             if graph.byName[name].required then mandatory[#mandatory+1]=name end
         end
-        categories[definition.name] = {settings=copy(definition.settings or {}), graph=graph,
+        local category = {settings=copy(definition.settings or {}), graph=graph,
             requiredGraph=Selectors.project(graph,mandatory),
             single=definition.single == true, templates={}, objects={}}
+        if definition.sharedObjects ~= nil then
+            assert(array(definition.sharedObjects,definition.name..'.sharedObjects')>0,
+                definition.name..'.sharedObjects must not be empty')
+            local sharedGraph=Selectors.project(graph,definition.sharedObjects)
+            local sharedDefinition={id='@category:'..definition.name,attach=function(_,_,original)
+                return original
+            end}
+            local sharedNames={}
+            for _,name in ipairs(definition.sharedObjects) do sharedNames[name]=true end
+            category.sharedNames=sharedNames
+            category.shared={definition=sharedDefinition,graph=sharedGraph,
+                targetTree=TemplateTargets.compile(graph,definition.sharedObjects),
+                manager=managedRecord(sharedDefinition,sharedGraph,definition.sharedObjects),
+                attached={},exposed={}}
+        end
+        categories[definition.name] = category
     end
     for _, template in ipairs(templates) do
         assert(type(template.id) == 'string' and template.id ~= '' and not byId[template.id], 'duplicate/invalid template id')
         local category = assert(categories[template.category], 'unknown template category')
         assert(template.settings == nil or type(template.settings) == 'table', 'template settings must be a table')
         local graph=Selectors.project(category.graph,template.objects)
-        local targetTree=TemplateTargets.compile(category.graph,template.objects)
+        local targetTree,targetNames=TemplateTargets.compile(category.graph,template.objects)
         assert(#graph.order>0, 'template must declare objects: '..template.id)
         assert(template.managed == nil or type(template.managed) == 'boolean',
             'template.managed must be boolean')
         local managed=template.managed~=false
         local manager
         if managed then
-            local specs=TargetState.specs(graph,template.objects)
-            local created={}
-            for _,name in ipairs(graph.order) do
-                local selector=graph.byName[name]
-                if selector.create then
-                    created[#created+1]={name=name,class=selector.class,from=selector.from,
-                        parent=selector.parent}
-                end
-            end
-            manager=ManagedTemplate.new(template,specs,graph.order,created)
+            manager=managedRecord(template,graph,template.objects,category.sharedNames)
         else
             for _,name in ipairs(graph.order) do
-                assert(not graph.byName[name].create,
+                assert(not graph.byName[name].create
+                    or (category.sharedNames and category.sharedNames[name]),
                     'created objects require managed template: '..template.id)
             end
             assert(type(template.attach) == 'function' and type(template.update) == 'function'
                 and type(template.detach) == 'function', 'template requires attach, update and detach')
         end
+        local sharedTargets={}
+        for _,name in ipairs(targetNames) do
+            if category.sharedNames and category.sharedNames[name] then sharedTargets[#sharedTargets+1]=name end
+        end
         local record = {definition=template, enabled=false, defaults=copy(template.settings or {}),
             overrides={}, settings={}, revision=0, attached={}, pending={}, waiting={},
             manager=manager, graph=graph,
-            targetTree=targetTree}
+            targetTree=targetTree,sharedTargets=sharedTargets}
         byId[template.id], category.templates[template.id] = record, record
     end
     local function report(stage, id, message)
@@ -136,7 +168,7 @@ function M.new(host, definitions, templates)
         settings = settings or record.settings
         -- Publish the same effective values for callbacks using template.settings.
         record.definition.settings = copy(settings)
-        local screen
+        local screen,named
         local ok, value, why = pcall(function() return mutate(function()
             -- Templates receive the underlying UObject only after a final validity check.
             if not host.valid(object) then return false, 'not_ready' end
@@ -148,15 +180,22 @@ function M.new(host, definitions, templates)
             local target = object
             if host.unwrap then target = host.unwrap(object) end
             if target == nil then return false, 'not_ready' end
-            local params = {settings=copy(settings),screen=screen}
-            local named=TemplateTargets.arrange(record.targetTree,targets,host.unwrap,host.valid)
+            local params = {settings=copy(settings),screen=screen,state=copy(state)}
+            named=TemplateTargets.arrange(record.targetTree,targets,host.unwrap,host.valid)
             if record.manager then
-                return record.manager[operation](record.manager,target,named,params)
+                local dependencies={}
+                for _,name in ipairs(record.graph.order) do
+                    local value=targets[name]
+                    if value and host.valid(value) then
+                        dependencies[name]=host.unwrap and host.unwrap(value) or value
+                    end
+                end
+                return record.manager[operation](record.manager,target,named,params,dependencies)
             end
             return record.definition[operation](target, params, named)
         end) end)
         record.definition.settings = copy(record.settings)
-        if ok and value ~= false then return true, screen end
+        if ok and value ~= false then return true, screen, named end
         if not (ok and type(why)=='string' and
             (why == 'not_ready' or why:match('^not_ready:'))) then
             report(operation, record.definition.id, ok and (why or 'callback returned false') or value)
@@ -180,6 +219,12 @@ function M.new(host, definitions, templates)
             for _, object in ipairs(host.find(selector)) do include(object) end
         end
     end
+    local function hasEnabledTemplate(category)
+        for _,record in pairs(category.templates) do
+            if record.enabled then return true end
+        end
+        return false
+    end
     local function refreshDiscovery()
         local roots,seen,identities={},{},{}
         for _,categoryName in ipairs(keys(categories)) do
@@ -199,6 +244,7 @@ function M.new(host, definitions, templates)
                 end
             end
             add(category.requiredGraph)
+            if category.shared and hasEnabledTemplate(category) then add(category.shared.graph) end
             for _,id in ipairs(keys(category.templates)) do
                 local record=category.templates[id]
                 if record.enabled then add(record.graph) end
@@ -218,8 +264,23 @@ function M.new(host, definitions, templates)
         for _, name in ipairs(keys(categories)) do
             local category = categories[name]
             local resolved,allObjects={},{}
+            local function exposeSharedTargets(record,bundles,sharedAttached)
+                for token,bundle in pairs(bundles or {}) do
+                    local attached=sharedAttached and sharedAttached[token]
+                    for _,targetName in ipairs(record.sharedTargets) do
+                        bundle[targetName]=attached and attached[targetName] or nil
+                    end
+                end
+            end
             local _,requiredObjects=Selectors.resolve(category.requiredGraph,candidates,host)
             for token,object in pairs(requiredObjects) do allObjects[token]=object end
+            local shared,sharedObjects,sharedBundles=category.shared,{},{ }
+            local sharedActive=shared and hasEnabledTemplate(category)
+            if sharedActive then
+                local _,objects,bundles=Selectors.resolve(shared.graph,candidates,host)
+                sharedObjects,sharedBundles=objects,bundles
+                for token,object in pairs(objects) do allObjects[token]=object end
+            end
             for _,id in ipairs(keys(category.templates)) do
                 local record=category.templates[id]
                 if record.enabled then
@@ -243,6 +304,13 @@ function M.new(host, definitions, templates)
                 end
             end
             category.objects = allObjects
+            if shared then
+                for id,record in pairs(category.templates) do
+                    if resolved[id] then
+                        exposeSharedTargets(record,resolved[id].bundles,shared.exposed)
+                    end
+                end
+            end
             -- Detach all outgoing templates before any incoming template attaches.
             for _, id in ipairs(keys(category.templates)) do
                 local record = category.templates[id]
@@ -294,6 +362,49 @@ function M.new(host, definitions, templates)
                     end
                 end
             end
+            -- Shared category objects are restored only after every template has
+            -- detached, and prepared before any incoming template can attach.
+            if shared then
+                for _,token in ipairs(keys(shared.attached)) do
+                    local attached=shared.attached[token]
+                    local current=sharedObjects[token]
+                    if not sharedActive or not host.valid(attached.object)
+                        or not current or not host.ready(current)
+                        or not sameTargets(attached.targets,sharedBundles[token],host) then
+                        if host.valid(attached.object) and targetsValid(attached.targets,host) then
+                            if invoke(shared,'detach',attached.object,nil,attached.targets,attached.screen) then
+                                shared.attached[token]=nil
+                                shared.exposed[token]=nil
+                            end
+                        else
+                            local ok,why=pcall(shared.manager.forget,shared.manager,attached.root)
+                            if not ok then report('forget',shared.definition.id,why)
+                            else shared.attached[token]=nil;shared.exposed[token]=nil end
+                        end
+                    end
+                end
+                if sharedActive then
+                    for _,token in ipairs(keys(sharedObjects)) do
+                        local object=sharedObjects[token]
+                        if not shared.attached[token] and host.valid(object) and host.ready(object) then
+                            local targets=sharedBundles[token]
+                            local applied,screen,exposed=invoke(shared,'attach',object,nil,targets)
+                            if applied and host.valid(object) then
+                                shared.attached[token]={object=object,targets=targets,
+                                    root=host.unwrap and host.unwrap(object) or object,screen=screen}
+                                shared.exposed[token]=exposed
+                            end
+                        end
+                    end
+                end
+            end
+            if shared then
+                for id,record in pairs(category.templates) do
+                    if resolved[id] then
+                        exposeSharedTargets(record,resolved[id].bundles,shared.exposed)
+                    end
+                end
+            end
             for _, id in ipairs(keys(category.templates)) do
                 local record = category.templates[id]
                 if record.enabled and not suspended then
@@ -311,6 +422,7 @@ function M.new(host, definitions, templates)
                         local old = record.attached[token]
                         if not blocked and not record.pending[token]
                             and host.valid(object) and host.ready(object)
+                            and (not shared or shared.attached[token])
                             and retainsTargets(record.waiting[token],bundles[token],host)
                             and (not old or old.revision ~= record.revision)
                             and not (failedInTurn[record] and failedInTurn[record][token]) then
@@ -372,6 +484,26 @@ function M.new(host, definitions, templates)
                 if record.enabled then refreshSettings(category, record) end
             end
             if self.phase == 'running' and not suspended then reconcile() end
+        end)
+    end
+    function self:stateChanged(event)
+        assert(self.phase=='new' or self.phase=='running','runtime is not accepting state changes')
+        assert(event==nil or type(event)=='table' and type(event.name)=='string',
+            'invalid template event')
+        serialize(function()
+            for _,id in ipairs(keys(byId)) do
+                local record=byId[id]
+                if record.enabled then
+                    local callback=event and record.definition.events
+                        and record.definition.events[event.name]
+                    if callback then
+                        local ok,why=pcall(callback,copy(event),copy(state))
+                        if not ok then report('event',id,why) end
+                    end
+                    record.revision=record.revision+1
+                end
+            end
+            if self.phase=='running' and not suspended then reconcile() end
         end)
     end
     -- Menu commits category values and template selections together, then reconciles once.

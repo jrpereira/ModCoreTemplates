@@ -1,5 +1,6 @@
 local Objects = require('mc.objects')
 local M = {}
+local currentSlots=setmetatable({}, {__mode='k'})
 
 function M.unwrap(value)
     if value == nil then return nil end
@@ -33,6 +34,16 @@ end
 
 function M.translation(widget) return vector(widget, 'Translation') end
 function M.scale(widget) return vector(widget, 'Scale') end
+
+local relativePositions={
+    [1]={X=-1,Y=0}, [2]={X=-1,Y=1}, [3]={X=0,Y=1}, [4]={X=1,Y=1},
+    [5]={X=1,Y=0}, [6]={X=1,Y=-1}, [7]={X=0,Y=-1}, [8]={X=-1,Y=-1},
+}
+
+function M.relative(align)
+    local position=assert(relativePositions[align],'unknown widget alignment')
+    return {X=position.X,Y=position.Y}
+end
 
 function M.opacity(widget)
     local value = tonumber(widget:GetRenderOpacity())
@@ -77,6 +88,56 @@ function M.prepareLayout(widget)
     widget:ForceLayoutPrepass()
 end
 
+function M.rememberSlot(widget,slot)
+    if Objects.valid(widget) and Objects.valid(slot) then currentSlots[widget]=slot end
+    return slot
+end
+
+function M.slot(widget)
+    local slot=currentSlots[widget]
+    if Objects.valid(slot) then return slot end
+    slot=M.property(widget,'Slot')
+    if Objects.valid(slot) then currentSlots[widget]=slot; return slot end
+end
+
+function M.box(widget)
+    local function dimensions(size)
+        local width=size and tonumber(M.property(size,'X'))
+        local height=size and tonumber(M.property(size,'Y'))
+        if width and width>0 and height and height>0 then return width,height,width,height end
+        return nil,nil,width,height
+    end
+    local desired=Objects.call(widget,'GetDesiredSize')
+    local width,height,desiredWidth,desiredHeight=dimensions(desired)
+    local source='desired'
+    local propertyWidth,propertyHeight
+    if not width then
+        width,height,propertyWidth,propertyHeight=dimensions(M.property(widget,'DesiredSize'))
+        source='property'
+    end
+    local rootWidth,rootHeight
+    if not width then
+        local tree=M.property(widget,'WidgetTree')
+        local root=M.property(tree,'RootWidget')
+        rootWidth=tonumber(M.property(root,'WidthOverride'))
+        rootHeight=tonumber(M.property(root,'HeightOverride'))
+        if rootWidth and rootWidth>0 and rootHeight and rootHeight>0 then
+            width,height=rootWidth,rootHeight
+            source='root-sizebox'
+        end
+    end
+    local pivot=M.property(widget,'RenderTransformPivot')
+    local pivotX=pivot and tonumber(M.property(pivot,'X'))
+    local pivotY=pivot and tonumber(M.property(pivot,'Y'))
+    local detail=string.format(
+        'desired=%s,%s property=%s,%s root=%s,%s pivot=%s,%s',
+        tostring(desiredWidth),tostring(desiredHeight),
+        tostring(propertyWidth),tostring(propertyHeight),
+        tostring(rootWidth),tostring(rootHeight),tostring(pivotX),tostring(pivotY))
+    if not width or not height or pivotX==nil or pivotY==nil then return nil,detail end
+    return {width=width,height=height,pivotX=pivotX,pivotY=pivotY},source..' '..detail
+end
+
 function M.measure(widget)
     local size = widget:GetDesiredSize()
     local width, height = M.number(size, 'X'), M.number(size, 'Y')
@@ -91,6 +152,23 @@ function M.position(widget, box, x, y, scale)
     M.setTranslation(widget,
         x - box.pivotX * box.width * (1 - scale) - math.min(0, scale * box.width),
         y - box.pivotY * box.height * (1 - scale) - math.min(0, scale * box.height))
+    return true
+end
+
+function M.canvasPosition(widget, box, x, y, scale)
+    M.setScale(widget, scale)
+    local slot=M.slot(widget)
+    if not slot then return false,'wheel canvas slot unavailable' end
+    local position={
+        X=x - box.pivotX * box.width * (1 - scale) - math.min(0, scale * box.width),
+        Y=y - box.pivotY * box.height * (1 - scale) - math.min(0, scale * box.height),
+    }
+    local ok,why=pcall(function() slot:SetPosition(position) end)
+    if not ok then return false,'wheel canvas position failed: '..tostring(why) end
+    ok,why=pcall(function() slot:SetSize({X=box.width,Y=box.height}) end)
+    if not ok then return false,'wheel canvas size failed: '..tostring(why) end
+    M.setTranslation(widget,0,0)
+    return true
 end
 
 function M.snapshotSlot(widget, forReordering)

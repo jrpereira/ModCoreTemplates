@@ -9,7 +9,42 @@ assert(category.name=='player.quickslots' and radialCategory.name=='player.radia
 assert(category.objects.radial==nil and radialCategory.objects.radial~=nil)
 local objects={}
 local function object(id,class)
-    local value={id=id,class=class,children={},members={}}
+    local value={id=id,class=class,children={},members={},opacity=1,
+        RenderTransform={Translation={X=0,Y=0},Scale={X=1,Y=1}}}
+    value.OnClicked={}
+    function value.OnClicked:Add(target,method)
+        self.target,self.method=target,method
+    end
+    function value:IsValid() return true end
+    function value:GetFullName() return self.id end
+    function value:GetOuter() return self.outer or self end
+    function value:GetParent() return self.parent end
+    function value:GetChildrenCount() return #self.children end
+    function value:GetChildAt(index) return self.children[index+1] end
+    function value:GetRenderOpacity() return self.opacity end
+    function value:SetRenderOpacity(opacity) self.opacity=opacity end
+    function value:SetRenderTranslation(position) self.RenderTransform.Translation=position end
+    function value:ForceLayoutPrepass() self.prepassed=true end
+    function value:AddChild(child)
+        assert(child.parent==nil)
+        self.children[#self.children+1]=child; child.parent=self
+        local slot={Padding={Left=0,Top=0,Right=0,Bottom=0},
+            HorizontalAlignment=0,VerticalAlignment=0}
+        function slot:IsValid() return true end
+        function slot:SetLayout(layout) self.layout=layout end
+        function slot:SetAutoSize(autoSize) self.autoSize=autoSize end
+        function slot:SetPadding(padding) self.Padding=padding end
+        function slot:SetHorizontalAlignment(alignment) self.HorizontalAlignment=alignment end
+        function slot:SetVerticalAlignment(alignment) self.VerticalAlignment=alignment end
+        child.Slot=slot
+        return slot
+    end
+    function value:RemoveChild(child)
+        for index,item in ipairs(self.children) do
+            if item==child then table.remove(self.children,index); child.parent=nil; return true end
+        end
+        return false
+    end
     objects[#objects+1]=value
     return value
 end
@@ -24,7 +59,14 @@ hud.members.WidgetTree=hudTree
 hudTree.members.RootWidget=hudRoot
 hud.members.WBP_AA_Quickslots=ability
 hud.members.WBP_HUD_Quickslots=consumable
-switcher.children={ability,consumable}
+-- Native order differs from selector creation order, with an unrelated sibling.
+switcher:AddChild(consumable)
+local sibling=object('nativeSibling','Overlay')
+switcher:AddChild(sibling)
+switcher:AddChild(ability)
+ability.Slot:SetPadding({Left=11,Top=12,Right=13,Bottom=14})
+ability.Slot:SetHorizontalAlignment(2)
+consumable.Slot:SetVerticalAlignment(2)
 local function directions(parent,prefix,bindings)
     local source=bindings or parent
     for _,direction in ipairs({'Left','Top','Right','Bottom'}) do
@@ -50,6 +92,11 @@ for _,entry in ipairs({{ability,'ability'},{consumable,'consumable'}})do
     local box=object(prefix..'Box','SizeBox')
     local panel=object(prefix..'Panel','Overlay')
     wheel.members.WidgetTree=tree;tree.members.RootWidget=box;box.children={panel}
+    wheel.members.cross=object(prefix..'Cross','Image')
+    if prefix=='ability' then
+        wheel.members.Darken=object(prefix..'Darken','Image')
+        wheel.members.Glow=object(prefix..'Glow','Image')
+    end
     for _,direction in ipairs({'Left','Top','Right','Bottom'})do
         wheel.members[direction]=object(prefix..'Button'..direction,'QuickslotButton')
     end
@@ -58,6 +105,13 @@ local hudRadial=object('hudRadial','WBP_Combat_Focus_QuickslotBindingsRadial_C')
 local hubRadial=object('hubRadial','WBP_Combat_Focus_QuickslotBindingsRadial_C')
 directions(hudRadial,'hud')
 directions(hubRadial,'hub')
+switcher.outer=object('switcherOuter','WidgetTree')
+FName=function(value) return value end
+StaticFindObject=function(path) return {path=path} end
+StaticConstructObject=function(class,outer)
+    assert(outer==switcher.outer)
+    return object(class.path,class.path:match('([^%.]+)$'))
+end
 local host={}
 host.valid=function(value) return value~=nil end
 host.identity=function(value) return value.id end
@@ -129,9 +183,11 @@ categoryOnly:stop()
 lookedUp={}
 local calls={}
 local template={id='layout',category=category.name,managed=false,
-    objects={'switcher','abilities','consumables'},
+    objects={'switcher','abilities','consumables','ability_host','consumable_host'},
     attach=function(_,_,targets)
         assert(targets.abilities==ability and targets.consumables==consumable)
+        assert(targets.ability_host==ability:GetParent()
+            and targets.consumable_host==consumable:GetParent())
         calls[#calls+1]='attach'
     end,
     update=function(_,_,targets)
@@ -145,14 +201,25 @@ runtime:select(category.name,{layout={}})
 runtime:start()
 assert(#lookedUp==1 and lookedUp[1].object==category.objects.switcher.object,
     'unused quickslot targets must not be searched')
-assert(#calls==1 and calls[1]=='attach')
-switcher.children={consumable} -- Distant layout moves the ability wheel.
+assert(#calls==1 and calls[1]=='attach',runtime.errors[1] and runtime.errors[1].message)
+assert(ability:GetParent()~=switcher and consumable:GetParent()~=switcher,
+    'shared category infrastructure must detach both wheels before template attach')
+assert(ability:GetParent().OnClicked.target==ability:GetParent()
+    and ability:GetParent().OnClicked.method=='ForceLayoutPrepass',
+    'MCT host button must relay OnClicked through its inherited no-argument function')
 runtime:select(category.name,{layout={Style=1}})
 assert(#calls==2 and calls[2]=='update',
-    'HUD-owned wheel targets remain resolvable after reparenting')
-switcher.children={ability,consumable}
+    'HUD-owned wheel targets remain resolvable after category reparenting')
 runtime:event({kind='changed',object=switcher,epoch=runtime.epoch})
 assert(#calls==2, 'unchanged wheel identities must not reattach')
 runtime:stop()
 assert(#calls==3 and calls[3]=='detach')
+assert(ability:GetParent()==switcher and consumable:GetParent()==switcher,
+    'shared category infrastructure must restore the native switcher hierarchy')
+assert(switcher:GetChildrenCount()==3 and switcher:GetChildAt(0)==consumable
+    and switcher:GetChildAt(1)==sibling and switcher:GetChildAt(2)==ability,
+    'shared hosts must restore original wheel order around unrelated siblings')
+assert(ability.Slot.Padding.Left==11 and ability.Slot.Padding.Bottom==14
+    and ability.Slot.HorizontalAlignment==2 and consumable.Slot.VerticalAlignment==2,
+    'shared hosts must restore native wheel slot settings')
 print('PASS: separate quickslot and radial targets, two radials, one attachment')

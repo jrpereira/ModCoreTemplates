@@ -14,22 +14,44 @@
 local category = {
     name = "player.quickslots",
     single = true,
+    -- MCT owns the two button hosts and restores the native hierarchy when no
+    -- quickslot template is selected. The switcher children remain only as
+    -- compatibility placeholders for native selection calls.
+    -- Created objects cannot declare required; sharedObjects makes their
+    -- successful creation a prerequisite for every enabled quickslot template.
+    sharedObjects = {'actions','ability_host','consumable_host','bait1','bait2'},
     objects = {
-        switcher = { source = 'lookup', object = "WidgetSwitcher /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher", required = true,
-            properties = {'activeIndex'} },
-        hud_root = { source = 'reference', from = 'switcher', member = '@owner.WidgetTree.RootWidget' },
-        actions = { source = 'create', class = '/Script/UMG.CanvasPanel', outer = 'switcher', parent = 'hud_root' },
-        -- Resolve through the owning HUD, so a layout can move a wheel out of
-        -- the switcher without losing its category target.
-        abilities = { source = 'reference', from = 'switcher', member = '@owner.WBP_AA_Quickslots', class = 'WBP_AA_Quickslots_C',
-            properties = {'parent','order','slot','position','size'} },
-        consumables = { source = 'reference', from = 'switcher', member = '@owner.WBP_HUD_Quickslots', class = 'WBP_HUD_Quickslots_C',
-            properties = {'parent','order','slot','position','size'} },
+        switcher = {  object = "WidgetSwitcher /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher", source = 'lookup',
+            required = true },
+        hud_root = { member = '@owner.WidgetTree.RootWidget',
+            required = true, source = 'reference', from = 'switcher' },
+        actions = { class = '/Script/UMG.CanvasPanel', source = 'create',
+            outer = 'switcher', parent = 'hud_root', layout = 'fill', prepass = true },
+        ability_host = { class = '/Script/UMG.Button', source = 'create',
+            outer = 'switcher', parent = 'actions', content = 'abilities', clickRelay = true },
+        consumable_host = { class = '/Script/UMG.Button', source = 'create',
+            outer = 'switcher', parent = 'actions', content = 'consumables', clickRelay = true },
+        bait1 = { source = 'create', class = '/Script/UMG.Overlay', outer = 'switcher', parent = 'switcher',
+            opacity = 0 },
+        bait2 = { source = 'create', class = '/Script/UMG.Overlay', outer = 'switcher', parent = 'switcher',
+            opacity = 0 },
 
+        -- Resolve through the owning HUD so host creation can move both wheels
+        -- without losing their category targets.
+        abilities = { from = 'switcher', member = '@owner.WBP_AA_Quickslots', class = 'WBP_AA_Quickslots_C', source = 'reference' },
+        consumables = { from = 'switcher', member = '@owner.WBP_HUD_Quickslots', class = 'WBP_HUD_Quickslots_C', source = 'reference' },
+        change_prompt = { source = 'reference', from = 'switcher',
+            member = '@owner.WBP_HUD_Quickslots_ChangePrompt' },
+
+        -- Native SizeBoxes anchor the direct-child Overlay lookups used by Bar.
         ability_box = { source = 'reference', from = 'abilities', member = 'WidgetTree.RootWidget' },
         consumable_box = { source = 'reference', from = 'consumables', member = 'WidgetTree.RootWidget' },
         ability_panel = { source = 'lookup', from = 'ability_box', class = 'Overlay' },
         consumable_panel = { source = 'lookup', from = 'consumable_box', class = 'Overlay' },
+        ability_cross = { source = 'reference', from = 'abilities', member = 'cross' },
+        ability_darken = { source = 'reference', from = 'abilities', member = 'Darken' },
+        ability_glow = { source = 'reference', from = 'abilities', member = 'Glow' },
+        consumable_cross = { source = 'reference', from = 'consumables', member = 'cross' },
 
         ability_button_left = { source = 'reference', from = 'abilities', member = 'Left' },
         ability_button_top = { source = 'reference', from = 'abilities', member = 'Top' },

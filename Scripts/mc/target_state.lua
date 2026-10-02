@@ -20,6 +20,10 @@ local function fields(spec)
 end
 
 local function read(object,name)
+    if name=='box' then
+        local box,detail=Widget.box(object)
+        return assert(box,'target layout unavailable: '..tostring(detail))
+    end
     if name=='widthOverride' or name=='heightOverride' then
         local field=name=='widthOverride' and 'WidthOverride' or 'HeightOverride'
         return {enabled=Widget.property(object,'bOverride_'..field)==true,value=Widget.number(object,field)}
@@ -77,7 +81,7 @@ local function restoreOne(object,spec,values)
     local names=fields(spec)
     for index=#names,1,-1 do
         local name=names[index]
-        if name~='parent' and name~='order' then
+        if name~='parent' and name~='order' and name~='box' then
             write(object,name,assert(values[name], 'missing saved property '..name))
         end
     end

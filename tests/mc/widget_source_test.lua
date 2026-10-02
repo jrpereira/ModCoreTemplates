@@ -53,9 +53,14 @@ function api.StaticFindObject(path)
             assert(context==owner or context.full:find('WBP_GameHUD_C_2',1,true),
                 'viewport lookup must use the owning HUD')
             return {X=1920,Y=1080}
+        end,
+        GetViewportScale=function(_,context)
+            assert(context==owner or context.full:find('WBP_GameHUD_C_2',1,true))
+            return 0.5
         end}
 end
 function api.IsInGameThread() return true end
+function api.ExecuteInGameThread(callback) callback() end
 function api.FindAllOf(class)
     finds=finds+1
     if class=='Missing_C' then return nil end
@@ -139,11 +144,12 @@ local runtime=Runtime.new(host,{category},{template})
 runtime:select('quickslots',{visual={size=2}})
 runtime:start()
 assert(finds==2 and #calls==0)
-assert(host.screen(host.capture(root)).center==960)
+assert(host.screen(host.capture(root)).center==1920)
 local wrap=function(o) return {get=function() return o end} end
 hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(owner))
 assert(#calls==1 and calls[1][1]=='attach' and calls[1][2]==root
-    and calls[1][3].settings.size==2 and calls[1][3].screen.top==1080)
+    and calls[1][3].settings.size==2 and calls[1][3].screen.top==2160
+    and calls[1][3].screen.scale==0.5)
 source.mutate(function()
     hooks['/Script/UMG.PanelWidget:AddChild'].post(wrap(root),wrap(child))
     hooks['/Script/UMG.PanelWidget:RemoveChild'].post(wrap(root),wrap(child))
@@ -237,4 +243,32 @@ assert(next(hooks)==nil)
 local unloaded=Source.new({{name='unloaded',objects={widget={source='lookup',class='/Game/HUD/Missing.Missing_C'}}}},api)
 assert(#unloaded.find({class='/Game/HUD/Missing.Missing_C'})==0)
 unloaded.stop()
+do
+    -- The HUD owner may be announced before its WidgetTree switcher exists.
+    -- A deferred owner event must discover the child without a menu Apply.
+    owner.alive,root.alive,nextOwner.alive,nextRoot.alive=false,false,false,false
+    local lateOwner=obj(60,'WBP_GameHUD_C /Engine/Transient.GameEngine_0.WBP_GameHUD_C_3',
+        {['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
+    lateOwner.class=ownerClass; lateOwner.world=nextWorld
+    local lateTree=obj(61,'WidgetTree /Engine/Transient.GameEngine_0.WBP_GameHUD_C_3.WidgetTree',{},lateOwner)
+    local lateRoot=obj(62,'WidgetSwitcher /Engine/Transient.GameEngine_0.WBP_GameHUD_C_3.WidgetTree.QuickslotsSwitcher',
+        {['/Script/UMG.Widget']=true,['/Script/UMG.WidgetSwitcher']=true},lateTree)
+    lateRoot.class=widgetClass; lateRoot.alive=false
+    lateOwner.WidgetTree=lateTree; lateTree.RootWidget=lateRoot
+    local pending={}
+    function api.ExecuteInGameThread(callback) pending[#pending+1]=callback end
+    local delayed=Source.new({category},api)
+    delayed.watch({category.objects.switcher})
+    local observed={}
+    delayed.subscribe(function(event) observed[#observed+1]=event end,function() return 1 end)
+    created[classPath](lateOwner)
+    assert(#observed==0 and #pending==1)
+    pending[1]()
+    assert(#observed==0 and #pending==2,
+        'owner discovery must retry while the WidgetTree child is unavailable')
+    lateRoot.alive=true; lateRoot.parent=lateOwner
+    pending[2]()
+    assert(#observed==1 and observed[1].kind=='changed' and observed[1].object==lateRoot)
+    delayed.stop()
+end
 print('PASS: widget construction, group parenting, valid detach and hook cleanup')

@@ -13,17 +13,31 @@ assert(not pcall(Selectors.compile,{actions={source='create',outer='root'}}))
 assert(not pcall(Selectors.compile,{actions={source='event',object='root'}}))
 
 local function object(name)
-    local value={name=name,children={}}
+    local value={name=name,children={},opacity=1,
+        RenderTransform={Translation={X=0,Y=0},Scale={X=1,Y=1}}}
     function value:IsValid() return true end
     function value:GetFullName() return self.name end
     function value:GetParent() return self.parent end
     function value:GetChildrenCount() return #self.children end
     function value:GetChildAt(index) return self.children[index+1] end
+    function value:GetRenderOpacity() return self.opacity end
+    function value:SetRenderOpacity(opacity) self.opacity=opacity end
+    function value:SetRenderTranslation(position) self.RenderTransform.Translation=position end
+    function value:ForceLayoutPrepass() self.prepassed=true end
     function value:AddChild(child)
         assert(child.parent==nil)
         self.children[#self.children+1]=child
         child.parent=self
-        return child
+        local slot={Padding={Left=0,Top=0,Right=0,Bottom=0},
+            HorizontalAlignment=0,VerticalAlignment=0}
+        function slot:IsValid() return true end
+        function slot:SetLayout(layout) self.layout=layout end
+        function slot:SetAutoSize(autoSize) self.autoSize=autoSize end
+        function slot:SetPadding(padding) self.Padding=padding end
+        function slot:SetHorizontalAlignment(alignment) self.HorizontalAlignment=alignment end
+        function slot:SetVerticalAlignment(alignment) self.VerticalAlignment=alignment end
+        child.Slot=slot
+        return slot
     end
     function value:RemoveChild(child)
         for index,item in ipairs(self.children) do
@@ -80,4 +94,53 @@ assert(root:GetChildrenCount()==0 and not manager:hasState(root))
 assert(manager:attach(root,named(),{settings={}}))
 manager:reset()
 assert(root:GetChildrenCount()==0 and not manager:hasState(root))
-print('PASS: created objects attach to declared parents, survive update and clean up on failure, detach, forget and reset')
+
+local layoutRoot,layoutOuter=object('layout-root'),object('layout-tree')
+function layoutRoot:GetOuter() return layoutOuter end
+local wheel=object('wheel')
+layoutRoot:AddChild(wheel)
+wheel:SetRenderOpacity(0.4)
+wheel.Slot:SetPadding({Left=7,Top=8,Right=9,Bottom=10})
+local layoutDeclarations={
+    root={source='lookup',object='layout-root',required=true},
+    wheel={source='reference',from='root',member='Wheel'},
+    out={source='create',class='/Script/UMG.CanvasPanel',outer='root',parent='root',
+        layout='fill',prepass=true},
+    bait={source='create',class='/Script/UMG.Overlay',outer='root',parent='root',
+        opacity=0,reparent='wheel',destination='out',
+        reparentLayout='canvas',reparentOpacity=1},
+}
+local layoutGraph=Selectors.compile(layoutDeclarations)
+local layoutTemplate={objects={'out','bait'},attach=function(values,_,original)
+    assert(values.root==nil and values.wheel==nil,
+        'source dependencies must not be exposed to the template')
+    assert(values.out:GetChildAt(0)==wheel and values.bait:GetParent()==layoutRoot,
+        'bait source must reparent its widget into the output panel')
+    assert(values.out.Slot.layout.Anchors.Maximum.X==1 and values.out.Slot.autoSize==false
+        and values.out.prepassed and values.bait.opacity==0,
+        'source must prepare the output panel and hide its bait before attach')
+    assert(wheel.Slot.autoSize==true and wheel.opacity==1,
+        'source must prepare the reparented canvas child before attach')
+    return original
+end}
+local layoutManager=Manager.new(layoutTemplate,State.specs(layoutGraph,layoutTemplate.objects),
+    layoutGraph.order,{
+        {name='out',class='/Script/UMG.CanvasPanel',from='root',parent='root',
+            layout='fill',prepass=true},
+        {name='bait',class='/Script/UMG.Overlay',from='root',parent='root',
+            opacity=0,reparent='wheel',destination='out',
+            reparentLayout='canvas',reparentOpacity=1},
+    })
+StaticFindObject=function(path) return {path=path} end
+StaticConstructObject=function(class,owner)
+    assert(owner==layoutOuter)
+    return object(class.path)
+end
+local values={}
+assert(layoutManager:attach(layoutRoot,values,{settings={}},{root=layoutRoot,wheel=wheel}))
+assert(layoutManager:detach(layoutRoot))
+assert(layoutRoot:GetChildrenCount()==1 and layoutRoot:GetChildAt(0)==wheel,
+    'detaching source-owned baits must restore the reparented widget')
+assert(wheel.opacity==0.4 and wheel.Slot.Padding.Left==7 and wheel.Slot.Padding.Bottom==10,
+    'detaching source-owned baits must restore source opacity and slot settings')
+print('PASS: created objects attach, reparent source targets, and restore lifecycle state')

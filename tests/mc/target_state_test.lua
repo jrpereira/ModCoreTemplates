@@ -44,6 +44,8 @@ end
 
 local switcher,elsewhere=widget('switcher'),widget('elsewhere')
 local first,second=widget('first'),widget('second')
+first.RenderTransformPivot={X=0.25,Y=0.75}
+function first:GetDesiredSize() return {X=320,Y=180} end
 switcher:AddChild(first);switcher:AddChild(second)
 switcher.active=1
 local targets={switcher=switcher,buttons={first,second}}
@@ -60,6 +62,11 @@ assert(State.restore(targets,specs,order,saved))
 assert(switcher:GetChildAt(0)==first and switcher:GetChildAt(1)==second)
 assert(switcher:GetActiveWidgetIndex()==1)
 assert(first.RenderTransform.Translation.X==0 and first.RenderTransform.Translation.Y==0)
+local boxSaved=State.capture({first=first},{first={'box'}},{'first'})
+assert(boxSaved.first.box.width==320 and boxSaved.first.box.height==180
+    and boxSaved.first.box.pivotX==0.25 and boxSaved.first.box.pivotY==0.75)
+assert(State.restore({first=first},{first={'box'}},{'first'},boxSaved),
+    'computed box properties must not require restoration')
 local graph=require('mc.selectors').compile({
     first={source='lookup',object='first'},second={source='lookup',object='second'},
 })
