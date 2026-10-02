@@ -8,15 +8,32 @@ local Extension = require('mc.dmm_extension')
 local Bootstrap = require('mc.bootstrap')
 local Layout = require('mc.layout')
 local U = require('mc.util')
-local Choices = dofile(assert(os.getenv('MCT_DMM_CHOICES'), 'MCT_DMM_CHOICES required'))
-local Presentation = dofile(assert(os.getenv('MCT_PRESENTATION'), 'MCT_PRESENTATION required'))
+-- MCT reaches the menu through ModCoreSettings. The real DMM parser and MCS
+-- presentation are optional compatibility checks, run only when both are given.
+local choicesPath, presentationPath = os.getenv('MCT_DMM_CHOICES'), os.getenv('MCT_PRESENTATION')
+assert((choicesPath == nil) == (presentationPath == nil),
+    'set both MCT_DMM_CHOICES and MCT_PRESENTATION, or neither')
+local Choices = choicesPath and dofile(choicesPath)
+local Presentation = presentationPath and dofile(presentationPath)
 local testRoot = assert(os.getenv('MCT_TEST_DIR'), 'MCT_TEST_DIR required')
-local passed = 0
+local passed, skipped = 0, 0
 local function test(name, body)
     local ok, why = pcall(body)
     assert(ok, name .. ': ' .. tostring(why))
     passed = passed + 1
 end
+local function compatibility(name, body)
+    if Choices then return test(name, body) end
+    skipped = skipped + 1
+end
+-- MCT's own DMM extension needs only one choice per [Setting.<id>] section.
+local ExtensionChoices = Choices or {parse=function(manifest)
+    local choices = {}
+    for id in (manifest .. '\n'):gmatch('%[Setting%.([^%]\n]+)%]\n') do
+        choices[#choices + 1] = {id=id}
+    end
+    return choices
+end}
 local function field(id, default)
     return {id=id, label=id, values={min=0,max=100,step=1}, default=default}
 end
@@ -80,7 +97,7 @@ local function event(f, page, revision, edits)
     return {providerId=page.id,revision=revision,values=values}
 end
 
-test('copied manifests parse with actual DMM and ModCoreSettings', function()
+compatibility('copied manifests parse with actual DMM and ModCoreSettings', function()
     local f=fixture(true)
     assert(#f.menu.pages==2)
     for _,provider in pairs(f.menu.providers) do
@@ -107,7 +124,7 @@ test('module-target templates do not add controls to the MCT aggregate page', fu
     assert(#moduleOnly.menu.aggregate.rows==0 and #moduleOnly.menu.pages==2)
     assert(moduleOnly.menu.pageByModule.Alpha and moduleOnly.menu.pageByModule.Beta)
     local extension=Extension.new(testRoot,moduleOnly.menu)
-    local api={choices=Choices,pages={build=function(_,providers) return providers end}}
+    local api={choices=ExtensionChoices,pages={build=function(_,providers) return providers end}}
     extension.install(api)
     local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
         {id='detected:ue4ss:alpha',name='Alpha',testOnly=false,noSettings=true},
@@ -216,7 +233,7 @@ end)
 test('DMM extension adds pages once and replaces module placeholder', function()
     local f=fixture(true)
     local extension=Extension.new(testRoot,f.menu)
-    local api={choices=Choices,pages={build=function(_,providers) return providers end}}
+    local api={choices=ExtensionChoices,pages={build=function(_,providers) return providers end}}
     assert(extension.install(api)==nil and extension.install(api)==false)
     local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
         {id='detected:ue4ss:beta',name='Beta',testOnly=false,noSettings=true}}
@@ -238,7 +255,7 @@ test('provider link opens the existing page without saving a second value', func
     assert(row and row.mcNavigation==1 and row.mcLinkProvider=='ModCoreControls')
     local extension=Extension.new(testRoot,f.menu)
     local page
-    local api={choices=Choices,pages={build=function(_,providers)
+    local api={choices=ExtensionChoices,pages={build=function(_,providers)
         page={rows={},controlStatus={},transitions={}}
         for index in ipairs(providers) do page.rows[index]={providerIndex=index} end
         page.controls={show=function(self,index)
@@ -416,7 +433,7 @@ test('invalid saved config is reported without replacing user values', function(
     assert(actual==contents)
 end)
 
-test('generated data goes into Scripts/cache and DMM resolves its nested config', function()
+test('generated data goes into Scripts/cache', function()
     local f=fixture(true,'templates','templates')
     local root=testRoot..'/new-layout'
     local paths=Layout.prepare(root)
@@ -425,10 +442,12 @@ test('generated data goes into Scripts/cache and DMM resolves its nested config'
     for _,row in ipairs(f.menu.rows) do
         if row.mcNavigation~=1 then assert(row.ConfigFile=='Scripts/cache/config.ini') end
     end
-    local choices=Choices.parse(f.menu.aggregate.manifest)
-    local model=Choices.open({id='layout-check',path=paths.manifest,choices=choices,testOnly=false})
-    assert(not model.error,model.error)
-    assert(model.path==paths.config)
+    if Choices then
+        local choices=Choices.parse(f.menu.aggregate.manifest)
+        local model=Choices.open({id='layout-check',path=paths.manifest,choices=choices,testOnly=false})
+        assert(not model.error,model.error)
+        assert(model.path==paths.config,'DMM resolves the nested config')
+    end
     assert(io.open(root..'/identity-catalog.lua')==nil and io.open(root..'/menu-pages.lua')==nil
         and io.open(root..'/config.ini')==nil)
     local manifest=assert(io.open(paths.manifest)); manifest:close()
@@ -477,4 +496,5 @@ test('empty template menus still create a readable config', function()
     assert(next(Files.readConfigValues(paths.config,{},{}))==nil)
 end)
 
-print('PASS: '..passed..' MCT menu integration tests (actual DMM parser and presentation)')
+print('PASS: '..passed..' MCT menu tests'..(Choices and ' (with actual DMM parser and presentation)'
+    or ' ('..skipped..' DMM compatibility test skipped)'))

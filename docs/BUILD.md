@@ -28,8 +28,13 @@ so settings keep their IDs. Edit template declarations rather than generated pag
 The [test runner](../tools/run-tests.py) checks runtime Lua syntax and executes
 the test suites from the repository root:
 
-The menu integration suites use the real DMM parser and Settings presentation
-module. Point the following variables at compatible local installations:
+```sh
+python3 tools/run-tests.py --lua lua5.4
+```
+
+MCT reaches the menu through ModCoreSettings, so the suites need no DMM
+installation. To also check generated manifests against the real DMM parser and
+Settings presentation, point both variables at compatible local installations:
 
 ```sh
 export MCT_DMM_CHOICES="/path/to/ue4ss/Mods/DawnwalkerModMenu/Scripts/choices.lua"
