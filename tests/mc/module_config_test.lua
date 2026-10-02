@@ -23,7 +23,6 @@ for _,definition in pairs(preview.definitions[category.name]) do
     if definition.id=='Wheels' then sizeId=definition.settings.Size end
 end
 assert(sizeId and preview.pageByModule.Fangdango.configPath==moduleRoot..'/config.ini')
-assert(preview.pageByModule.Fangdango.providerPath==moduleRoot..'/enabled.txt')
 assert(preview.pageByModule.Fangdango.manifest:find('ConfigFile=config.ini',1,true))
 
 local legacyPath=Layout.prepare(menuRoot).config

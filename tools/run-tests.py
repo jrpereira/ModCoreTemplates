@@ -21,7 +21,8 @@ if 'Lua 5.4' not in version.stdout + version.stderr:
     parser.error('Lua 5.4 required')
 files = (sorted(ROOT.glob('Scripts/mc/*.lua')) + sorted(ROOT.glob('Scripts/categories/*.lua'))
          + [ROOT / 'Scripts/mc.lua']
-         + [ROOT / 'Scripts/dmm_extension.lua', ROOT / 'Scripts/main.lua',
+         + [ROOT / 'Scripts/mc_client.lua']
+         + [ROOT / 'Scripts/main.lua',
             ROOT / 'Scripts/categories/mc.lua'])
 for path in files:
     # '-' makes Lua read a script from stdin; supply an empty one.

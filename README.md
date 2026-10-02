@@ -7,7 +7,8 @@ is being tested in Dawnwalker.
 
 Mod data lives in `Scripts/categories` and `Scripts/cache`; providers keep their
 explicitly registered template entries in their own `Scripts` folders.
-Generated settings and page data use the cache; DMM's `mod_settings.ini` stays at root.
+Generated settings and page data use the cache. Menu pages are published through
+ModCoreSettings; MCT writes nothing to the mod root.
 
 Build modular game-feature and UI customizations as Lua templates. Register
 categories, expose settings, and implement `attach`.
@@ -43,6 +44,13 @@ managed `attach`. The visual layout remains the template's responsibility. MCT
 reuses the panel across updates and removes it from its parent during cleanup.
 A template must include `switcher`, `hud_root`, and `actions` in its `objects`
 declaration to use them.
+
+Categories may instead declare `sharedObjects`, a nonempty array of private
+targets required to prepare every selected template in that category. MCT runs
+their managed lifecycle before the selected template attaches and restores them
+only after that template detaches. Templates neither request nor receive those
+objects. `player.quickslots` uses this to move the wheel panels out of the native
+`WidgetSwitcher`, leaving template layouts independent of its active panel.
 
 If no category describes the objects you need, define one with its own target
 selectors. Put settings shared by its templates in the category's `menu.groups[].fields`
@@ -97,7 +105,9 @@ M.addTemplate('layout')
 
 This registers `mc_layout.lua`; that template declares its own category. MCT loads
 it at the startup barrier and discovers the module ID, author, and version from
-the provider's `mod.json`. Declare the properties changed by shared helpers in each template's
+the provider's `mod.json`. On launch MCT installs its dependency-free registration
+client as `Mods/shared/mc.lua`; provider Lua states publish template paths through
+that client before MCT closes the startup barrier. Declare the properties changed by shared helpers in each template's
 `objects`, allowing MCT to restore them.
 
 ## Requirements and installation

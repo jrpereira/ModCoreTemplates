@@ -66,12 +66,9 @@ boot:stop()
 assert(sessions[1].stops==1 and hookLive==0 and closed==1)
 print('PASS: malformed providers and throwing loaded hooks are isolated with owned cleanup')
 
-local handoffStops,cleanupAttempts,hostAttempts=0,0,0
-package.loaded['mc.menu_handoff']={publisher=function()
-    return {begin=function() end,ready=function() end,stop=function()
-        handoffStops=handoffStops+1
-        if handoffStops==1 then error('handoff stop failed') end
-    end}
+local withdrawals,cleanupAttempts,hostAttempts=0,0,0
+package.loaded['mc.menu_contributions']={publisher=function()
+    return {publish=function() end,withdraw=function() withdrawals=withdrawals+1 end}
 end}
 _G.failConstruction=true
 local second=Bootstrap.new({host=host,categories={},menuShared={},menuRoot='unused',
@@ -91,20 +88,21 @@ local ok,why=second:finishLoading()
 _G.failConstruction=nil
 assert(not ok and tostring(why):find('injected construction failure',1,true))
 assert(second.phase=='failed' and _G.partialSession.stops==1
-    and handoffStops==1 and cleanupAttempts==1 and hostAttempts==1)
+    and withdrawals==0 and cleanupAttempts==1 and hostAttempts==1,
+    'a startup that never published has no menu pages to withdraw')
 local startupSeen,cleanupSeen=false,0
 for _,event in ipairs(events) do
     if event.stage=='startup' and event.message:find('injected construction failure',1,true) then startupSeen=true end
     if event.stage=='cleanup' then cleanupSeen=cleanupSeen+1 end
 end
-assert(startupSeen and cleanupSeen==3)
+assert(startupSeen and cleanupSeen==2)
 second:stop()
-assert(handoffStops==2 and cleanupAttempts==2 and hostAttempts==2)
+assert(withdrawals==0 and cleanupAttempts==2 and hostAttempts==2)
 print('PASS: startup error survives independent cleanup failures and unresolved cleanup retries')
 
 package.loaded['mc.startup_session']=nil
 package.loaded['mc.module_metadata']=nil
-package.loaded['mc.menu_handoff']=nil
+package.loaded['mc.menu_contributions']=nil
 local Controller=require('mc.menu_controller')
 local attempts=0
 local menu={rows={},textSettings={},providers={A={rows={},decode=function() end}},
@@ -126,19 +124,18 @@ package.loaded['mc.runtime']={new=function()
     return {stop=function() runtimeStops=runtimeStops+1;return true end}
 end}
 package.loaded['mc.menu_controller']={new=function()
-    return {bind=function() end,stop=function()
+    return {bind=function() error('binding failed after construction') end,stop=function()
         controllerStops=controllerStops+1
         if controllerStops==1 then error('controller cleanup failed') end
         return true
     end}
 end}
-package.loaded['mc.dmm_extension']={new=function() error('extension failed after binding') end}
 local Session=require('mc.startup_session')
 local owned
 local constructed,constructionError=pcall(Session.new,
     {host={onError=function() end},settingsApi={},queue=function() end},{},{},{},
     function(partial) owned=partial end)
-assert(not constructed and tostring(constructionError):find('extension failed after binding',1,true))
+assert(not constructed and tostring(constructionError):find('binding failed after construction',1,true))
 assert(owned and owned.menuController and owned.runtime)
 local stopped,stopError=owned:stop()
 assert(not stopped and tostring(stopError):find('controller cleanup failed',1,true)

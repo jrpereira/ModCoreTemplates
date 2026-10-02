@@ -51,23 +51,6 @@ local function writeChanged(path, content)
     return true
 end
 
-local function pagesSource(pages)
-    local lines = {'return {version=1,pages={'}
-    for _, page in ipairs(pages) do
-        local category = page.category and string.format('%q', page.category) or 'nil'
-        local module = page.module and string.format('%q', page.module) or 'nil'
-        local moduleRoot = page.moduleRoot and string.format('%q', page.moduleRoot) or 'nil'
-        local providerPath = page.providerPath and string.format('%q', page.providerPath) or 'nil'
-        local configPath = page.configPath and string.format('%q', page.configPath) or 'nil'
-        local author = page.author and string.format('%q', page.author) or 'nil'
-        lines[#lines + 1] = string.format('{id=%q,name=%q,category=%s,module=%s,moduleRoot=%s,providerPath=%s,configPath=%s,author=%s,version=%q,manifest=%q},',
-            page.id, page.name, category, module, moduleRoot, providerPath, configPath,
-            author, page.version or '0.0.20', page.manifest)
-    end
-    lines[#lines + 1] = '}}\n'
-    return table.concat(lines, '\n')
-end
-
 local function catalogSource(catalog)
     local lines = {'return {version=1,next=' .. catalog.next .. ',entries={'}
     local keys = {}
@@ -97,8 +80,12 @@ function M.publish(root, menu)
     local paths = Layout.prepare(root)
     -- Reserve IDs durably before any manifest using them is published.
     writeChanged(paths.catalog, catalogSource(menu.catalog))
-    writeChanged(paths.pages, pagesSource(menu.pages))
-    writeChanged(paths.manifest, menu.aggregate.manifest)
+    -- A leftover mod_settings.ini would claim the ModCoreTemplates id in the menu
+    -- and make ModCoreSettings skip every MCT page.
+    for _, path in ipairs(paths.retired) do
+        recover(path)
+        if read(path) ~= nil then assert(os.remove(path), 'could not remove retired menu file: ' .. path) end
+    end
 end
 
 local function ensureConfig(path, rows, textSettings, initialValues)

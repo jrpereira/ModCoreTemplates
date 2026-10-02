@@ -1,12 +1,14 @@
--- Installed mod layout. Only DMM's discovery manifest must remain at mod root.
+-- Installed mod layout. Generated state lives in Scripts/cache; menu pages are
+-- published through ModCoreSettings, so nothing is generated at mod root.
 local M = {configFile='Scripts/cache/config.ini'}
 function M.paths(root)
     assert(type(root) == 'string' and root ~= '', 'mod root required')
     root = root:gsub('[/\\]+$', '')
     return {root=root, categories=root .. '/Scripts/categories',
         cache=root .. '/Scripts/cache', config=root .. '/' .. M.configFile,
-        catalog=root .. '/Scripts/cache/identity-catalog.lua', pages=root .. '/Scripts/cache/menu-pages.lua',
-        manifest=root .. '/mod_settings.ini'}
+        catalog=root .. '/Scripts/cache/identity-catalog.lua',
+        -- Files from the former DMM handoff, removed when MCT publishes.
+        retired={root .. '/mod_settings.ini', root .. '/Scripts/cache/menu-pages.lua'}}
 end
 local function mkdir(path)
     local command

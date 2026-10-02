@@ -1,7 +1,7 @@
 # Template menus
 
 The fresh `mct` implementation reuses the menu generator, field validation,
-DMM page extension, settings notification client and persistence helpers adapted
+settings notification client and persistence helpers adapted
 from the previous runtime. It generates menus after all registered templates load,
 at the startup barrier, before attaching objects.
 
@@ -15,14 +15,15 @@ at the startup barrier, before attaching objects.
 │   └── cache/
 │       ├── config.ini        Saved settings; preserve this file
 │       ├── identity-catalog.lua
-│       └── menu-pages.lua
-└── mod_settings.ini          Required here for DMM discovery
+│       └── mcs_menu.<generation>*.ini   Published menu pages
 ```
 
-Generated catalogs, page metadata, and aggregate/category settings go into
-`Scripts/cache`. DMM requires its discovery manifest at the mod root and supports
-the relative `ConfigFile=Scripts/cache/config.ini` path. A module-target page instead
-uses `ConfigFile=config.ini` with the provider rooted in that template module, so
+Generated catalogs, published pages, and aggregate/category settings go into
+`Scripts/cache`. MCT publishes its pages through ModCoreSettings' menu-contribution
+client (`mc/menu_contributions.lua`, vendored unchanged) and writes nothing at the mod
+root. Aggregate and category pages resolve `ConfigFile=Scripts/cache/config.ini` against
+the MCT root. A module-target page instead uses `ConfigFile=config.ini` against that
+template module's root, so
 Fangdango settings are stored in `_ModCore_X_Fangdango/config.ini`. On the first startup
 after this change, matching values in the former shared config are copied to the
 module config. Both locations contain user settings and must be preserved.
@@ -30,8 +31,11 @@ module config. Both locations contain user settings and must be preserved.
 ## Where pages appear
 
 - **ModCore Templates:** category selectors, template toggles and shared category settings.
-- **Category page:** fields for templates explicitly targeting `templates`.
-- **Module page:** the default location for template fields; the module
+  It takes the place of the menu entry for MCT's own folder and is hidden when empty.
+- **Category page:** fields for templates explicitly targeting `templates`, listed under
+  ModCore Templates.
+- **Module page:** the default location for template fields, in the ModCore group. It
+  takes the place of the module's own entry when that entry has no settings. The module
   name comes from the registered `<Module>/Scripts/<file>.lua` path.
 
 Set `menuTarget='templates'` on a template only when its fields belong on the
@@ -83,8 +87,9 @@ an absolute group ID is usually clearer and preserves existing keys.
 property. A range table such as `{min=-1000,max=1000,step=10}` produces an integer.
 A numeric-keyed label map such as `{[85]='Small',[100]='Medium'}` produces a picker,
 ordered by numeric value. A named internal domain such as `values='percent'`
-expands to the validated 0..100 integer range with a `%` suffix. `tab=true` renders
-a picker as tabs. MCT infers the field type; templates do not declare `type`,
+expands to the validated 0..100 integer range with a `%` suffix. Pickers use DMM's
+arrow selector by default; set `tab=true` for a picker with up to eight choices.
+MCT infers the field type; templates do not declare `type`,
 parallel `labels`, or field-level visibility metadata.
 
 A field may also appear directly in the `menu` array when it needs no visual group.
@@ -105,14 +110,14 @@ Category `single` controls selection multiplicity.
 
 ## Startup integration
 
-`mc.bootstrap.new` now exposes `menu`, `menuController` and `extension` after its
+`mc.bootstrap.new` now exposes `menu` and `menuController` after its
 module-load barrier fires. In addition to the lifecycle host and registration
 options, provide:
 
 | Option | Purpose |
 |---|---|
-| `menuRoot` | Mod root; generated state goes into `Scripts/cache`, with only `mod_settings.ini` at root |
-| `menuShared` | `ModRef` shared-variable interface for the cross-state handoff; Lua startup supplies it |
+| `menuRoot` | Mod root (absolute); generated state and published pages go into `Scripts/cache` |
+| `menuShared` | `ModRef` shared-variable interface for publishing pages to ModCoreSettings; Lua startup supplies it |
 | `settingsApi` | Durable Apply subscriber; the copied client is `require('mc.settings_api')` |
 | `queue` | Game-thread dispatcher for settings callbacks |
 | `menu` | Generator options, such as `description` or an in-memory identity catalog |
@@ -127,10 +132,11 @@ needed. The central config, identity catalog, and pages are stored directly in
 `Scripts/cache`; module-target configs are stored at their module roots. Without `menuRoot`,
 generation and Apply routing work in memory and do not write any files.
 
-For direct in-memory integration, pass `bootstrap.extension` to DMM's extension
-installer once the barrier has completed. It adds generated pages, replaces a module's no-settings placeholder
-when applicable, and handles repeat page builds without duplication. The restored `Scripts/dmm_extension.lua` entry point supports DMM's separate Lua
-state through a lazy reader. The Lua startup adapter supplies the generation handoff.
+With `menuShared`, MCT publishes its pages once the barrier has completed and withdraws
+them on stop. A failed publish is reported and the templates keep running on their saved
+settings. Startup also removes `mod_settings.ini` and `Scripts/cache/menu-pages.lua` left by
+the former DMM handoff: a leftover `mod_settings.ini` would claim the `ModCoreTemplates` page
+id and make ModCoreSettings skip every MCT page.
 
 Saved setting IDs use `MCT_`. Keep the identity catalog:
 choice numbers and named setting reservations survive subsequent regeneration,
@@ -151,6 +157,28 @@ provider revisions cause no extra callbacks. Category text values are reread fro
 committed config on Apply. Subscription teardown ignores already-queued events;
 `bootstrap:stop()` closes both menu subscriptions and the object runtime.
 
+MCT also subscribes to category-independent ModCore events through
+`Scripts/mc_events.lua`. The latest `controls.group.focus` transition is owned by
+MCT as `bootstrap.state.controls.group = {from=<number>,to=<number>}`. Template
+callbacks receive a copied snapshot at `params.state`; a new transition updates
+each active attachment once. The callback copy cannot mutate MCT's stored state.
+
+A template may declare event callbacks by name:
+
+```lua
+events={
+    ['controls.group.focus']=function(event,state)
+        -- event.group.from and event.group.to are numbers.
+    end,
+}
+```
+
+MCT validates and registers these declarations only after the provider's load
+hook and full template validation succeed. One transport subscription serves all
+templates declaring the same event. Only active templates receive callbacks;
+callback failures are isolated and reported before MCT reconciles active
+attachments with the new state.
+
 Use menu values/config as the selection authority when `settingsApi` is supplied.
 The bootstrap's direct `selections` / `categorySettings` options remain available for
 standalone runtime fixtures and hosts without menu subscriptions. Do not mix direct
@@ -159,12 +187,12 @@ runtime edits with an active menu controller, whose saved snapshot would become 
 ## Tests
 
 ```sh
-python3 tools/run-tests.py --lua lua5.4 \
-  --dmm-choices /path/to/DawnwalkerModMenu/Scripts/choices.lua \
-  --presentation /path/to/ModCoreSettings/Scripts/presentation.lua
+python3 tools/run-tests.py --lua lua5.4
 ```
 
-The runner uses temporary output directories. It validates generated pages with the
-actual DMM parser and ModCoreSettings presentation code, and exercises Apply routing,
+The runner uses temporary output directories. It validates the published contribution
+with the vendored ModCoreSettings client and exercises Apply routing,
 merged settings, persistence, revisions, subscriptions and lifecycle transitions.
-These offline checks do not establish in-game rendering or startup timing.
+Passing `--dmm-choices` and `--presentation` also parses generated pages with the actual
+DMM parser and ModCoreSettings presentation code. These offline checks do not establish
+in-game rendering or startup timing.

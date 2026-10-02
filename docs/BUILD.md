@@ -19,8 +19,8 @@ Run the commands below from the repository root.
 
 ## Generated menus
 
-The DMM extension generates current category and module pages during startup,
-after loading registered templates. Preserve the identity catalog between runs
+MCT generates current category and module pages during startup, after loading
+registered templates, and publishes them through ModCoreSettings. Preserve the identity catalog between runs
 so settings keep their IDs. Edit template declarations rather than generated pages.
 
 ## Offline tests

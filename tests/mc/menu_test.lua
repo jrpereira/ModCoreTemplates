@@ -4,7 +4,8 @@ local Menu = require('mc.menu')
 local Runtime = require('mc.runtime')
 local Controller = require('mc.menu_controller')
 local Files = require('mc.menu_files')
-local Extension = require('mc.dmm_extension')
+local Contribution = require('mc.menu_contribution')
+local Contributions = require('mc.menu_contributions')
 local Bootstrap = require('mc.bootstrap')
 local Layout = require('mc.layout')
 local U = require('mc.util')
@@ -26,14 +27,6 @@ local function compatibility(name, body)
     if Choices then return test(name, body) end
     skipped = skipped + 1
 end
--- MCT's own DMM extension needs only one choice per [Setting.<id>] section.
-local ExtensionChoices = Choices or {parse=function(manifest)
-    local choices = {}
-    for id in (manifest .. '\n'):gmatch('%[Setting%.([^%]\n]+)%]\n') do
-        choices[#choices + 1] = {id=id}
-    end
-    return choices
-end}
 local function field(id, default)
     return {id=id, label=id, values={min=0,max=100,step=1}, default=default}
 end
@@ -116,6 +109,19 @@ compatibility('copied manifests parse with actual DMM and ModCoreSettings', func
     end
 end)
 
+test('generated controls do not assign secondary levels or default tabs', function()
+    for _, single in ipairs({true, false}) do
+        local f=fixture(single)
+        for _, provider in pairs(f.menu.providers) do
+            for _, row in ipairs(provider.rows) do
+                assert(row.mcLevel==nil, row.Id .. ': unexpected level')
+                assert(row.mcType~='tab', row.Id .. ': unexpected tab')
+            end
+            assert(not provider.manifest:find('mcLevel=[1-6]'))
+        end
+    end
+end)
+
 test('module-target templates do not add controls to the MCT aggregate page', function()
     local mixed=fixture(true)
     assert(#mixed.menu.aggregate.rows==0)
@@ -123,17 +129,13 @@ test('module-target templates do not add controls to the MCT aggregate page', fu
     local moduleOnly=fixture(true,'module','module')
     assert(#moduleOnly.menu.aggregate.rows==0 and #moduleOnly.menu.pages==2)
     assert(moduleOnly.menu.pageByModule.Alpha and moduleOnly.menu.pageByModule.Beta)
-    local extension=Extension.new(testRoot,moduleOnly.menu)
-    local api={choices=ExtensionChoices,pages={build=function(_,providers) return providers end}}
-    extension.install(api)
-    local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
-        {id='detected:ue4ss:alpha',name='Alpha',testOnly=false,noSettings=true},
-        {id='detected:ue4ss:beta',name='Beta',testOnly=false,noSettings=true}}
-    api.pages.build({},providers,{},{})
-    assert(#providers==2)
-    for _,provider in ipairs(providers) do
-        assert(provider.id~='ModCoreTemplates' and provider.settingsCount>0)
-        assert(provider.path=='/Mods/'..provider.name..'/enabled.txt')
+    local pages=Contribution.build(moduleOnly.menu,'/Mods/_ModCore_3_Templates').pages
+    assert(#pages==3 and pages[1].id=='ModCoreTemplates' and pages[1].visible==false
+        and pages[1].manifest==nil,'an empty aggregate is hidden')
+    for index=2,3 do
+        local page=pages[index]
+        assert(page.group=='module' and page.attach==page.name and page.under==nil)
+        assert(page.configDirectory=='/Mods/'..page.name and page.manifest:find('[Setting.',1,true))
     end
 end)
 
@@ -230,86 +232,31 @@ test('menu metadata in runtime settings is rejected', function()
     assert(not ok and tostring(why):find('template.menu',1,true))
 end)
 
-test('DMM extension adds pages once and replaces module placeholder', function()
+test('menu contribution validates and orders the aggregate before its category pages', function()
     local f=fixture(true)
-    local extension=Extension.new(testRoot,f.menu)
-    local api={choices=ExtensionChoices,pages={build=function(_,providers) return providers end}}
-    assert(extension.install(api)==nil and extension.install(api)==false)
-    local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
-        {id='detected:ue4ss:beta',name='Beta',testOnly=false,noSettings=true}}
-    api.pages.build({},providers,{},{}); api.pages.build({},providers,{},{})
-    assert(#providers==3)
-    local seen={}
-    for _,p in ipairs(providers) do assert(not seen[p.id]); seen[p.id]=true end
-    assert(seen['ModCoreTemplates.module.Beta'])
-    for _,provider in ipairs(providers) do
-        if provider.id=='ModCoreTemplates.module.Beta' then assert(provider.author=='Example Author') end
-    end
+    local contribution=Contribution.build(f.menu,'/Mods/_ModCore_3_Templates/')
+    assert(Contributions.validate('ModCoreTemplates',contribution))
+    local pages=contribution.pages
+    assert(pages[1].id=='ModCoreTemplates' and pages[1].attach=='_ModCore_3_Templates'
+        and pages[1].visible==true,'category pages show the aggregate in place of the MCT folder entry')
+    local category=pages[2]
+    assert(category.id==f.menu.pageByCategory['player.quickslots'].id and category.under=='ModCoreTemplates'
+        and category.configDirectory=='/Mods/_ModCore_3_Templates' and category.attach==nil)
+    local beta=pages[3]
+    assert(beta.id=='ModCoreTemplates.module.Beta' and beta.author=='Example Author'
+        and beta.group=='module' and beta.attach=='Beta')
 end)
 
-test('provider link opens the existing page without saving a second value', function()
+test('provider link is published as a ModCoreSettings page link', function()
     local f=fixture(true)
     local linkId=f.definitions.Beta.navigation.ControlLayoutLink
     local row
     for _,candidate in ipairs(f.menu.rows) do if candidate.Id==linkId then row=candidate end end
-    assert(row and row.mcNavigation==1 and row.mcLinkProvider=='ModCoreControls')
-    local extension=Extension.new(testRoot,f.menu)
-    local page
-    local api={choices=ExtensionChoices,pages={build=function(_,providers)
-        page={rows={},controlStatus={},transitions={}}
-        for index in ipairs(providers) do page.rows[index]={providerIndex=index} end
-        page.controls={show=function(self,index)
-            self.active=index
-            self.model={saved=0,dirtyValue=false,
-                set=function(model) model.saved=model.saved+1 end,
-                dirty=function(model) return model.dirtyValue end}
-        end,tick=function(_,activate) activate() end}
-        function page:showDetail(index)
-            self.transitions[#self.transitions + 1] = 'detail:' .. providers[self.rows[index].providerIndex].id
-            self.opened=providers[self.rows[index].providerIndex].id
-            self.controls:show(self.rows[index].providerIndex)
-        end
-        function page:showBrowser()
-            self.transitions[#self.transitions + 1] = 'browser'
-            self.controls.model:restore()
-        end
-        return page
-    end}}
-    extension.install(api)
-    local providers={{id='ModCoreTemplates',name='ModCore Templates',testOnly=false},
-        {id='ModCoreControls',name='ModCore Controls',testOnly=false}}
-    local view=api.pages.build({},providers,{},
-        {setText=function(widget,value) widget.text=value end})
-    local betaIndex,linkIndex
-    for index,provider in ipairs(providers) do
-        if provider.id=='ModCoreTemplates.module.Beta' then
-            betaIndex=index
-            for settingIndex,choice in ipairs(provider.choices) do
-                if choice.id==linkId then
-                    assert(choice.mcLinkProvider=='ModCoreControls')
-                    linkIndex=settingIndex
-                end
-            end
-        end
-    end
-    assert(betaIndex and linkIndex)
-    view:showDetail(betaIndex)
-    local model=view.controls.model
-    function model:restore() self.restored=(self.restored or 0)+1 end
-    assert(view.controls:tick(function() model:set(linkIndex,0) end)==true)
-    assert(view.opened=='ModCoreControls' and model.saved==0 and model.restored==1)
-    assert(view.transitions[#view.transitions-1]=='browser'
-        and view.transitions[#view.transitions]=='detail:ModCoreControls',
-        'provider link must tear down its source detail before opening its target')
-    local transitionCount=#view.transitions
-    assert(view.controls:tick(function() end)~=true and #view.transitions==transitionCount,
-        'provider link must not repeat after the target page opens')
-    view:showDetail(betaIndex)
-    model=view.controls.model;model.dirtyValue=true
-    function model:restore() self.restored=(self.restored or 0)+1 end
-    assert(view.controls:tick(function() model:set(linkIndex,0) end)==true)
-    assert(view.opened=='ModCoreTemplates.module.Beta' and model.saved==0 and not model.restored)
-    assert(view.controlStatus.text:find('Apply or discard',1,true))
+    assert(row and row.mcNavigation==1 and row.mcLinkPage=='ModCoreControls' and row.mcLinkProvider==nil)
+    local manifest=f.menu.pageByModule.Beta.manifest
+    local section=manifest:match('%[Setting%.'..linkId:gsub('%p','%%%0')..'%]\n(.-)\n\n')
+    assert(section and section:find('mcLinkPage=ModCoreControls',1,true)
+        and section:find('mcNavigation=1',1,true))
 end)
 
 test('published menus and catalog can be reloaded; user config is preserved', function()
@@ -325,8 +272,6 @@ test('published menus and catalog can be reloaded; user config is preserved', fu
     assert(values[f.definitions.Alpha.settings.Size]==20)
     local input=assert(io.open(config)); local content=input:read('*a'); input:close()
     assert(content:find('Keep=42',1,true) and content:find('Unknown=55',1,true))
-    local savedPages=assert(loadfile(Layout.paths(testRoot).pages))().pages
-    assert(#savedPages==2 and savedPages[2].author=='Example Author')
 end)
 
 test('queued Apply is ignored after unsubscribe', function()
@@ -363,7 +308,7 @@ test('bootstrap generates menus at barrier and routes committed Apply to runtime
         subscribeLoopStart=function(cb) barrier=cb; return function() end end})
     for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
     assert(boot.menu==nil); barrier(); assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
-    assert(boot.menu and boot.extension and #f.calls==1)
+    assert(boot.menu and #f.calls==1)
     local page=boot.menu.pageByCategory['player.quickslots']
     values=boot.menuController:values(); values[f.definitions.Alpha.settings.Size]=75
     callbacks[page.id]({providerId=page.id,revision=1,values=values})
@@ -443,14 +388,15 @@ test('generated data goes into Scripts/cache', function()
         if row.mcNavigation~=1 then assert(row.ConfigFile=='Scripts/cache/config.ini') end
     end
     if Choices then
+        -- ModCoreSettings resolves ConfigFile against configDirectory as DMM does for mod_settings.ini.
         local choices=Choices.parse(f.menu.aggregate.manifest)
-        local model=Choices.open({id='layout-check',path=paths.manifest,choices=choices,testOnly=false})
+        local model=Choices.open({id='layout-check',path=root..'/mod_settings.ini',choices=choices,testOnly=false})
         assert(not model.error,model.error)
         assert(model.path==paths.config,'DMM resolves the nested config')
     end
     assert(io.open(root..'/identity-catalog.lua')==nil and io.open(root..'/menu-pages.lua')==nil
         and io.open(root..'/config.ini')==nil)
-    local manifest=assert(io.open(paths.manifest)); manifest:close()
+    for _,path in ipairs(paths.retired) do assert(io.open(path)==nil,'retired menu file was published') end
     assert(Files.readCatalog(root).next==f.menu.catalog.next)
 end)
 
@@ -484,6 +430,72 @@ test('module settings are initialized in each template module folder', function(
     assert(not centralContent:find(f.definitions.Alpha.settings.Size,1,true)
         and centralContent:find(f.definitions.Beta.settings.Size..'=73',1,true),
         'legacy central value must remain while new module defaults stay local')
+    boot:stop()
+end)
+
+test('publishing removes files left by the former DMM handoff', function()
+    local f=fixture(true)
+    local root=testRoot..'/retired'
+    local paths=Layout.prepare(root)
+    for _,path in ipairs(paths.retired) do
+        local out=assert(io.open(path,'wb')); out:write('[Mod]\nId=ModCoreTemplates\n'); out:close()
+    end
+    Files.publish(root,f.menu)
+    for _,path in ipairs(paths.retired) do assert(io.open(path)==nil,path..' must be removed') end
+end)
+
+test('bootstrap publishes menu pages through ModCoreSettings and withdraws them on stop', function()
+    local modules=testRoot..'/published-modules'
+    Layout.prepare(modules..'/Alpha'); Layout.prepare(modules..'/Beta')
+    local f=fixture(true,nil,nil,modules)
+    local root=testRoot..'/published'
+    Layout.prepare(root)
+    local values={}
+    local shared={GetSharedVariable=function(_,key) return values[key] end,
+        SetSharedVariable=function(_,key,value) values[key]=value end}
+    local barrier
+    local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
+    local boot=Bootstrap.new({host=f.host,categories={f.category},menuRoot=root,menuShared=shared,
+        execute=function(path) return definitions[path] end,
+        subscribeLoopStart=function(cb) barrier=cb; return function() end end})
+    for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
+    assert(values[Contributions.prefix..Contributions.hex('ModCoreTemplates')]==nil,'nothing is published before the barrier')
+    barrier()
+    assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
+    local generation,path=Contributions.slot(values[Contributions.prefix..Contributions.hex('ModCoreTemplates')])
+    assert(generation==1 and path:find(root..'/Scripts/cache/',1,true)==1)
+    local function read(file)
+        local input=assert(io.open(file,'rb')); local content=input:read('*a'); input:close()
+        return content
+    end
+    local decoded=Contributions.decode(read(path),function(name) return read(root..'/Scripts/cache/'..name) end)
+    assert(decoded.id=='ModCoreTemplates' and decoded.pages[1].id=='ModCoreTemplates'
+        and decoded.pages[1].attach=='published' and #decoded.pages==3)
+    assert(values[Contributions.index]==Contributions.hex('ModCoreTemplates'))
+    boot:stop()
+    local _,withdrawn=Contributions.slot(values[Contributions.prefix..Contributions.hex('ModCoreTemplates')])
+    assert(withdrawn=='' and io.open(path)==nil,'stopping withdraws the published pages')
+end)
+
+test('a failed menu publish is reported and the templates keep running', function()
+    local modules=testRoot..'/unpublished-modules'
+    Layout.prepare(modules..'/Alpha'); Layout.prepare(modules..'/Beta')
+    local f=fixture(true,nil,nil,modules)
+    local root=testRoot..'/unpublished'
+    Layout.prepare(root)
+    local barrier
+    local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
+    local boot=Bootstrap.new({host=f.host,categories={f.category},menuRoot=root,
+        menuShared={GetSharedVariable=function() end,
+            SetSharedVariable=function() error('shared variables locked') end},
+        execute=function(path) return definitions[path] end,
+        subscribeLoopStart=function(cb) barrier=cb; return function() end end})
+    for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
+    barrier()
+    assert(boot.phase=='running' and boot.runtime)
+    local reported
+    for _,e in ipairs(f.errors) do if e.stage=='menu' then reported=e.message end end
+    assert(reported and reported:find('shared variables locked',1,true),'publish failure must be reported')
     boot:stop()
 end)
 

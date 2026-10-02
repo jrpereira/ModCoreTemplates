@@ -8,16 +8,21 @@ function M.new(options)
     assert(type(options.categories)=='table','loaded categories required')
     assert(type(options.subscribeLoopStart)=='function','module-load barrier adapter required')
     local execute=options.execute or function(path) return assert(loadfile(path))() end
-    local self={phase='registering',runtime=nil}
+    local self={phase='registering',runtime=nil,state=options.state}
     local files,seen={},{}
     local stopBarrier,session
     local providerCleanups={}
     local hostClosed=false
-    local menuHandoff
-    if options.menuShared then
-        assert(options.menuRoot,'cross-state menu handoff requires menuRoot')
-        menuHandoff=require('mc.menu_handoff').publisher(options.menuShared)
-        menuHandoff:begin()
+    local stateClosed=false
+    local menuPublisher
+    if options.menuShared then assert(options.menuRoot,'menu publishing requires menuRoot') end
+    -- ModCoreSettings reads published pages from its own Lua state. Without them the
+    -- templates still run on their saved settings, so a failure is only reported.
+    local function publishMenu(menu)
+        local Contribution=require('mc.menu_contribution')
+        menuPublisher=menuPublisher or require('mc.menu_contributions').publisher(options.menuShared,
+            {id=Contribution.id,directory=require('mc.layout').paths(options.menuRoot).cache})
+        return menuPublisher:publish(Contribution.build(menu,options.menuRoot))
     end
     function self:registerTemplate(path)
         assert(self.phase=='registering','template registration closed at startup')
@@ -47,7 +52,7 @@ function M.new(options)
                 errors[#errors+1]=label..': '..tostring(ok and detail or result)
             end
         end
-        if menuHandoff then attempt('menu handoff',function() return menuHandoff:stop() end) end
+        if menuPublisher then attempt('menu pages',function() return menuPublisher:withdraw() end) end
         if session then attempt('session',function() return session:stop() end) end
         for _,why in ipairs(releaseCleanups(providerCleanups)) do
             errors[#errors+1]='provider cleanup: '..why
@@ -59,12 +64,24 @@ function M.new(options)
                 return result
             end)
         end
+        if options.closeState and not stateClosed then
+            attempt('control state',function()
+                local result=options.closeState()
+                if result~=false then stateClosed=true end
+                return result
+            end)
+        end
         for _,why in ipairs(errors) do report('cleanup',why) end
         return #errors==0
     end
     function self:finishLoading()
         if self.phase~='registering' then return false end
         local ok,why=pcall(function()
+            if options.collectTemplates then
+                local registered=options.collectTemplates()
+                assert(type(registered)=='table','collected templates must be a table')
+                for _,path in ipairs(registered) do self:registerTemplate(path) end
+            end
             self.phase='loading'
             if stopBarrier then stopBarrier();stopBarrier=nil end
             local templates,locations={},{}
@@ -106,6 +123,9 @@ function M.new(options)
                         proposed[#proposed+1],proposedLocations[#proposedLocations+1]=template,path
                     end
                     Session.validate(options,options.categories,proposed,proposedLocations)
+                    if options.events then
+                        for _,template in ipairs(entries) do onCleanup(options.events:register(template)) end
+                    end
                     templates,locations=proposed,proposedLocations
                 end)
                 if loadedOK then
@@ -121,9 +141,12 @@ function M.new(options)
                 session=partial
             end)
             self.menu,self.runtime=session.menu,session.runtime
-            self.menuController,self.extension=session.menuController,session.extension
+            self.menuController=session.menuController
             session:start()
-            if menuHandoff then menuHandoff:ready() end
+            if options.menuShared then
+                local published,why=pcall(publishMenu,session.menu)
+                if not published then report('menu',why) end
+            end
             self.phase='running'
         end)
         if not ok then
