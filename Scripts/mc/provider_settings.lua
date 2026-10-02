@@ -102,13 +102,13 @@ function M.template(menu, variations)
         local domain = choiceDomain(source.values, 'variation ' .. name)
         variationFields[#variationFields + 1] = {
             id=variationIds[name],label=title(name),type='picker',values=domain.values,
-            labels=domain.labels,default=source.default,tab=true,level=2,
+            labels=domain.labels,default=source.default,
             description=source.description,
         }
     end
     variationFields[#variationFields + 1] = {
         id='ControlLayoutLink',label='Control Layout',type='navigation',
-        values={0,1},labels={'Edit controls','Open'},default=0,tab=true,level=2,
+        values={0,1},labels={'Edit controls','Open'},default=0,
         linkProvider='ModCoreControls',
         description='Open ModCore Controls to choose and edit the control layout.',
     }
@@ -211,7 +211,7 @@ function M.normalize(declaration)
         assert(sourceGroup.heading == nil or type(sourceGroup.heading) == 'boolean',
             'provider group heading must be boolean')
         assert(not byId[sourceGroup.id], 'duplicate provider group ' .. sourceGroup.id)
-        local group = {id=sourceGroup.id,label=sourceGroup.label,level=sourceGroup.level or 4,
+        local group = {id=sourceGroup.id,label=sourceGroup.label,level=sourceGroup.level,
             heading=sourceGroup.heading,order=order(sourceGroup.order,groupIndex),index=groupIndex,
             fields={},variationSource=sourceGroup.variationSource,
             variationValues=sourceGroup.variationValues}

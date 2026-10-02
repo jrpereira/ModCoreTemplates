@@ -60,6 +60,8 @@ assert(boot.phase=='stopped')
 print('PASS: Lua-only startup and map-scoped references')
 
 local original=package.loaded['mc.lua_startup']
+local originalRegistration=package.loaded['mc.registration']
+local originalModRef=_G.ModRef
 local registered={}
 package.loaded['mc.lua_startup']={start=function(options)
     return {registerTemplate=function(_,path)
@@ -67,8 +69,18 @@ package.loaded['mc.lua_startup']={start=function(options)
         return true
     end}
 end}
-local active=dofile('./Scripts/main.lua')
+package.loaded['mc.registration']={
+    install=function() return true end,
+    publisher=function()
+        return {begin=function() end,collect=function() return {} end}
+    end,
+}
+_G.ModRef={}
+local root=assert(debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/lua_startup_test%.lua$'))
+local active=dofile(root..'/Scripts/main.lua')
 package.loaded['mc.lua_startup']=original
+package.loaded['mc.registration']=originalRegistration
+_G.ModRef=originalModRef
 assert(type(active)=='table')
 assert(#registered==0)
 print('PASS: active MCT entry point installs direct template registration')

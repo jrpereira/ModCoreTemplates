@@ -2,7 +2,12 @@
 local source = debug.getinfo(1, 'S').source:gsub('^@', '')
 local scripts = assert(source:match('^(.*)[/\\][^/\\]+$'), 'cannot locate MCT Scripts')
 local root = assert(scripts:match('^(.*)[/\\]Scripts$'), 'cannot locate MCT module')
+local mods = assert(root:match('^(.*)[/\\][^/\\]+$'), 'cannot locate UE4SS Mods')
 package.path = scripts .. '/?.lua;' .. package.path
+local Registration=require('mc.registration')
+Registration.install(scripts..'/mc_client.lua',mods..'/shared/mc.lua')
+local registrations=Registration.publisher(assert(ModRef,'ModRef unavailable'),mods)
+registrations:begin()
 -- Install the public registrar before later provider mods load.
 local MC=require('mc')
 local function listedCategories()
@@ -23,6 +28,7 @@ local bootstrap = require('mc.lua_startup').start({
     menuRoot = root,
     categoryFiles = listedCategories(),
     settingsApi = require('mc.settings_api'),
+    collectTemplates = function() return registrations:collect() end,
 })
 MC._setTemplateRegistrar(function(path)
     return bootstrap:registerTemplate(path)

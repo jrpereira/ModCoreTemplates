@@ -1,5 +1,6 @@
 -- Start the self-contained Lua runtime on UE4SS's game thread.
 local Bootstrap = require('mc.bootstrap')
+local Events = require('mc_events')
 local M = {}
 function M.start(options, api)
     api = api or _G
@@ -32,6 +33,15 @@ function M.start(options, api)
     end
     configured.queue = api.ExecuteInGameThread
     if configured.menuRoot then configured.menuShared = assert(api.ModRef, 'ModRef unavailable') end
-    return Bootstrap.new(configured)
+    local bootstrap
+    configured.state=configured.state or {revision=0,controls={group={from=1,to=1}}}
+    if not configured.events and api.ModRef and type(api.RegisterConsoleCommandHandler)=='function' then
+        configured.events=Events.hub(api,configured.state,function(event)
+            if bootstrap and bootstrap.runtime then bootstrap.runtime:stateChanged(event) end
+        end)
+        configured.closeState=function() return configured.events:stop() end
+    end
+    bootstrap=Bootstrap.new(configured)
+    return bootstrap
 end
 return M
