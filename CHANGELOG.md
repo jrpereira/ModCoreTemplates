@@ -1,5 +1,16 @@
 # Changelog
 
+- No control group has focus at startup: `state.controls.group` stays empty until
+  ModCore Controls reports one, instead of assuming abilities (group 1).
+- Registered template files can `require` helper modules from their own folder.
+  MCT appends that folder to the search path, after its own modules.
+- Control state changes no longer rebuild templates. Event callbacks run once per
+  live attachment as `(params, event, objects)`, where `params` matches attach's,
+  and adjust it in place; templates that relied on the reapply must move that work
+  into the callback.
+- Remove the quickslot host buttons: the category baits now move both wheels
+  directly into the `actions` canvas. Drop the created-object `content` and
+  `clickRelay` fields, which only the hosts used.
 - Isolate malformed or throwing provider files during startup, and let loaded
   hooks register cleanup for side effects.
 - Retain partial session ownership and retry failed cleanup while reporting the

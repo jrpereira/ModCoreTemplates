@@ -503,31 +503,43 @@ test('template defaults override category settings and saved values override def
     assert(seen.nested.template == true and seen.nested.category == nil)
 end)
 
-test('control state is copied into callbacks and refreshes active templates', function()
+test('control state reaches callbacks and live attachments without a rebuild', function()
     local f=fixture()
-    f.object('one')
+    local one=f.object('one')
     local state={revision=0,controls={group={from=1,to=1}}}
-    local seen,events={},{ }
+    local seen,events,updates={},{},0
     f.a.attach=function(_,params) seen[#seen+1]=params.state.controls.group.to end
-    f.a.update=function(_,params)
-        seen[#seen+1]=params.state.controls.group.to
-        params.state.controls.group.to=99
-    end
-    f.a.events={['controls.group.focus']=function(event,current)
+    f.a.update=function() updates=updates+1 end
+    f.a.events={['controls.group.focus']=function(params,event,objects)
         events[#events+1]={from=event.group.from,to=event.group.to,
-            current=current.controls.group.to}
-        current.controls.group.to=99
+            current=params.state.controls.group.to,params=params,objects=objects}
+        params.state.controls.group.to=99
     end}
     local runtime=Runtime.new(f.host,f.categories,{f.a},state)
-    runtime:select('player.quickslots',{a={}});runtime:start()
+    runtime:select('player.quickslots',{a={size=3}});runtime:start()
     state.revision=1;state.controls.group.from=1;state.controls.group.to=2
     runtime:stateChanged({name='controls.group.focus',revision=1,group={from=1,to=2}})
-    assert(seen[1]==1 and seen[2]==2 and state.controls.group.to==2)
+    assert(#seen==1 and seen[1]==1 and updates==0,'state change rebuilt the template')
+    assert(state.controls.group.to==2)
     assert(#events==1 and events[1].from==1 and events[1].to==2 and events[1].current==2)
+    assert(events[1].objects.slots==one and events[1].params.settings.size==3
+        and events[1].params.screen.center==960)
+    -- A rebuild for another reason reads the current state.
+    runtime:select('player.quickslots',{a={size=4}})
+    assert(updates==1)
     runtime:select('player.quickslots',{})
     state.revision=2;state.controls.group.from=2;state.controls.group.to=1
     runtime:stateChanged({name='controls.group.focus',revision=2,group={from=2,to=1}})
     assert(#events==1,'inactive template received an event')
+end)
+
+test('templates without an event handler are untouched by state changes', function()
+    local f=fixture()
+    f.object('one')
+    f.runtime:select('player.quickslots',{a={size=1}});f.runtime:start()
+    local before=#f.calls
+    f.runtime:stateChanged({name='controls.group.focus',revision=1,group={from=1,to=2}})
+    assert(#f.calls==before,'state change invoked a template lifecycle callback')
 end)
 
 test('event callback failures are isolated between active templates', function()

@@ -11,17 +11,18 @@ local function copy(value)
     for key,item in pairs(value) do result[key]=copy(item) end
     return result
 end
+-- The first activation has no previous group: from is nil, encoded as '-'.
 local function transition(payload)
     local group=assert(payload and payload.group,'control group event payload required')
-    local from,to=assert(tonumber(group.from),'source group required'),
-        assert(tonumber(group.to),'target group required')
-    assert((from==1 or from==2) and (to==1 or to==2) and from~=to,
+    local from,to=group.from,assert(tonumber(group.to),'target group required')
+    if from~=nil then from=assert(tonumber(from),'invalid source group') end
+    assert((from==nil or from==1 or from==2) and (to==1 or to==2) and from~=to,
         'invalid control group transition')
     return from,to
 end
 local function decode(payload)
     assert(type(payload)=='string' and #payload<=64,'invalid event payload')
-    local revision,from,to=payload:match('^(%d+) ([12]) ([12])$')
+    local revision,from,to=payload:match('^(%d+) ([12%-]) ([12])$')
     revision,from,to=tonumber(revision),tonumber(from),tonumber(to)
     assert(revision and revision>=1 and revision<=9007199254740991,'invalid event revision')
     transition({group={from=from,to=to}})
@@ -34,6 +35,7 @@ end
 function M.format(name,payload)
     assert(definitions[name],'unsupported event')
     local from,to=transition(payload)
+    if from==nil then return string.format('%s {"group":{"to":%d}}',name,to) end
     return string.format('%s {"group":{"from":%d,"to":%d}}',name,from,to)
 end
 
@@ -44,7 +46,8 @@ function M.publisher(shared)
         local from,to=transition(payload)
         local previous=revision(shared:GetSharedVariable(definition.data))
         assert(previous>=0 and previous<9007199254740991,'event revision exhausted')
-        shared:SetSharedVariable(definition.data,string.format('%.0f %d %d',previous+1,from,to))
+        shared:SetSharedVariable(definition.data,
+            string.format('%.0f %s %d',previous+1,from and tostring(from) or '-',to))
         local controller=owner and owner.controller
         local player=owner and owner.player
         local viewport=player and player.ViewportClient

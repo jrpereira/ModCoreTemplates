@@ -11,10 +11,6 @@ local objects={}
 local function object(id,class)
     local value={id=id,class=class,children={},members={},opacity=1,
         RenderTransform={Translation={X=0,Y=0},Scale={X=1,Y=1}}}
-    value.OnClicked={}
-    function value.OnClicked:Add(target,method)
-        self.target,self.method=target,method
-    end
     function value:IsValid() return true end
     function value:GetFullName() return self.id end
     function value:GetOuter() return self.outer or self end
@@ -183,11 +179,12 @@ categoryOnly:stop()
 lookedUp={}
 local calls={}
 local template={id='layout',category=category.name,managed=false,
-    objects={'switcher','abilities','consumables','ability_host','consumable_host'},
+    objects={'switcher','abilities','consumables','actions'},
     attach=function(_,_,targets)
         assert(targets.abilities==ability and targets.consumables==consumable)
-        assert(targets.ability_host==ability:GetParent()
-            and targets.consumable_host==consumable:GetParent())
+        assert(targets.actions==ability:GetParent()
+            and targets.actions==consumable:GetParent(),
+            'both wheels must be direct children of the MCT canvas')
         calls[#calls+1]='attach'
     end,
     update=function(_,_,targets)
@@ -204,9 +201,9 @@ assert(#lookedUp==1 and lookedUp[1].object==category.objects.switcher.object,
 assert(#calls==1 and calls[1]=='attach',runtime.errors[1] and runtime.errors[1].message)
 assert(ability:GetParent()~=switcher and consumable:GetParent()~=switcher,
     'shared category infrastructure must detach both wheels before template attach')
-assert(ability:GetParent().OnClicked.target==ability:GetParent()
-    and ability:GetParent().OnClicked.method=='ForceLayoutPrepass',
-    'MCT host button must relay OnClicked through its inherited no-argument function')
+assert(ability.Slot.autoSize==true and consumable.Slot.autoSize==true
+    and ability.Slot.layout.Anchors.Maximum.X==0,
+    'wheels must use top-left autosized canvas slots')
 runtime:select(category.name,{layout={Style=1}})
 assert(#calls==2 and calls[2]=='update',
     'HUD-owned wheel targets remain resolvable after category reparenting')

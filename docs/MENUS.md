@@ -159,25 +159,34 @@ committed config on Apply. Subscription teardown ignores already-queued events;
 
 MCT also subscribes to category-independent ModCore events through
 `Scripts/mc_events.lua`. The latest `controls.group.focus` transition is owned by
-MCT as `bootstrap.state.controls.group = {from=<number>,to=<number>}`. Template
-callbacks receive a copied snapshot at `params.state`; a new transition updates
-each active attachment once. The callback copy cannot mutate MCT's stored state.
+MCT as `bootstrap.state.controls.group = {from=<number>,to=<number>}`; it is empty
+(`{}`) until ModCore Controls reports a focus. Template
+callbacks receive a copied snapshot at `params.state`. A transition never calls
+`attach` or `update`: those run only when a template must be rebuilt (settings,
+selection or target changes), and then read the current state. The callback copy
+cannot mutate MCT's stored state.
 
-A template may declare event callbacks by name:
+A template reacts to a transition through an event callback, which MCT calls once
+per live attachment to adjust it in place:
 
 ```lua
+settings={focus={dim=0.7}}, -- template defaults, merged into params.settings
 events={
-    ['controls.group.focus']=function(event,state)
-        -- event.group.from and event.group.to are numbers.
+    ['controls.group.focus']=function(params,event,objects)
+        -- params matches attach's: settings and screen from the last attach,
+        -- plus the current state. event.group.from and event.group.to are numbers.
+        -- objects has the same shape as attach's objects.
     end,
 }
 ```
 
 MCT validates and registers these declarations only after the provider's load
 hook and full template validation succeed. One transport subscription serves all
-templates declaring the same event. Only active templates receive callbacks;
-callback failures are isolated and reported before MCT reconciles active
-attachments with the new state.
+templates declaring the same event. Only active templates receive callbacks, on
+the game thread inside the host's mutation scope; a template with nothing attached
+is not called. Callback failures are isolated and reported.
+Managed templates restore the captured originals on detach or rebuild, so
+in-place changes to declared properties need no cleanup.
 
 Use menu values/config as the selection authority when `settingsApi` is supplied.
 The bootstrap's direct `selections` / `categorySettings` options remain available for

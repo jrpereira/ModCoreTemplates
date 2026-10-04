@@ -4,10 +4,21 @@ local ModuleMetadata=require('mc.module_metadata')
 local U=require('mc.util')
 local M={}
 
+-- Providers keep helpers beside their templates. Their folders are appended so a
+-- provider module never shadows one of MCT's own.
+function M.executeTemplate(path)
+    local folder=assert(path:match('^(.*)[/\\][^/\\]+$'),path..': template has no directory')
+    local entry=folder..'/?.lua'
+    if not (';'..package.path..';'):find(';'..entry..';',1,true) then
+        package.path=package.path..';'..entry
+    end
+    return assert(loadfile(path))()
+end
+
 function M.new(options)
     assert(type(options.categories)=='table','loaded categories required')
     assert(type(options.subscribeLoopStart)=='function','module-load barrier adapter required')
-    local execute=options.execute or function(path) return assert(loadfile(path))() end
+    local execute=options.execute or M.executeTemplate
     local self={phase='registering',runtime=nil,state=options.state}
     local files,seen={},{}
     local stopBarrier,session

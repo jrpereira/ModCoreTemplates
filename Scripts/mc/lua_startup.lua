@@ -34,7 +34,8 @@ function M.start(options, api)
     configured.queue = api.ExecuteInGameThread
     if configured.menuRoot then configured.menuShared = assert(api.ModRef, 'ModRef unavailable') end
     local bootstrap
-    configured.state=configured.state or {revision=0,controls={group={from=1,to=1}}}
+    -- No group has focus until ModCore Controls reports its Default wheel.
+    configured.state=configured.state or {revision=0,controls={group={}}}
     if not configured.events and api.ModRef and type(api.RegisterConsoleCommandHandler)=='function' then
         configured.events=Events.hub(api,configured.state,function(event)
             if bootstrap and bootstrap.runtime then bootstrap.runtime:stateChanged(event) end

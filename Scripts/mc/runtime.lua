@@ -52,7 +52,8 @@ function M.new(host, definitions, templates, state)
         assert(type(host[name]) == 'function', 'host requires ' .. name)
     end
     assert(host.unwrap == nil or type(host.unwrap) == 'function', 'host.unwrap must be a function')
-    state=state or {revision=0,controls={group={from=1,to=1}}}
+    -- No group has focus until ModCore Controls reports its Default wheel.
+    state=state or {revision=0,controls={group={}}}
     local self = {epoch=1, phase='new', errors={},state=state}
     local categories, byId, candidates, queue = {}, {}, {}, {}
     local activeRoots, searchSignature = {}, nil
@@ -66,10 +67,10 @@ function M.new(host, definitions, templates, state)
             if selector.create and not (externallyCreated and externallyCreated[name]) then
                 created[#created+1]={name=name,class=selector.class,from=selector.from,
                     parent=selector.parent,reparent=selector.reparent,
-                    destination=selector.destination,content=selector.content,
+                    destination=selector.destination,
                     layout=selector.layout,
                     opacity=selector.opacity,brushColor=selector.brushColor,
-                    prepass=selector.prepass,clickRelay=selector.clickRelay,
+                    prepass=selector.prepass,
                     reparentLayout=selector.reparentLayout,
                     reparentOpacity=selector.reparentOpacity}
             end
@@ -486,24 +487,35 @@ function M.new(host, definitions, templates, state)
             if self.phase == 'running' and not suspended then reconcile() end
         end)
     end
+    -- State changes never rebuild templates. Event callbacks run once per live
+    -- attachment as callback(params, event, objects) and adjust it in place;
+    -- params matches attach's, and later attaches read params.state.
     function self:stateChanged(event)
         assert(self.phase=='new' or self.phase=='running','runtime is not accepting state changes')
         assert(event==nil or type(event)=='table' and type(event.name)=='string',
             'invalid template event')
         serialize(function()
+            if suspended then return end
             for _,id in ipairs(keys(byId)) do
                 local record=byId[id]
-                if record.enabled then
-                    local callback=event and record.definition.events
-                        and record.definition.events[event.name]
-                    if callback then
-                        local ok,why=pcall(callback,copy(event),copy(state))
+                local callback=record.enabled and event and record.definition.events
+                    and record.definition.events[event.name]
+                if callback then
+                    for _,token in ipairs(keys(record.attached)) do
+                        local attached=record.attached[token]
+                        local ok,why=pcall(function() return mutate(function()
+                            if not (host.valid(attached.object) and targetsValid(attached.targets,host)) then
+                                return
+                            end
+                            local params={settings=copy(attached.settings),screen=attached.screen,
+                                state=copy(state)}
+                            return callback(params,copy(event),TemplateTargets.arrange(record.targetTree,
+                                attached.targets,host.unwrap,host.valid))
+                        end) end)
                         if not ok then report('event',id,why) end
                     end
-                    record.revision=record.revision+1
                 end
             end
-            if self.phase=='running' and not suspended then reconcile() end
         end)
     end
     -- Menu commits category values and template selections together, then reconciles once.

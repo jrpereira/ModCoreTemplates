@@ -14,12 +14,12 @@
 local category = {
     name = "player.quickslots",
     single = true,
-    -- MCT owns the two button hosts and restores the native hierarchy when no
-    -- quickslot template is selected. The switcher children remain only as
-    -- compatibility placeholders for native selection calls.
+    -- MCT moves both wheels into its canvas and restores the native hierarchy
+    -- when no quickslot template is selected. The baits keep the wheels'
+    -- switcher slots as compatibility placeholders for native selection calls.
     -- Created objects cannot declare required; sharedObjects makes their
     -- successful creation a prerequisite for every enabled quickslot template.
-    sharedObjects = {'actions','ability_host','consumable_host','bait1','bait2'},
+    sharedObjects = {'actions','bait1','bait2'},
     objects = {
         switcher = {  object = "WidgetSwitcher /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher", source = 'lookup',
             required = true },
@@ -27,16 +27,12 @@ local category = {
             required = true, source = 'reference', from = 'switcher' },
         actions = { class = '/Script/UMG.CanvasPanel', source = 'create',
             outer = 'switcher', parent = 'hud_root', layout = 'fill', prepass = true },
-        ability_host = { class = '/Script/UMG.Button', source = 'create',
-            outer = 'switcher', parent = 'actions', content = 'abilities', clickRelay = true },
-        consumable_host = { class = '/Script/UMG.Button', source = 'create',
-            outer = 'switcher', parent = 'actions', content = 'consumables', clickRelay = true },
         bait1 = { source = 'create', class = '/Script/UMG.Overlay', outer = 'switcher', parent = 'switcher',
-            opacity = 0 },
+            opacity = 0, reparent = 'abilities', destination = 'actions', reparentLayout = 'canvas' },
         bait2 = { source = 'create', class = '/Script/UMG.Overlay', outer = 'switcher', parent = 'switcher',
-            opacity = 0 },
+            opacity = 0, reparent = 'consumables', destination = 'actions', reparentLayout = 'canvas' },
 
-        -- Resolve through the owning HUD so host creation can move both wheels
+        -- Resolve through the owning HUD so the baits can move both wheels
         -- without losing their category targets.
         abilities = { from = 'switcher', member = '@owner.WBP_AA_Quickslots', class = 'WBP_AA_Quickslots_C', source = 'reference' },
         consumables = { from = 'switcher', member = '@owner.WBP_HUD_Quickslots', class = 'WBP_HUD_Quickslots_C', source = 'reference' },

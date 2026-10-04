@@ -12,9 +12,9 @@ function M.compile(objects)
             assert(key == 'source' or key == 'object' or key == 'class'
                 or key == 'within' or key == 'from' or key == 'member'
                 or key == 'outer' or key == 'parent'
-                or key == 'reparent' or key == 'destination' or key == 'content'
+                or key == 'reparent' or key == 'destination'
                 or key == 'layout' or key == 'opacity' or key == 'prepass'
-                or key == 'brushColor' or key == 'clickRelay'
+                or key == 'brushColor'
                 or key == 'reparentLayout' or key == 'reparentOpacity'
                 or key == 'attach' or key == 'required'
                 or key == 'properties', name .. ': unknown object field ' .. tostring(key))
@@ -36,10 +36,6 @@ function M.compile(objects)
                 or type(value.reparent) == 'string' and value.reparent ~= ''
                 and type(value.destination) == 'string' and value.destination ~= '',
                 name .. ': created object reparent needs object and destination')
-            assert(value.content == nil or type(value.content) == 'string'
-                and value.content ~= '', name .. ': invalid created object content')
-            assert(value.content == nil or value.reparent == nil,
-                name .. ': content and reparent are exclusive')
             assert(value.layout == nil or value.layout == 'fill',
                 name .. ': invalid created object layout')
             assert(value.opacity == nil or type(value.opacity) == 'number',
@@ -54,8 +50,6 @@ function M.compile(objects)
             end
             assert(value.prepass == nil or type(value.prepass) == 'boolean',
                 name .. ': invalid created object prepass')
-            assert(value.clickRelay == nil or type(value.clickRelay) == 'boolean',
-                name .. ': invalid created object click relay')
             assert(value.reparentLayout == nil or value.reparentLayout == 'canvas',
                 name .. ': invalid reparent layout')
             assert(value.reparentOpacity == nil or type(value.reparentOpacity) == 'number',
@@ -65,9 +59,9 @@ function M.compile(objects)
                 and value.properties == nil, name .. ': invalid created object declaration')
             graph[name] = {source=source,create=true,class=value.class,outer=value.outer,
                 from=value.outer,parent=value.parent,reparent=value.reparent,
-                destination=value.destination,content=value.content,
+                destination=value.destination,
                 layout=value.layout,opacity=value.opacity,
-                brushColor=value.brushColor,prepass=value.prepass,clickRelay=value.clickRelay,
+                brushColor=value.brushColor,prepass=value.prepass,
                 reparentLayout=value.reparentLayout,
                 reparentOpacity=value.reparentOpacity,
                 attach=false,required=false,properties={}}
@@ -79,7 +73,7 @@ function M.compile(objects)
                 and value.attach == nil and value.parent == nil
                 and value.reparent == nil and value.destination == nil
                 and value.layout == nil and value.opacity == nil and value.prepass == nil
-                and value.brushColor == nil and value.clickRelay == nil
+                and value.brushColor == nil
                 and value.reparentLayout == nil and value.reparentOpacity == nil,
                 name .. ': invalid reference declaration')
             assert(value.class == nil or type(value.class) == 'string',
@@ -93,7 +87,7 @@ function M.compile(objects)
             assert(value.member == nil and value.outer == nil and value.parent == nil
                 and value.reparent == nil and value.destination == nil
                 and value.layout == nil and value.opacity == nil and value.prepass == nil
-                and value.brushColor == nil and value.clickRelay == nil
+                and value.brushColor == nil
                 and value.reparentLayout == nil and value.reparentOpacity == nil,
                 name .. ': lookup cannot declare member or outer')
             assert(not (value.from and value.within),
@@ -132,7 +126,6 @@ function M.compile(objects)
         if graph[name].parent then visit(graph[name].parent) end
         if graph[name].reparent then visit(graph[name].reparent) end
         if graph[name].destination then visit(graph[name].destination) end
-        if graph[name].content then visit(graph[name].content) end
         visiting[name], visited[name] = nil, true
         order[#order + 1] = name
     end
@@ -161,7 +154,6 @@ function M.project(graph, targets)
         if selector.parent then include(selector.parent) end
         if selector.reparent then include(selector.reparent) end
         if selector.destination then include(selector.destination) end
-        if selector.content then include(selector.content) end
         if selector.within then include(selector.within) end
     end
     for _,name in ipairs(names) do include(name) end

@@ -87,21 +87,17 @@ function M.new(template,specs,order,createdSpecs)
         if spec.layout=='fill' then Widget.setTranslation(object,0,0) end
         if spec.opacity~=nil then Widget.setOpacity(object,spec.opacity) end
         if spec.brushColor then object:SetBrushColor(spec.brushColor) end
-        if spec.clickRelay then
-            object.OnClicked:Add(object,FName('ForceLayoutPrepass'))
-        end
     end
     local function reparentCreated(created,targets,dependencies)
         local moves={}
         -- Capture every source before moving any sibling; otherwise later
         -- sources would save indices already shifted by earlier removals.
         for _,spec in ipairs(createdSpecs) do
-            local sourceName=spec.content or spec.reparent
+            local sourceName=spec.reparent
             if sourceName then
                 local object=readyObject(target(sourceName,targets,dependencies),sourceName)
-                local destination=spec.content and created.objects[spec.name]
-                    or target(spec.destination,targets,dependencies)
-                destination=readyObject(destination,spec.destination or spec.name)
+                local destination=readyObject(target(spec.destination,targets,dependencies),
+                    spec.destination)
                 local parent=readyObject(Objects.parent(object),sourceName..' parent')
                 local properties={'parent','order','slot'}
                 if spec.reparentOpacity~=nil then properties[#properties+1]='opacity' end
