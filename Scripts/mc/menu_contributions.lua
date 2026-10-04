@@ -1,14 +1,29 @@
 -- Public client for contributing menu pages through ModCoreSettings.
 -- Consumers may vendor this file unchanged. It only writes data files and one shared
 -- variable per contributor; ModCoreSettings reads them while building the menu.
-local M={version=1,contract=1}
+-- Descriptors use contract 1, or contract 2 when they carry slot rows or slot links.
+local M={version=2,contract=1,rowsContract=2}
 local PREFIX='MCS_MenuContrib_v1_'
 M.prefix,M.index=PREFIX,PREFIX..'index'
-local MAX_PAGES,MAX_MANIFEST=256,262144
+local MAX_PAGES,MAX_ROWS,MAX_ROW_SETTINGS,MAX_MANIFEST=256,64,32,262144
 local PAGE_KEYS={id=true,name=true,author=true,version=true,description=true,manifest=true,
-    configDirectory=true,visible=true,under=true,attach=true,group=true}
+    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true}
 local DESCRIPTOR_KEYS={id=true,name=true,author=true,version=true,description=true,manifestFile=true,
-    configDirectory=true,visible=true,under=true,attach=true,group=true}
+    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true}
+local ROW_KEYS={page=true,slot=true,settings=true}
+
+-- A slot address is '<provider>:<slot>'. A ModCore<Name> provider may be written as its
+-- lowercase <name> (controls:visuals); both forms address the same slot.
+function M.provider(id)
+    local short=type(id)=='string' and id:match('^ModCore(%w+)$')
+    return short and short:lower() or id
+end
+function M.address(value)
+    if type(value)~='string' then return nil end
+    local provider,slot=value:match('^([^:]+):([%w_]+)$')
+    if not provider or #provider>128 or provider:find('%c') or #slot>64 then return nil end
+    return M.provider(provider),slot
+end
 
 function M.hex(value)
     return (value:gsub('.',function(c) return string.format('%02x',c:byte()) end))
@@ -30,7 +45,9 @@ end
 local function check(contributor,contribution)
     line(contributor,128,'contributor id')
     assert(type(contribution)=='table' and type(contribution.pages)=='table','contribution needs pages')
-    for key in pairs(contribution) do assert(key=='pages','unknown contribution field '..tostring(key)) end
+    for key in pairs(contribution) do
+        assert(key=='pages' or key=='rows','unknown contribution field '..tostring(key))
+    end
     local pages=contribution.pages
     assert(#pages<=MAX_PAGES,'too many pages')
     for key in pairs(pages) do
@@ -64,12 +81,52 @@ local function check(contributor,contribution)
         if page.under~=nil then
             line(page.under,128,where..' under')
             assert(seen[page.under],where..': under must name an earlier page')
+            assert(not seen[page.under].link,where..': a link page cannot have children')
+        end
+        -- A link page opens another provider's page at a slot; it has no settings of its own.
+        if page.link~=nil then
+            local target=M.address(page.link)
+            assert(target,'invalid '..where..' link address')
+            assert(page.manifest==nil,where..': a link page cannot have a manifest')
+            assert(target~=M.provider(contributor) and target~=M.provider(page.id),
+                where..': link must open another provider')
         end
         if page.attach~=nil then
             line(page.attach,200,where..' attach')
             assert(not page.attach:find('[/\\]'),where..': attach must be a folder name')
         end
-        seen[page.id]=true
+        seen[page.id]=page
+    end
+    -- Rows publish settings of one of these pages into a slot that another page declares
+    -- with mcSlot=<name>. They stay owned, stored and applied by their source page.
+    local rows=contribution.rows
+    if rows==nil then return true end
+    assert(type(rows)=='table' and #rows<=MAX_ROWS,'rows must be a list of at most '..MAX_ROWS)
+    for key in pairs(rows) do
+        assert(math.type(key)=='integer' and key>=1 and key<=#rows,'rows must be a list')
+    end
+    for n,row in ipairs(rows) do
+        local where='row '..n
+        assert(type(row)=='table',where..' must be a table')
+        for key in pairs(row) do assert(ROW_KEYS[key],where..': unknown field '..tostring(key)) end
+        line(row.page,128,where..' page')
+        assert(seen[row.page] and seen[row.page].manifest,where..': page must name a page with a manifest')
+        local target=M.address(row.slot)
+        assert(target,'invalid '..where..' slot address')
+        for id in pairs(seen) do
+            assert(M.provider(id)~=target,where..': slot must belong to another provider')
+        end
+        local settings=row.settings
+        assert(type(settings)=='table' and #settings>=1 and #settings<=MAX_ROW_SETTINGS,
+            where..': settings must list 1 to '..MAX_ROW_SETTINGS..' ids')
+        local ids={}
+        for key,id in pairs(settings) do
+            assert(math.type(key)=='integer' and key>=1 and key<=#settings,where..': settings must be a list')
+            line(id,128,where..' setting id')
+            assert(not id:find('|',1,true),where..': setting id cannot contain |')
+            assert(not ids[id],where..': duplicate setting '..id)
+            ids[id]=true
+        end
     end
     return true
 end
@@ -89,17 +146,26 @@ local function unescape(value)
     end))
 end
 
+-- Slot rows and links need a ModCoreSettings build that understands slots.
+function M.needsRows(contribution)
+    if contribution.rows and #contribution.rows>0 then return true end
+    for _,page in ipairs(contribution.pages) do if page.link then return true end end
+    return false
+end
+
 function M.descriptorName(generation) return 'mcs_menu.'..generation..'.ini' end
 function M.manifestName(generation,n) return 'mcs_menu.'..generation..'.'..n..'.ini' end
 
 -- Returns descriptor text and the manifest files it names.
 function M.encode(contributor,generation,contribution)
     check(contributor,contribution)
-    local out={'[Contribution]','contract='..M.contract,'id='..contributor,'generation='..generation}
+    local rows=contribution.rows or {}
+    local contract=M.needsRows(contribution) and M.rowsContract or M.contract
+    local out={'[Contribution]','contract='..contract,'id='..contributor,'generation='..generation}
     local files={}
     for n,page in ipairs(contribution.pages) do
         out[#out+1]='[Page.'..n..']'
-        for _,key in ipairs({'id','name','author','version','description','configDirectory','under','attach','group'}) do
+        for _,key in ipairs({'id','name','author','version','description','configDirectory','under','attach','group','link'}) do
             if page[key]~=nil then out[#out+1]=key..'='..escape(page[key]) end
         end
         if page.visible~=nil then out[#out+1]='visible='..(page.visible and '1' or '0') end
@@ -109,13 +175,19 @@ function M.encode(contributor,generation,contribution)
             out[#out+1]='manifestFile='..name
         end
     end
+    for n,row in ipairs(rows) do
+        out[#out+1]='[Row.'..n..']'
+        out[#out+1]='page='..escape(row.page)
+        out[#out+1]='slot='..escape(row.slot)
+        out[#out+1]='settings='..escape(table.concat(row.settings,'|'))
+    end
     return table.concat(out,'\n')..'\n',files
 end
 
 -- Parses descriptor text. Manifest contents are filled in by the caller via read(name).
 function M.decode(text,read)
     assert(type(text)=='string' and #text<=MAX_MANIFEST,'invalid descriptor')
-    local header,pages,current={}, {}, nil
+    local header,pages,rows,current={}, {}, {}, nil
     for raw in (text..'\n'):gmatch('([^\n]*)\n') do
         local entry=raw:gsub('\r$','')
         if entry~='' then
@@ -123,21 +195,27 @@ function M.decode(text,read)
             if section=='Contribution' then
                 assert(current==nil and next(header)==nil,'misplaced Contribution section')
                 current=header
+            elseif section and section:match('^Row%.') then
+                local n=tonumber(section:match('^Row%.(%d+)$'))
+                assert(n==#rows+1,'rows must be numbered in order')
+                current={};rows[n]=current
             elseif section then
                 local n=tonumber(section:match('^Page%.(%d+)$'))
-                assert(n==#pages+1,'pages must be numbered in order')
+                assert(n==#pages+1 and #rows==0,'pages must be numbered in order before rows')
                 current={};pages[n]=current
             else
                 local key,value=entry:match('^([%w]+)=(.*)$')
                 assert(key and current,'invalid descriptor line')
                 assert(current~=header or ({contract=1,id=1,generation=1})[key],'unknown header key '..key)
-                assert(current==header or DESCRIPTOR_KEYS[key],'unknown page key '..key)
+                assert(current==header or (rows[#rows]==current and ROW_KEYS[key])
+                    or (rows[#rows]~=current and DESCRIPTOR_KEYS[key]),'unknown page key '..key)
                 assert(current[key]==nil,'duplicate key '..key)
                 current[key]=unescape(value)
             end
         end
     end
-    assert(tonumber(header.contract)==M.contract,'unsupported contract '..tostring(header.contract))
+    assert(tonumber(header.contract)==(M.needsRows({pages=pages,rows=rows}) and M.rowsContract or M.contract),
+        'unsupported contract '..tostring(header.contract))
     local generation=tonumber(header.generation)
     assert(math.type(generation)=='integer' and generation>=1,'invalid generation')
     for _,page in ipairs(pages) do
@@ -152,9 +230,14 @@ function M.decode(text,read)
             page.manifestFile=nil
         end
     end
-    local contribution={pages=pages}
+    for _,row in ipairs(rows) do
+        local settings={}
+        for id in ((row.settings or '')..'|'):gmatch('([^|]*)|') do settings[#settings+1]=id end
+        row.settings=settings
+    end
+    local contribution={pages=pages,rows=#rows>0 and rows or nil}
     check(header.id,contribution)
-    return {id=header.id,generation=generation,pages=pages}
+    return {id=header.id,generation=generation,pages=pages,rows=contribution.rows}
 end
 
 -- Parses a contributor variable: "<generation>\n<descriptor path>"; an empty path means withdrawn.

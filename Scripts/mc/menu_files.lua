@@ -88,6 +88,17 @@ function M.publish(root, menu)
     end
 end
 
+local function accepted(row, value)
+    if type(value) ~= 'number' or value ~= value then return false end
+    if row.Type == 'integer' then
+        return value % 1 == 0 and value >= row.Minimum and value <= row.Maximum
+    end
+    for candidate in row.PresetValues:gmatch('[^|]+') do
+        if value == tonumber(candidate) then return true end
+    end
+    return false
+end
+
 local function ensureConfig(path, rows, textSettings, initialValues)
     recover(path)
     local file = io.open(path, 'rb')
@@ -116,16 +127,6 @@ local function ensureConfig(path, rows, textSettings, initialValues)
     assert(sections <= 1, 'duplicate Templates config section')
     if section == 'Templates' and not finish then finish = #lines + 1 end
     local missing = {}
-    local function accepted(row, value)
-        if not value or value ~= value then return false end
-        if row.Type == 'integer' then
-            return value % 1 == 0 and value >= row.Minimum and value <= row.Maximum
-        end
-        for candidate in row.PresetValues:gmatch('[^|]+') do
-            if value == tonumber(candidate) then return true end
-        end
-        return false
-    end
     for _, row in ipairs(rows) do
         if row.mcNavigation ~= 1 then
             local index = present[row.Id]
@@ -192,6 +193,69 @@ local function readConfigValues(path, textSettings, rows)
     return values
 end
 
+-- Set numeric keys in one section, adding the section when missing. Other lines and
+-- sections are kept. A missing file is left alone.
+local function editValues(path, changes, name)
+    name = name or 'Templates'
+    recover(path)
+    local file = io.open(path, 'rb')
+    if not file then return false end
+    local content = file:read('*a'); file:close()
+    content = content:gsub('\r\n', '\n'):gsub('\r', '\n')
+    local lines, out, pending, section, finish = {}, {}, {}, nil, nil
+    for line in (content .. '\n'):gmatch('(.-)\n') do lines[#lines + 1] = line end
+    if lines[#lines] == '' then table.remove(lines) end
+    for key, value in pairs(changes) do pending[key] = value end
+    local function value(number) return string.format('%.17g', number) end
+    for _, line in ipairs(lines) do
+        local heading = line:match('^%s*%[([^%]]+)%]%s*$')
+        if heading then
+            if section == name then finish = #out end
+            section = heading
+            out[#out + 1] = line
+        else
+            local key = section == name and line:match('^%s*([^=;#]+)%s*=')
+            key = key and key:match('^%s*(.-)%s*$')
+            if key and changes[key] ~= nil then
+                out[#out + 1] = key .. '=' .. value(changes[key]); pending[key] = nil
+            else out[#out + 1] = line end
+        end
+    end
+    if section == name then finish = #out end
+    local missing = {}
+    for key, number in pairs(pending) do missing[#missing + 1] = key .. '=' .. value(number) end
+    table.sort(missing)
+    if #missing > 0 then
+        if not finish then
+            if #out > 0 and out[#out] ~= '' then out[#out + 1] = '' end
+            out[#out + 1] = '[' .. name .. ']'; finish = #out
+        end
+        for index = #missing, 1, -1 do table.insert(out, finish + 1, missing[index]) end
+    end
+    return writeChanged(path, table.concat(out, '\n') .. '\n')
+end
+
+-- Raw key/value text of one section; empty when the file or section is missing.
+local function readSection(path, name)
+    recover(path)
+    local values, section = {}, nil
+    local file = io.open(path, 'rb')
+    if not file then return values end
+    local content = file:read('*a'); file:close()
+    for line in (content:gsub('\r\n', '\n'):gsub('\r', '\n') .. '\n'):gmatch('(.-)\n') do
+        local heading = line:match('^%s*%[([^%]]+)%]%s*$')
+        if heading then section = heading
+        elseif section == name then
+            local key, value = line:match('^%s*([^=;#]+)%s*=%s*([^;#]*)')
+            if key then values[key:match('^%s*(.-)%s*$')] = value:match('^%s*(.-)%s*$') end
+        end
+    end
+    return values
+end
+
 M.ensureConfig = ensureConfig
 M.readConfigValues = readConfigValues
+M.editValues = editValues
+M.readSection = readSection
+M.accepted = accepted
 return M

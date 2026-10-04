@@ -149,7 +149,17 @@ function M.generate(registry, options)
         else
             currentCategory = category
             local categorySingle = available[1].single == true
-            local aggregateCategory = true
+            -- A slot category is shown only in its slot, through its own hidden page.
+            local slot = registry.categories:getCategory(category).slot
+            local slotIds = {}
+            local function slotRow(when, values, source)
+                local item = rows[#rows]
+                if item.mcNavigation == 1 then return end
+                assert(not source or slotIds[source],
+                    category .. ': slot row ' .. item.Id .. ' depends on a row outside the slot')
+                item._slot, slotIds[item.Id] = {when=when, values=values}, true
+            end
+            local aggregateCategory = not slot
             for _, entry in ipairs(available) do
                 assert((entry.single == true) == categorySingle,
                     category .. ': templates disagree on single')
@@ -179,6 +189,7 @@ function M.generate(registry, options)
                     isQuickslots and 1 or nil)
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
+                if slot then slotRow() end
                 selectors[category] = {id = selector, byValue = byValue}
             else
                 multiSelectors[category] = {}
@@ -221,6 +232,7 @@ function M.generate(registry, options)
                     row(metadata)
                     rows[#rows]._control = true
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
+                    if slot then slotRow(selector, visibleValues, selector) end
                     if field.type ~= 'navigation' then sharedFields[field.id] = settingId end
                 end
             end
@@ -295,6 +307,15 @@ function M.generate(registry, options)
                                     metadata.Suffix = field.suffix
                                 end
                                 row(metadata)
+                                -- Slot rows carry no Category rules, so each takes the
+                                -- condition its group or field would apply.
+                                if slot then
+                                    if field.visibleWhen then
+                                        slotRow(metadata.VisibleWhen, metadata.VisibleValues, metadata.VisibleWhen)
+                                    else
+                                        slotRow(groupSource, groupValues, groupSource)
+                                    end
+                                end
                                 providerFieldIds[field.id] = settingId
                                 if field.type == 'navigation' then
                                     definition.navigation[field.id] = settingId
@@ -479,15 +500,28 @@ function M.generate(registry, options)
     end
     local categoryOwned, moduleOwned, moduleCategories, moduleAuthors, moduleVersions, moduleRoots =
         {}, {}, {}, {}, {}, {}
+    -- Module configs that held a slot category's values before it moved to its slot,
+    -- and modules whose templates all moved, which keep an entry that opens the slot.
+    local slotSources, slotModules = {}, {}
     for _, entry in ipairs(entries) do
         local template = entry.template
-        if template.menu.target == 'templates' then
+        local normalized = entry.location:gsub('\\', '/'):gsub('%[%d+%]$', '')
+        local parent = normalized:match('^(.*)/Scripts/templates/[^/]+%.lua$')
+            or normalized:match('^(.*)/Scripts/[^/]+%.lua$')
+        local slot = registry.categories:getCategory(template.category).slot
+        if slot then
+            if template.menu.target ~= 'templates' and parent then
+                local sources = slotSources[template.category] or {}
+                slotSources[template.category], sources[parent] = sources, true
+                local module = (template.module or parent:match('([^/]+)$')):gsub('^_', '')
+                slotModules[module] = slotModules[module] or {root=parent, slot=slot,
+                    author=template.author and text(template.author),
+                    version=template.version and text(template.version)}
+            end
+        elseif template.menu.target == 'templates' then
             categoryOwned[template.category] = categoryOwned[template.category] or {}
             categoryOwned[template.category][entry.id] = true
         else
-            local normalized = entry.location:gsub('\\', '/'):gsub('%[%d+%]$', '')
-            local parent = normalized:match('^(.*)/Scripts/templates/[^/]+%.lua$')
-                or normalized:match('^(.*)/Scripts/[^/]+%.lua$')
             local module = template.module or (parent and parent:match('([^/]+)$'))
             assert(module and module ~= '', entry.location
                 .. ': target=module requires a <Module>/Scripts/<file>.lua registration path')
@@ -522,6 +556,33 @@ function M.generate(registry, options)
             pages[#pages + 1], pageByCategory[category], providers[providerId] = page, page, page
         end
     end
+    local pageBySlot = {}
+    for _, category in ipairs(registry.categories:list()) do
+        local slot = registry.categories:getCategory(category).slot
+        if slot and perCategory[category] then
+            local providerId = aggregateId .. '.slot.' .. category
+            local selectedRows = {}
+            for _, item in ipairs(rows) do
+                if item._category == category and item._slot then selectedRows[#selectedRows + 1] = item end
+            end
+            local output = {}
+            append(output, 'Mod', {Id=providerId, Name=categoryLabels[category], Version='0.0.20'})
+            append(output, 'Category.Slot', {})
+            for _, item in ipairs(selectedRows) do
+                local stored = U.copy(item)
+                stored.Group, stored.mcHeading, stored.mcLevel = 'Slot', nil, nil
+                stored.VisibleWhen, stored.VisibleValues = item._slot.when, item._slot.values
+                append(output, 'Setting.' .. item.Id, stored)
+            end
+            local migrate = {}
+            for parent in pairs(slotSources[category] or {}) do migrate[#migrate + 1] = parent .. '/config.ini' end
+            table.sort(migrate)
+            local page = {id=providerId, name=categoryLabels[category], slot=slot, slotCategory=category,
+                rows=selectedRows, manifest=table.concat(output, '\n'), migrate=migrate}
+            page.decode = makeDecoder(page.rows, {[category]=true})
+            pages[#pages + 1], pageBySlot[category], providers[providerId] = page, page, page
+        end
+    end
     local moduleNames = {}; for module in pairs(moduleOwned) do moduleNames[#moduleNames + 1] = module end
     table.sort(moduleNames)
     for _, module in ipairs(moduleNames) do
@@ -535,6 +596,17 @@ function M.generate(registry, options)
                 moduleRoot and 'config.ini' or nil)}
         page.decode = makeDecoder(page.rows, moduleCategories[module], moduleOwned[module])
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
+    end
+    -- Link entries have no settings, so they are not Apply providers.
+    local linkNames = {}
+    for module in pairs(slotModules) do
+        if not moduleOwned[module] then linkNames[#linkNames + 1] = module end
+    end
+    table.sort(linkNames)
+    for _, module in ipairs(linkNames) do
+        local entry = slotModules[module]
+        pages[#pages + 1] = {id=aggregateId .. '.module.' .. publicName(module), name=module,
+            link=entry.slot, moduleRoot=entry.root, author=entry.author, version=entry.version}
     end
     local decodeAll = makeDecoder(rows, allCategories)
     local function decodeState(values)
@@ -574,7 +646,7 @@ function M.generate(registry, options)
         rows = rows, selectors = selectors, multiSelectors=multiSelectors, definitions = decoded, warnings = warnings,
         textSettings = textSettings, decodeState=decodeState, categorySettings=categorySettings,
         decode = makeDecoder(rows, allCategories), aggregate=aggregate, pages=pages,
-        pageByCategory=pageByCategory, pageByModule=pageByModule, providers=providers}
+        pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}
 end
 
 return M

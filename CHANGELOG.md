@@ -1,5 +1,14 @@
 # Changelog
 
+- A category may declare `slot = {provider=..., slot=...}` to show its Template
+  picker and its templates' settings in another mod's menu slot. `player.quickslots`
+  now appears in ModCore Controls' Visuals section (`controls:visuals`), and its
+  templates leave their module pages. Each row shows only while its template (or
+  variation) is selected. Values are stored in MCT's central config; on first start
+  they are copied once from module configs, which are left untouched. A module whose
+  templates all moved keeps its entry as a link that opens the slot.
+  Requires ModCoreSettings with slot rows and links (descriptor contract 2).
+
 - No control group has focus at startup: `state.controls.group` stays empty until
   ModCore Controls reports one, instead of assuming abilities (group 1).
 - Registered template files can `require` helper modules from their own folder.

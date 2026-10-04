@@ -508,5 +508,256 @@ test('empty template menus still create a readable config', function()
     assert(next(Files.readConfigValues(paths.config,{},{}))==nil)
 end)
 
+local function slotFixture(locationBase, extraFields)
+    local f=fixture(true,'module','module',locationBase)
+    f.category.slot={provider='controls',slot='visuals'}
+    f.a.variations={style={values={[0]='Swap',[1]='Stack'},default=0}}
+    f.a.menu={{id='Layout',label='Layout',fields={field('Size',20)}},
+        {id='Extra',label='Extra',variation={style=1},fields={field('.Gap',5)}}}
+    for n=1,extraFields or 0 do
+        table.insert(f.b.menu[1].fields,field('F'..n,0))
+    end
+    local model=Model.build({f.category},{f.a,f.b},f.locations)
+    f.model,f.menu=model,Menu.generate(model.registry)
+    local runtime=Runtime.new(f.host,model.categories,model.templates)
+    f.runtime,f.controller=runtime,Controller.new(f.menu,runtime)
+    runtime:start()
+    f.definitions={}
+    for _,definition in pairs(f.menu.definitions[f.category.name]) do f.definitions[definition.id]=definition end
+    return f
+end
+local function section(manifest,id)
+    local fields={}
+    local body=assert((manifest..'\n\n'):match('%[Setting%.'..id:gsub('%p','%%%0')..'%]\n(.-)\n\n'),id)
+    for key,value in body:gmatch('([^\n=]+)=([^\n]*)') do fields[key]=value end
+    return fields
+end
+
+test('a slot category moves to one hidden page with flattened visibility', function()
+    local f=slotFixture()
+    local page=assert(f.menu.pageBySlot['player.quickslots'])
+    assert(page.slot=='controls:visuals' and not page.category and not page.module)
+    assert(#f.menu.aggregate.rows==0 and not f.menu.pageByCategory['player.quickslots'])
+    assert(not f.menu.pageByModule.Alpha and not f.menu.pageByModule.Beta,'slot templates leave their module pages')
+    local selector=f.menu.selectors['player.quickslots']
+    local alpha,beta
+    for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value else beta=value end end
+    assert(page.rows[1].Id==selector.id,'Template comes first')
+    local template=section(page.manifest,selector.id)
+    assert(template.VisibleWhen==nil and template.Group=='Slot' and template.mcHeading==nil)
+    local shared=section(page.manifest,f.menu.categorySettings['player.quickslots'].fields.Size)
+    assert(shared.VisibleWhen==selector.id and shared.VisibleValues==alpha..'|'..beta
+        or shared.VisibleValues==beta..'|'..alpha)
+    local size=section(page.manifest,f.definitions.Alpha.settings.Size)
+    assert(size.VisibleWhen==selector.id and size.VisibleValues==tostring(alpha))
+    local gap=section(page.manifest,f.definitions.Alpha.settings.ExtraGap)
+    assert(gap.VisibleWhen==f.definitions.Alpha.settings.Style and gap.VisibleValues=='1',
+        'variation groups gate through their variation row')
+    local style=section(page.manifest,f.definitions.Alpha.settings.Style)
+    assert(style.VisibleWhen==selector.id and style.VisibleValues==tostring(alpha))
+    local seen={}
+    for index,row in ipairs(page.rows) do
+        assert(row.mcNavigation~=1,'navigation links stay out of the slot')
+        assert(row.ConfigFile=='Scripts/cache/config.ini')
+        local rule=section(page.manifest,row.Id).VisibleWhen
+        assert(rule==nil or seen[rule],row.Id..': rule must name an earlier slot row')
+        seen[row.Id]=index
+    end
+    assert(not page.manifest:find('%[Category%.[^S]'),'source Category rules are not published')
+end)
+
+test('slot pages publish hidden with rows addressed to the slot', function()
+    local f=slotFixture(nil,40)
+    local contribution=Contribution.build(f.menu,'/Mods/_ModCore_3_Templates')
+    assert(Contributions.validate('ModCoreTemplates',contribution))
+    local page=f.menu.pageBySlot['player.quickslots']
+    local published
+    for _,candidate in ipairs(contribution.pages) do if candidate.id==page.id then published=candidate end end
+    assert(published.visible==false and published.configDirectory=='/Mods/_ModCore_3_Templates')
+    assert(published.under=='ModCoreTemplates','the fallback page sits under the aggregate')
+    assert(#contribution.rows==math.ceil(#page.rows/32) and #contribution.rows>1,'rows are chunked')
+    local ids={}
+    for _,row in ipairs(contribution.rows) do
+        assert(row.page==page.id and row.slot=='controls:visuals' and #row.settings<=32)
+        for _,id in ipairs(row.settings) do ids[#ids+1]=id end
+    end
+    for index,row in ipairs(page.rows) do assert(ids[index]==row.Id) end
+    local plain=Contribution.build(fixture(true).menu,'/Mods/_ModCore_3_Templates')
+    assert(plain.rows==nil,'without slots the contribution keeps contract 1')
+end)
+
+test('modules whose templates moved to a slot keep an entry that opens it', function()
+    local f=slotFixture()
+    local contribution=Contribution.build(f.menu,'/Mods/_ModCore_3_Templates')
+    assert(Contributions.validate('ModCoreTemplates',contribution))
+    local links={}
+    for _,page in ipairs(contribution.pages) do if page.link then links[#links+1]=page end end
+    assert(#links==2 and links[1].id=='ModCoreTemplates.module.Alpha' and links[2].id=='ModCoreTemplates.module.Beta')
+    local beta=links[2]
+    assert(beta.link=='controls:visuals' and beta.attach=='Beta' and beta.group=='module'
+        and beta.author=='Example Author' and beta.manifest==nil and beta.configDirectory==nil)
+    assert(not f.menu.providers[beta.id],'a link entry is not an Apply provider')
+    -- A module that still has its own settings keeps its page instead of a link.
+    local other={name='player.stats',single=true,objects={root={source='lookup',object='switcher'}}}
+    local extra={id='Gamma',name='Gamma',category='player.stats',objects={'root'},managed=false,
+        menu={{id='Layout',label='Layout',fields={field('Size',20)}}},
+        attach=function() end,update=function() end,detach=function() end}
+    local model=Model.build({f.category,other},{f.a,f.b,extra},
+        {f.locations[1],f.locations[2],'/Mods/Beta/Scripts/templates/other.lua'})
+    local menu=Menu.generate(model.registry)
+    assert(menu.pageByModule.Beta and not menu.pageByModule.Alpha)
+    for _,page in ipairs(menu.pages) do assert(not (page.link and page.name=='Beta')) end
+end)
+
+test('slot Apply selects templates and updates their settings', function()
+    local f=slotFixture()
+    local page=f.menu.pageBySlot['player.quickslots']
+    f.controller:apply(event(f,page,1,function(v) f.choose(v,'Alpha',true) end))
+    assert(#f.calls==1 and f.calls[1].operation=='attach' and f.calls[1].id=='Alpha')
+    f.controller:apply(event(f,page,2,function(v) v[f.definitions.Alpha.settings.Size]=64 end))
+    assert(f.calls[2].operation=='update' and f.calls[2].settings.Size==64)
+    f.controller:apply(event(f,page,3,function(v) f.choose(v,'Alpha',false) end))
+    assert(f.calls[3].operation=='detach','None detaches')
+end)
+
+test('slot values are copied once from module configs to the central config', function()
+    local modules=testRoot..'/slot-modules'
+    Layout.prepare(modules..'/Alpha'); Layout.prepare(modules..'/Beta')
+    local f=slotFixture(modules)
+    local selector=f.menu.selectors['player.quickslots']
+    local beta
+    for value,id in pairs(selector.byValue) do if id=='Beta' then beta=value end end
+    local betaSize,alphaSize=f.definitions.Beta.settings.Size,f.definitions.Alpha.settings.Size
+    local function write(path,content)
+        local out=assert(io.open(path,'wb')); out:write(content); out:close()
+    end
+    local function read(path)
+        local input=assert(io.open(path,'rb')); local content=input:read('*a'); input:close()
+        return content
+    end
+    local moduleConfig='[Other]\nKeep=1\n[Templates]\n'..selector.id..'='..beta..'\n'..betaSize..'=999\n'
+        ..alphaSize..'=33\nForeign=7\n'
+    write(modules..'/Beta/config.ini',moduleConfig)
+    local menuRoot=testRoot..'/slot-menu'
+    local centralPath=Layout.prepare(menuRoot).config
+    -- A stale central copy loses to the module value that was in effect before the move.
+    write(centralPath,'[Templates]\n'..alphaSize..'=11\n')
+    local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
+    local function start()
+        local barrier
+        local boot=Bootstrap.new({host=f.host,categories={f.category},menuRoot=menuRoot,
+            execute=function(path) return definitions[path] end,
+            subscribeLoopStart=function(cb) barrier=cb; return function() end end})
+        for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
+        barrier()
+        assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
+        return boot
+    end
+    local boot=start()
+    local central=read(centralPath)
+    assert(central:find(selector.id..'='..beta,1,true) and central:find(alphaSize..'=33',1,true),central)
+    assert(central:find(betaSize..'=20',1,true),'invalid saved values fall back to defaults')
+    assert(central:find('[Migrations]\nslot.player.quickslots=1',1,true),central)
+    assert(read(modules..'/Beta/config.ini')==moduleConfig,'module copies stay for a rollback')
+    assert(boot.menuController:values()[selector.id]==beta)
+    assert(#f.calls==1 and f.calls[1].id=='Beta' and f.calls[1].operation=='attach')
+    boot:stop()
+    -- Once copied, the central config wins and later starts change nothing.
+    write(modules..'/Beta/config.ini',moduleConfig:gsub(alphaSize..'=33',alphaSize..'=44'))
+    boot=start()
+    assert(read(centralPath)==central,'the second start rewrites nothing')
+    assert(boot.menuController:values()[alphaSize]==33)
+    boot:stop()
+end)
+
+compatibility('slot rows splice into the host slot and Apply reaches the runtime', function()
+    local scripts=assert(presentationPath:match('^(.*)[/\\][^/\\]+$'))
+    local savedPath=package.path
+    package.path=scripts..'/?.lua;'..package.path
+    local Navigation,Slots=require('navigation'),require('menu_slots')
+    package.path=savedPath
+    local choices=dofile(choicesPath)
+    assert(Navigation.install(choices))
+    local logs={}
+    local slots=assert(Slots.install(choices,function(e,d) logs[#logs+1]=e..' '..tostring(d) end,Contributions))
+    local files={}
+    choices.fs={read=function(path) return files[path] end,
+        write=function(path,content) files[path]=content end,
+        rename=function(a,b) files[b]=assert(files[a]);files[a]=nil end,
+        remove=function(path) files[path]=nil end}
+    local host=table.concat({'[Mod]','Id=ModCoreControls','Name=Controls',
+        '[Setting.MCC_Page]','Id=MCC_Page','Type=picker','Label=Page','Group=Pages',
+        'PresetValues=0|1','PresetLabels=Options|Visuals','Default=0','mcNavigation=1',
+        '[Category.Visuals]','VisibleWhen=MCC_Page','VisibleValues=1',
+        '[Setting.MCC_Visuals_Pending]','Id=MCC_Visuals_Pending','Type=picker','Label=Quickslot templates',
+        'Group=Visuals','PresetValues=0|1','PresetLabels=Coming|Coming','Default=0','mcReadOnly=1',
+        'mcSlot=visuals',
+        '[Setting.Speed]','Id=Speed','Type=picker','Label=Speed','Group=Options','PresetValues=0|1',
+        'PresetLabels=Slow|Fast','Default=0','VisibleWhen=MCC_Page','VisibleValues=0',
+        'ConfigFile=config.ini','ConfigSection=Main','ConfigKey=Speed',''},'\n')
+    files['/mcc/config.ini'],files['/mcc/mod_settings.ini']='[Main]\nSpeed=0\n',host
+    local f=slotFixture()
+    local page=f.menu.pageBySlot['player.quickslots']
+    local config={'[Templates]'}
+    for _,row in ipairs(page.rows) do config[#config+1]=row.Id..'='..row.Default end
+    files['/mct/Scripts/cache/config.ini']=table.concat(config,'\n')..'\n'
+    local mcc={id='ModCoreControls',name='Controls',path='/mcc/mod_settings.ini',
+        choices=choices.parse(host),settingsCount=3,testOnly=false}
+    local source={id=page.id,name=page.name,path='/mct/mod_settings.ini',choices=choices.parse(page.manifest),
+        settingsCount=#page.rows,mcManifest=page.manifest,testOnly=false}
+    local inserts={}
+    for _,row in ipairs(Contribution.build(f.menu,'/mct').rows) do
+        local provider,name=Contributions.address(row.slot)
+        assert(provider==Contributions.provider('ModCoreControls') and name=='visuals')
+        inserts[#inserts+1]={contributor='ModCoreTemplates',source=source,settings=row.settings}
+    end
+    slots.inserts={[Contributions.provider('ModCoreControls')]={visuals=inserts}}
+    local events={}
+    slots.applied=function(provider,event) events[#events+1]={id=provider.id,event=event} end
+    assert(slots:load(mcc,function(path) return files[path] end) and #logs==0,logs[1])
+    assert(#mcc.choices==2+#page.rows,'every slot row was inserted')
+    local index={}
+    for i,setting in ipairs(mcc.choices) do index[setting.id]=i end
+    local selector=f.menu.selectors['player.quickslots']
+    local alpha
+    for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value end end
+    local model=choices.open(mcc)
+    assert(not model.error,model.error)
+    model:set(index.MCC_Page,1)
+    local alphaSize=index[f.definitions.Alpha.settings.Size]
+    local visible=model:visibility()
+    assert(visible[index[selector.id]] and not visible[alphaSize],'None shows only the Template row')
+    model:set(index[selector.id],alpha)
+    visible=model:visibility()
+    assert(visible[alphaSize] and not visible[index[f.definitions.Alpha.settings.ExtraGap]]
+        and not visible[index[f.definitions.Beta.settings.Size]],'the selection gates its own rows')
+    model:set(index[f.definitions.Alpha.settings.Style],1)
+    assert(model:visibility()[index[f.definitions.Alpha.settings.ExtraGap]],'variation rows follow the variation')
+    model:set(index.MCC_Page,0)
+    assert(not model:visibility()[alphaSize],'the host page gates the slot')
+    model:set(alphaSize,64)
+    local ok,err=model:apply()
+    assert(ok,err)
+    assert(#events==1 and events[1].id==page.id)
+    f.controller:apply({providerId=page.id,revision=1,values=events[1].event.values})
+    assert(#f.calls==1 and f.calls[1].id=='Alpha' and f.calls[1].operation=='attach'
+        and f.calls[1].settings.Size==64)
+    assert(files['/mcc/config.ini']=='[Main]\nSpeed=0\n','the host config never sees slot values')
+end)
+
+test('category slots are validated', function()
+    local function rejects(slot,single,pattern)
+        local ok,why=pcall(Model.build,{{name='player.quickslots',single=single,slot=slot}},{},{})
+        assert(not ok and tostring(why):find(pattern,1,true),tostring(why))
+    end
+    rejects('controls:visuals',true,'must be a table')
+    rejects({provider='controls',slot='visuals',extra=1},true,'unknown field')
+    rejects({provider='controls'},true,'slot.slot')
+    rejects({provider='a b',slot='visuals'},true,'slot.provider')
+    rejects({provider='controls',slot='visuals'},false,'requires a single category')
+    local model=Model.build({{name='player.quickslots',single=true,slot={provider='controls',slot='visuals'}}},{},{})
+    assert(model.registry.categories:getCategory('player.quickslots').slot=='controls:visuals')
+end)
+
 print('PASS: '..passed..' MCT menu tests'..(Choices and ' (with actual DMM parser and presentation)'
     or ' ('..skipped..' DMM compatibility test skipped)'))

@@ -41,6 +41,28 @@ module config. Both locations contain user settings and must be preserved.
 Set `menuTarget='templates'` on a template only when its fields belong on the
 category page rather than its module page.
 
+- **Slot:** a single category may name a slot on another provider's page:
+
+  ```lua
+  slot = { provider = 'controls', slot = 'visuals' },
+  ```
+
+  `provider` is the full provider id, or the lowercase short name of a `ModCore<Name>`
+  provider. MCT publishes the category's Template picker, shared category fields and
+  every template's fields on a hidden page (`ModCoreTemplates.slot.<category>`), and
+  contributes those rows to the slot through ModCoreSettings. The category then has no
+  aggregate, category or module rows. Slot rows carry no Category rules, so each row is
+  gated by its own rule: the Template picker always shows; other rows show while their
+  template is selected, or while their variation value is selected. Navigation links
+  are left out. Values are stored in the central config. The first start after a
+  category gains a slot copies its saved values from the template modules' configs
+  (the last module wins, as before) and records `slot.<category>=1` under
+  `[Migrations]`; module configs are left unchanged. A module whose templates all
+  moved to slots keeps its entry in the module group as a link (`link=<slot address>`)
+  that opens the slot; ModCoreSettings lists it only while the slot has rows. When the
+  slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
+  the hidden page under ModCore Templates instead, with the same storage and Apply.
+
 Single categories get a template picker with `None`. Other categories get a toggle
 per template. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,

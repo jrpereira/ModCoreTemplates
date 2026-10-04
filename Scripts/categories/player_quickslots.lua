@@ -14,6 +14,9 @@
 local category = {
     name = "player.quickslots",
     single = true,
+    -- The Template picker and the selected template's settings appear in
+    -- ModCore Controls' Visuals section instead of an MCT or module page.
+    slot = { provider = 'controls', slot = 'visuals' },
     -- MCT moves both wheels into its canvas and restores the native hierarchy
     -- when no quickslot template is selected. The baits keep the wheels'
     -- switcher slots as compatibility placeholders for native selection calls.

@@ -15,6 +15,31 @@ function M.validate(options,categories,templates,locations)
     Runtime.new(options.host,model.categories,model.templates,options.state)
 end
 
+-- A slot category's values formerly lived in each template module's config, where the
+-- last module read won. Copy them to the central config once, then mark the copy done;
+-- an interrupted copy repeats with the same values. Module copies stay so an earlier
+-- MCT still finds them after a rollback.
+function M.migrateSlot(central,page)
+    local marker='slot.'..page.slotCategory
+    if MenuFiles.readSection(central,'Migrations')[marker] then return end
+    local rows,moved={},{}
+    for _,row in ipairs(page.rows) do rows[row.Id]=row end
+    for _,path in ipairs(page.migrate) do
+        local file=io.open(path,'rb')
+        if file then
+            file:close()
+            local ok,values=pcall(MenuFiles.readConfigValues,path,{},page.rows)
+            if ok then
+                for id,value in pairs(values) do
+                    if MenuFiles.accepted(rows[id],value) then moved[id]=value end
+                end
+            end
+        end
+    end
+    if next(moved) then MenuFiles.editValues(central,moved) end
+    MenuFiles.editValues(central,{[marker]=1},'Migrations')
+end
+
 function M.new(options,categories,templates,locations,own)
     assert(not options.settingsApi or (not options.categorySettings and not options.selections),
         'use menuValues/config for menu-controlled startup selections')
@@ -57,7 +82,9 @@ function M.new(options,categories,templates,locations,own)
             end
         end
         include(self.menu.aggregate.rows)
-        for _,page in ipairs(self.menu.pages) do if page.category then include(page.rows) end end
+        for _,page in ipairs(self.menu.pages) do
+            if page.category or page.slot then include(page.rows) end
+        end
         configSources[1]={path=paths.config,rows=centralRows,textSettings=self.menu.textSettings}
         for _,page in ipairs(self.menu.pages) do
             if page.module then
@@ -69,6 +96,9 @@ function M.new(options,categories,templates,locations,own)
         for index,source in ipairs(configSources) do
             MenuFiles.ensureConfig(source.path,source.rows,source.textSettings,
                 index>1 and legacyValues or nil)
+        end
+        for _,page in ipairs(self.menu.pages) do
+            if page.slot then M.migrateSlot(paths.config,page) end
         end
         savedValues={}
         for _,source in ipairs(configSources) do

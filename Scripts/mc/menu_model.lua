@@ -36,8 +36,22 @@ function M.build(definitions, templates, locations)
         local runtime = U.copy(definition)
         runtime.settings, runtime.menu = values, declaration
         runtimeCategories[#runtimeCategories + 1] = runtime
+        -- A slot names where another provider's page shows this category's menu.
+        local slot = definition.slot
+        if slot ~= nil then
+            assert(type(slot) == 'table', definition.name .. '.slot must be a table')
+            for key in pairs(slot) do
+                assert(key == 'provider' or key == 'slot', definition.name .. '.slot: unknown field ' .. tostring(key))
+            end
+            assert(type(slot.provider) == 'string' and #slot.provider <= 128
+                and slot.provider:match('^[%w_.-]+$'), definition.name .. '.slot.provider is invalid')
+            assert(type(slot.slot) == 'string' and #slot.slot <= 64 and slot.slot:match('^[%w_]+$'),
+                definition.name .. '.slot.slot is invalid')
+            assert(definition.single == true, definition.name .. ': a slot requires a single category')
+            slot = slot.provider .. ':' .. slot.slot
+        end
         categories[definition.name] = {name=definition.name, menu=declaration, runtimeSettings=values,
-            single=definition.single == true}
+            single=definition.single == true, slot=slot}
         names[#names + 1] = definition.name
     end
     table.sort(names)
