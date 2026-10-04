@@ -17,6 +17,8 @@ local category = {
     -- The Template picker and the selected template's settings appear in
     -- ModCore Controls' Visuals section instead of an MCT or module page.
     slot = { provider = 'controls', slot = 'visuals' },
+    -- Settings earlier quickslot templates saved in their module configs.
+    retired = { 'MCT_WheelsSize', 'MCT_WheelsX', 'MCT_WheelsY', 'MCT_BarsR' },
     -- MCT moves both wheels into its canvas and restores the native hierarchy
     -- when no quickslot template is selected. The baits keep the wheels'
     -- switcher slots as compatibility placeholders for native selection calls.

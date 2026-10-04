@@ -635,13 +635,16 @@ test('slot values are copied once from module configs to the central config', fu
         local input=assert(io.open(path,'rb')); local content=input:read('*a'); input:close()
         return content
     end
-    local moduleConfig='[Other]\nKeep=1\n[Templates]\n'..selector.id..'='..beta..'\n'..betaSize..'=999\n'
-        ..alphaSize..'=33\nForeign=7\n'
+    f.category.retired={'MCT_OldA','MCT_OldB'}
+    local moduleConfig=('[Other]\nKeep=1\nMCT_OldA=3\n[Templates]\n'..selector.id..'='..beta..'\n'..betaSize..'=999\n'
+        ..'MCT_OldA=1\n'..alphaSize..'=33\nForeign=7\nMCT_OldB = 2\n'):gsub('\n','\r\n')
+    local cleaned=moduleConfig:gsub('\r\nMCT_OldA=1',''):gsub('\r\nMCT_OldB = 2','')
     write(modules..'/Beta/config.ini',moduleConfig)
     local menuRoot=testRoot..'/slot-menu'
     local centralPath=Layout.prepare(menuRoot).config
     -- A stale central copy loses to the module value that was in effect before the move.
-    write(centralPath,'[Templates]\n'..alphaSize..'=11\n')
+    -- Unknown and legacy keys are ignored, even repeated or non-numeric.
+    write(centralPath,'[Templates]\n'..alphaSize..'=11\nLegacy=1\nLegacy=x\nMCT_WheelsX=5\n')
     local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
     local function start()
         local barrier
@@ -657,15 +660,29 @@ test('slot values are copied once from module configs to the central config', fu
     local central=read(centralPath)
     assert(central:find(selector.id..'='..beta,1,true) and central:find(alphaSize..'=33',1,true),central)
     assert(central:find(betaSize..'=20',1,true),'invalid saved values fall back to defaults')
-    assert(central:find('[Migrations]\nslot.player.quickslots=1',1,true),central)
-    assert(read(modules..'/Beta/config.ini')==moduleConfig,'module copies stay for a rollback')
+    assert(read(modules..'/Beta/config.ini')==cleaned,
+        'only retired Templates lines go; migrated copies, other sections and CRLF stay')
+    assert(io.open(modules..'/Alpha/config.ini')==nil,'a missing module config is not created')
+    assert(next(Files.readSection(centralPath,'Migrations'))==nil,'nothing is marked while a config is missing')
     assert(boot.menuController:values()[selector.id]==beta)
     assert(#f.calls==1 and f.calls[1].id=='Beta' and f.calls[1].operation=='attach')
     boot:stop()
-    -- Once copied, the central config wins and later starts change nothing.
-    write(modules..'/Beta/config.ini',moduleConfig:gsub(alphaSize..'=33',alphaSize..'=44'))
+    -- A config that appears later is still copied and cleaned; then both are marked.
+    write(modules..'/Alpha/config.ini','[Templates]\nMCT_OldB=4\n')
+    boot=start()
+    assert(read(modules..'/Alpha/config.ini')=='[Templates]\n')
+    central=read(centralPath)
+    local done=Files.readSection(centralPath,'Migrations')
+    assert(done['slot.player.quickslots']=='1' and done['retired.MCT_OldA']=='1'
+        and done['retired.MCT_OldB']=='1',central)
+    boot:stop()
+    -- Once done, the central config wins and later starts change nothing, even if a
+    -- retired key reappears.
+    local later=cleaned:gsub(alphaSize..'=33',alphaSize..'=44')..'MCT_OldA=9\r\n'
+    write(modules..'/Beta/config.ini',later)
     boot=start()
     assert(read(centralPath)==central,'the second start rewrites nothing')
+    assert(read(modules..'/Beta/config.ini')==later,'each cleanup runs once')
     assert(boot.menuController:values()[alphaSize]==33)
     boot:stop()
 end)
@@ -755,6 +772,16 @@ test('category slots are validated', function()
     rejects({provider='controls'},true,'slot.slot')
     rejects({provider='a b',slot='visuals'},true,'slot.provider')
     rejects({provider='controls',slot='visuals'},false,'requires a single category')
+    local ok,why=pcall(Model.build,{{name='player.quickslots',single=true,retired={'MCT_Old'}}},{},{})
+    assert(not ok and tostring(why):find('requires a slot',1,true),tostring(why))
+    ok,why=pcall(Model.build,{{name='player.quickslots',single=true,
+        slot={provider='controls',slot='visuals'},retired={'Old'}}},{},{})
+    assert(not ok and tostring(why):find('invalid setting id',1,true),tostring(why))
+    local live=slotFixture()
+    live.category.retired={live.definitions.Alpha.settings.Size}
+    local model=Model.build({live.category},{live.a,live.b},live.locations)
+    ok,why=pcall(Menu.generate,model.registry)
+    assert(not ok and tostring(why):find('is still generated',1,true),tostring(why))
     local model=Model.build({{name='player.quickslots',single=true,slot={provider='controls',slot='visuals'}}},{},{})
     assert(model.registry.categories:getCategory('player.quickslots').slot=='controls:visuals')
 end)

@@ -577,8 +577,14 @@ function M.generate(registry, options)
             local migrate = {}
             for parent in pairs(slotSources[category] or {}) do migrate[#migrate + 1] = parent .. '/config.ini' end
             table.sort(migrate)
+            local retired = registry.categories:getCategory(category).retired or {}
+            for _, id in ipairs(retired) do
+                for _, item in ipairs(rows) do
+                    assert(item.Id ~= id, category .. ': retired setting ' .. id .. ' is still generated')
+                end
+            end
             local page = {id=providerId, name=categoryLabels[category], slot=slot, slotCategory=category,
-                rows=selectedRows, manifest=table.concat(output, '\n'), migrate=migrate}
+                rows=selectedRows, manifest=table.concat(output, '\n'), migrate=migrate, retired=retired}
             page.decode = makeDecoder(page.rows, {[category]=true})
             pages[#pages + 1], pageBySlot[category], providers[providerId] = page, page, page
         end

@@ -18,14 +18,16 @@ end
 -- A slot category's values formerly lived in each template module's config, where the
 -- last module read won. Copy them to the central config once, then mark the copy done;
 -- an interrupted copy repeats with the same values. Module copies stay so an earlier
--- MCT still finds them after a rollback.
+-- MCT still finds them after a rollback. While a module config is missing the copy is
+-- not marked, so a config restored later is still copied.
 function M.migrateSlot(central,page)
     local marker='slot.'..page.slotCategory
     if MenuFiles.readSection(central,'Migrations')[marker] then return end
-    local rows,moved={},{}
+    local rows,moved,complete={},{},true
     for _,row in ipairs(page.rows) do rows[row.Id]=row end
     for _,path in ipairs(page.migrate) do
         local file=io.open(path,'rb')
+        complete=complete and file~=nil
         if file then
             file:close()
             local ok,values=pcall(MenuFiles.readConfigValues,path,{},page.rows)
@@ -37,7 +39,24 @@ function M.migrateSlot(central,page)
         end
     end
     if next(moved) then MenuFiles.editValues(central,moved) end
-    MenuFiles.editValues(central,{[marker]=1},'Migrations')
+    if complete then MenuFiles.editValues(central,{[marker]=1},'Migrations') end
+end
+
+-- Remove each retired setting once from the module configs a slot migrated from. Only the
+-- listed Templates keys go, and absent keys are fine. The marker is written only after
+-- every module config was present and cleaned.
+function M.retireSettings(central,page)
+    local done=MenuFiles.readSection(central,'Migrations')
+    local changes,markers={},{}
+    for _,id in ipairs(page.retired) do
+        if not done['retired.'..id] then changes[id],markers['retired.'..id]=false,1 end
+    end
+    if not next(changes) then return end
+    local complete=true
+    for _,path in ipairs(page.migrate) do
+        complete=MenuFiles.editValues(path,changes)~=nil and complete
+    end
+    if complete then MenuFiles.editValues(central,markers,'Migrations') end
 end
 
 function M.new(options,categories,templates,locations,own)
@@ -98,7 +117,10 @@ function M.new(options,categories,templates,locations,own)
                 index>1 and legacyValues or nil)
         end
         for _,page in ipairs(self.menu.pages) do
-            if page.slot then M.migrateSlot(paths.config,page) end
+            if page.slot then
+                M.migrateSlot(paths.config,page)
+                M.retireSettings(paths.config,page)
+            end
         end
         savedValues={}
         for _,source in ipairs(configSources) do

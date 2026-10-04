@@ -109,6 +109,10 @@ local function ensureConfig(path, rows, textSettings, initialValues)
     local lines = {}; for line in (content .. '\n'):gmatch('(.-)\n') do lines[#lines + 1] = line end
     if lines[#lines] == '' then table.remove(lines) end
     local section, first, finish, sections, present = nil, nil, nil, 0, {}
+    -- Keys this config owns. Unknown or legacy keys are ignored, even when repeated.
+    local owned = {}
+    for _, row in ipairs(rows) do owned[row.Id] = true end
+    for settingId in pairs(textSettings or {}) do owned[settingId] = true end
     for index, line in ipairs(lines) do
         local heading = line:match('^%s*%[([^%]]+)%]%s*$')
         if heading then
@@ -119,8 +123,10 @@ local function ensureConfig(path, rows, textSettings, initialValues)
             local setting = line:match('^%s*([^=;#]+)%s*=')
             if setting then
                 setting = setting:match('^%s*(.-)%s*$')
-                assert(not present[setting], 'duplicate Templates config key: ' .. setting)
-                present[setting] = index
+                if owned[setting] then
+                    assert(not present[setting], 'duplicate Templates config key: ' .. setting)
+                    present[setting] = index
+                end
             end
         end
     end
@@ -193,19 +199,21 @@ local function readConfigValues(path, textSettings, rows)
     return values
 end
 
--- Set numeric keys in one section, adding the section when missing. Other lines and
--- sections are kept. A missing file is left alone.
+-- Set numeric keys in one section, adding the section when missing, or remove keys whose
+-- change is false. Other lines, sections and line endings are kept. Returns whether the
+-- file changed, or nil when it is missing, which is left alone.
 local function editValues(path, changes, name)
     name = name or 'Templates'
     recover(path)
     local file = io.open(path, 'rb')
-    if not file then return false end
+    if not file then return nil end
     local content = file:read('*a'); file:close()
+    local eol = content:find('\r\n', 1, true) and '\r\n' or '\n'
     content = content:gsub('\r\n', '\n'):gsub('\r', '\n')
     local lines, out, pending, section, finish = {}, {}, {}, nil, nil
     for line in (content .. '\n'):gmatch('(.-)\n') do lines[#lines + 1] = line end
     if lines[#lines] == '' then table.remove(lines) end
-    for key, value in pairs(changes) do pending[key] = value end
+    for key, value in pairs(changes) do if value ~= false then pending[key] = value end end
     local function value(number) return string.format('%.17g', number) end
     for _, line in ipairs(lines) do
         local heading = line:match('^%s*%[([^%]]+)%]%s*$')
@@ -216,7 +224,8 @@ local function editValues(path, changes, name)
         else
             local key = section == name and line:match('^%s*([^=;#]+)%s*=')
             key = key and key:match('^%s*(.-)%s*$')
-            if key and changes[key] ~= nil then
+            if key and changes[key] == false then
+            elseif key and changes[key] ~= nil then
                 out[#out + 1] = key .. '=' .. value(changes[key]); pending[key] = nil
             else out[#out + 1] = line end
         end
@@ -232,7 +241,7 @@ local function editValues(path, changes, name)
         end
         for index = #missing, 1, -1 do table.insert(out, finish + 1, missing[index]) end
     end
-    return writeChanged(path, table.concat(out, '\n') .. '\n')
+    return writeChanged(path, table.concat(out, eol) .. eol)
 end
 
 -- Raw key/value text of one section; empty when the file or section is missing.
