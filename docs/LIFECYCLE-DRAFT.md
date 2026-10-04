@@ -32,10 +32,10 @@ Installed providers use the public helper from `Scripts/main.lua`:
 
 ```lua
 local M = require('mc')
-M.addTemplate('layout')
+M.registerTemplate('layout')
 ```
 
-`addTemplate` resolves `layout` to `mc_layout.lua` beside the calling file and
+`registerTemplate` resolves `layout` to `mc_layout.lua` beside the calling file and
 registers its path directly with MCT. The template declares `category`; MCT reads
 the module ID, author, and version from the provider's `mod.json`. MCT executes the
 file at the game-thread barrier. It does not enumerate installed directories.

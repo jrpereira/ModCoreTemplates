@@ -39,9 +39,9 @@ local function template(name, defaults)
     return TemplateDefaults.apply(value,defaults)
 end
 
-local function addTemplate(name,...)
+local function registerTemplate(name,...)
     assert(type(name)=='string','MC template name required')
-    assert(select('#',...)==0,'MC.addTemplate metadata belongs in the template or module manifest')
+    assert(select('#',...)==0,'MC.registerTemplate metadata belongs in the template or module manifest')
     local filename
     if name:sub(-4)=='.lua' then
         assert(name:match('^[%w_%-]+%.lua$'),
@@ -53,7 +53,7 @@ local function addTemplate(name,...)
     end
     local caller=assert(debug.getinfo(2,'S'),'MC template registrar unavailable')
     local source=assert(caller.source:match('^@(.+)$'),
-        'MC.addTemplate must be called from a Lua file')
+        'MC.registerTemplate must be called from a Lua file')
     local folder=assert(source:match('^(.*)[/\\][^/\\]+$'),
         'MC template registrar has no directory')
     assert(type(templateRegistrar)=='function','MCT template registration is unavailable')
@@ -65,7 +65,7 @@ local function setTemplateRegistrar(registrar)
     templateRegistrar=registrar
 end
 
-return setmetatable({load=load,template=template,addTemplate=addTemplate,
+return setmetatable({load=load,template=template,registerTemplate=registerTemplate,
     _setTemplateRegistrar=setTemplateRegistrar}, {
     __index = Objects,
     __call = function(_, name) return load(name) end,

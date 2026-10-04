@@ -7,9 +7,9 @@ local function integer(value)
     return type(value)=='number' and value>=0 and value%1==0 and value<9007199254740991
 end
 
-function M.addTemplate(name,...)
+function M.registerTemplate(name,...)
     assert(type(name)=='string','MC template name required')
-    assert(select('#',...)==0,'MC.addTemplate metadata belongs in the template or module manifest')
+    assert(select('#',...)==0,'MC.registerTemplate metadata belongs in the template or module manifest')
     local filename
     if name:sub(-4)=='.lua' then
         assert(name:match('^[%w_%-]+%.lua$'),'MC template filename must be a simple Lua filename')
@@ -19,7 +19,7 @@ function M.addTemplate(name,...)
         filename='mc_'..name..'.lua'
     end
     local caller=assert(debug.getinfo(2,'S'),'MC template registrar unavailable')
-    local source=assert(caller.source:match('^@(.+)$'),'MC.addTemplate must be called from a Lua file')
+    local source=assert(caller.source:match('^@(.+)$'),'MC.registerTemplate must be called from a Lua file')
     local folder=assert(source:match('^(.*)[/\\][^/\\]+$'),'MC template registrar has no directory')
     assert(ModRef and type(ModRef.GetSharedVariable)=='function'
         and type(ModRef.SetSharedVariable)=='function','MCT template registration transport unavailable')

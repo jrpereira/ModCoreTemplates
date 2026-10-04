@@ -7,7 +7,7 @@ It requires a working ModCore Templates installation and its menu integration.
 
 Place this example's `Scripts` folder under an installed module, for example
 `Mods/WheelNudge/Scripts`. UE4SS loads `Scripts/main.lua`, which registers
-[mc_nudge.lua](Scripts/mc_nudge.lua) with MCT through `M.addTemplate('nudge')`.
+[mc_nudge.lua](Scripts/mc_nudge.lua) with MCT through `M.registerTemplate('nudge')`.
 The example `mod.json` supplies its module ID, author, and version; the template
 itself declares `category='player.quickslots'`.
 Select **Wheel Nudge** under `player.quickslots` in the menu.

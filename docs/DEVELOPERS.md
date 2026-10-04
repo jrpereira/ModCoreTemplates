@@ -14,7 +14,7 @@ entry from UE4SS `Scripts/main.lua`:
 
 ```lua
 local M = require('mc')
-M.addTemplate('layout') -- registers sibling mc_layout.lua
+M.registerTemplate('layout') -- registers sibling mc_layout.lua
 ```
 
 The public helper registers only the sibling path with the MCT instance already
@@ -26,5 +26,5 @@ ModCoreTemplates does not scan modules.
 A template can `require` helpers from its own `Scripts/` folder. Every provider
 shares that search path, and MCT's modules come first, so keep helpers in a folder
 named after the module (`require('layoutmod.shared')`, not `require('shared')`).
-Register each template with its own `addTemplate` call: MCT loads and validates
+Register each template with its own `registerTemplate` call: MCT loads and validates
 each file separately, so one failing template does not remove the others.

@@ -100,7 +100,7 @@ scan installed modules:
 
 ```lua
 local M = require('mc')
-M.addTemplate('layout')
+M.registerTemplate('layout')
 ```
 
 This registers `mc_layout.lua`; that template declares its own category. MCT loads

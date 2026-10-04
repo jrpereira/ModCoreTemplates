@@ -17,7 +17,7 @@
   original startup error.
 - Parse module identity from top-level JSON fields, including surrogate pairs,
   while accepting provider manifests with optional author and version.
-- Add caller-relative `mc.addTemplate(name)` registration, discover provider
+- Add caller-relative `mc.registerTemplate(name)` registration, discover provider
   metadata from `mod.json`, and add the one-shot optional `template.loaded()` initializer.
 - Load category definitions once and move menu/config/runtime assembly out of bootstrap.
 - Tear down the current settings detail page before following a provider link, preventing the activating picker from repeatedly reopening its target.

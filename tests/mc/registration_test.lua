@@ -19,7 +19,7 @@ test('shared client publishes provider template paths',function()
     local previous=_G.ModRef;_G.ModRef=state
     package.loaded.mc_client=nil
     local client=assert(loadfile('./Scripts/mc_client.lua'))()
-    client.addTemplate('sample')
+    client.registerTemplate('sample')
     _G.ModRef=previous
     assert(values['MCT.TemplateRegistration.v1.1.count']==1)
     assert(values['MCT.TemplateRegistration.v1.1.item.1']:match('/tests/mc/mc_sample%.lua$'))
@@ -36,7 +36,7 @@ test('publisher collects once and closes registration',function()
     local paths=publisher:collect()
     assert(#paths==1 and paths[1]:match('/Scripts/sample%.lua$'))
     assert(not pcall(publisher.collect,publisher))
-    assert(not pcall(client.addTemplate,'late'))
+    assert(not pcall(client.registerTemplate,'late'))
     _G.ModRef=previous
 end)
 
@@ -45,7 +45,7 @@ test('client installation is content-aware',function()
     assert(Registration.install('./Scripts/mc_client.lua',root))
     assert(not Registration.install('./Scripts/mc_client.lua',root))
     local installed=assert(loadfile(root))()
-    assert(type(installed.addTemplate)=='function')
+    assert(type(installed.registerTemplate)=='function')
 end)
 
 print('PASS: '..passed..' cross-state template registration tests')
