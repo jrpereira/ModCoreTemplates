@@ -39,7 +39,7 @@ Start with the [developer guide](DEVELOPERS.md) and the runnable
 
 ## Requirements and installation
 
-Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.0.9 or newer (API 6,
+Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.0.12 or newer (API 6,
 weak handles), and ModCoreSettings with Dawnwalker Mod Menu (DMM).
 Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
 `_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.

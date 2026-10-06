@@ -8,7 +8,7 @@
   HUD roots, references, created and moved widgets, saved parents and cached
   slots, is now a UE4SSLuaEventBridge weak handle whose native lifetime is
   checked first.
-- Require UE4SSLuaEventBridge 1.0.9 (API 6, weak handles). The address-identity
+- Require UE4SSLuaEventBridge 1.0.12 (API 6, weak handles). The address-identity
   fallback is gone: when the bridge's lifetime service is unavailable, MCT keeps
   nothing, attaches nothing and logs the bridge's reason once.
 - `MC.hold`, `MC.get` and `MC.release` let templates keep a widget past a
