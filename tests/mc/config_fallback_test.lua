@@ -23,6 +23,16 @@ local values=MenuFiles.readConfigValues(path,text,rows)
 assert(values.Template==0 and values.Size==5 and values.Label=='Wheel')
 assert(MenuFiles.ensureConfig(path,rows,text,nil)==false,'a repaired config is stable')
 
+-- Rewritten values keep their inline comments.
+write('[Templates]\nTemplate=7 ; chosen wheel\nSize=99# too big\nLabel=Wheel\n')
+assert(MenuFiles.ensureConfig(path,rows,text,nil)==true)
+content=read()
+assert(content:find('Template=0 ; chosen wheel\n',1,true) and content:find('Size=5# too big\n',1,true),content)
+assert(MenuFiles.editValues(path,{Size=3})==true)
+assert(read():find('Size=3# too big\n',1,true),read())
+values=MenuFiles.readConfigValues(path,text,rows)
+assert(values.Template==0 and values.Size==3)
+
 -- Repeated keys and sections keep the first value.
 write('[Templates]\nTemplate=3\nTemplate=0\n[Templates]\nSize=2\nLabel=Mine\n')
 assert(MenuFiles.ensureConfig(path,rows,text,nil)==false)

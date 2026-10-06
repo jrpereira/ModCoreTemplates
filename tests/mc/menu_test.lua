@@ -249,16 +249,10 @@ test('menu contribution validates and orders the aggregate before its category p
         and beta.group=='module' and beta.attach=='Beta')
 end)
 
-test('provider link is published as a ModCoreSettings page link', function()
+test('templates get no automatic Control Layout link', function()
     local f=fixture(true)
-    local linkId=f.definitions.Beta.navigation.ControlLayoutLink
-    local row
-    for _,candidate in ipairs(f.menu.rows) do if candidate.Id==linkId then row=candidate end end
-    assert(row and row.mcNavigation==1 and row.mcLinkPage=='ModCoreControls' and row.mcLinkProvider==nil)
-    local manifest=f.menu.pageByModule.Beta.manifest
-    local section=manifest:match('%[Setting%.'..linkId:gsub('%p','%%%0')..'%]\n(.-)\n\n')
-    assert(section and section:find('mcLinkPage=ModCoreControls',1,true)
-        and section:find('mcNavigation=1',1,true))
+    assert(f.definitions.Beta.navigation.ControlLayoutLink==nil)
+    for _,row in ipairs(f.menu.rows) do assert(row.Label~='Control Layout',row.Id) end
 end)
 
 test('published menus and catalog can be reloaded; user config is preserved', function()

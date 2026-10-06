@@ -10,7 +10,10 @@ local M={}
 function M.validate(options,categories,templates,locations)
     local model=MenuModel.build(categories,U.copy(templates),locations)
     local menuOptions=U.copy(options.menu or {})
-    if options.menuRoot then menuOptions.catalog=MenuFiles.readCatalog(options.menuRoot) end
+    if options.menuRoot then
+        menuOptions.catalog=MenuFiles.readCatalog(options.menuRoot)
+        menuOptions.version=Layout.version(options.menuRoot)
+    end
     Menu.generate(model.registry,menuOptions)
     Runtime.new(options.host,model.categories,model.templates,options.state)
 end
@@ -80,8 +83,12 @@ function M.new(options,categories,templates,locations,own)
     if own then own(self) end
     local model=MenuModel.build(categories,templates,locations)
     local menuOptions=U.copy(options.menu or {})
-    if options.menuRoot then menuOptions.catalog=MenuFiles.readCatalog(options.menuRoot) end
+    if options.menuRoot then
+        menuOptions.catalog=MenuFiles.readCatalog(options.menuRoot)
+        menuOptions.version=Layout.version(options.menuRoot)
+    end
     self.menu=Menu.generate(model.registry,menuOptions)
+    self.categories=model.categories
     self.runtime=Runtime.new(options.host,model.categories,model.templates,options.state)
     local savedValues=options.menuValues
     local configSources={}

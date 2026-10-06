@@ -41,6 +41,7 @@
     "Scripts/mc/provider_settings.lua": "Scripts/mc/provider_settings.lua",
     "Scripts/mc/registration.lua": "Scripts/mc/registration.lua",
     "Scripts/mc/runtime.lua": "Scripts/mc/runtime.lua",
+    "Scripts/mc/safe_file.lua": "Scripts/mc/safe_file.lua",
     "Scripts/mc/selectors.lua": "Scripts/mc/selectors.lua",
     "Scripts/mc/settings_api.lua": "Scripts/mc/settings_api.lua",
     "Scripts/mc/startup_session.lua": "Scripts/mc/startup_session.lua",

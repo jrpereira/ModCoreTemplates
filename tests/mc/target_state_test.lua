@@ -105,10 +105,7 @@ fail=false
 assert(managed:attach(switcher,named,{settings={}}))
 managed:forget(switcher)
 assert(active==0,'forget must unsubscribe even when world objects cannot be restored')
-assert(managed:attach(switcher,named,{settings={}}))
-managed:reset()
-assert(active==0,'reset must remove all subscriptions')
-print('PASS: managed cleanup on update, detach, failure, forget and reset')
+print('PASS: managed cleanup on update, detach, failure and forget')
 
 do
     local canvas,other=widget('canvas'),widget('other-canvas')

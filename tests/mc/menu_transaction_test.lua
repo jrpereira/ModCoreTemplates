@@ -29,11 +29,18 @@ assert(Files.readConfigValues(base,{}, {row}).X==8)
 assert(read(base..'.mc.tmp')==nil)
 
 local extra={Id='Y',Type='integer',Minimum=0,Maximum=10,Default=2}
+local new,old=base..'.new',base..'.old'
 local originalRename,originalRemove,originalOpen=os.rename,os.remove,io.open
+-- A successful write keeps the previous version as <path>.old.
+assert(Files.ensureConfig(base,{row,extra},{})==true)
+assert(read(old)=='[Templates]\nX=8\n' and read(new)==nil)
+assert(Files.readConfigValues(base,{}, {row,extra}).Y==2)
+write(base,'[Templates]\nX=8\n')
+-- Write or close failures leave the original and clear the replacement.
 for _,failure in ipairs({'write','close'}) do
     io.open=function(path,mode)
         local file=originalOpen(path,mode)
-        if path~=base..'.mc.tmp' or mode~='wb' then return file end
+        if path~=new or mode~='wb' then return file end
         return {
             write=function(_,value)
                 if failure=='write' then return nil,'injected write failure' end
@@ -49,51 +56,49 @@ for _,failure in ipairs({'write','close'}) do
     assert(not pcall(Files.ensureConfig,base,{row,extra},{}))
     io.open=originalOpen
     assert(Files.readConfigValues(base,{}, {row}).X==8)
-    assert(read(base..'.mc.tmp')==nil)
+    assert(read(new)==nil)
 end
--- Failure before moving the original leaves its contents and clears the temp.
+-- Failure moving the original to the backup leaves it in place.
 os.rename=function(from,to)
-    if from==base and to==base..'.mc.bak' then return nil,'injected backup rename failure' end
+    if from==base and to==old then return nil,'injected backup rename failure' end
     return originalRename(from,to)
 end
 assert(not pcall(Files.ensureConfig,base,{row,extra},{}))
 os.rename=originalRename
-assert(Files.readConfigValues(base,{}, {row}).X==8)
-assert(read(base..'.mc.tmp')==nil and read(base..'.mc.bak')==nil)
+assert(Files.readConfigValues(base,{}, {row}).X==8 and read(new)==nil)
 
--- If cleanup of a failed publish also fails, startup recovery clears the temp.
+-- Failure publishing the replacement rolls back to the original.
 os.rename=function(from,to)
-    if from==base..'.mc.tmp' and to==base then return nil,'injected publish rename failure' end
+    if from==new and to==base then return nil,'injected publish rename failure' end
+    return originalRename(from,to)
+end
+assert(not pcall(Files.ensureConfig,base,{row,extra},{}))
+os.rename=originalRename
+assert(Files.readConfigValues(base,{}, {row}).X==8 and read(new)==nil)
+
+-- If clearing the failed replacement also fails, the next read discards it.
+os.rename=function(from,to)
+    if from==new and to==base then return nil,'injected publish rename failure' end
     return originalRename(from,to)
 end
 os.remove=function(path)
-    if path==base..'.mc.tmp' then return nil,'injected temp removal failure' end
+    if path==new then return nil,'injected replacement removal failure' end
     return originalRemove(path)
 end
 assert(not pcall(Files.ensureConfig,base,{row,extra},{}))
 os.rename,os.remove=originalRename,originalRemove
-assert(read(base..'.mc.tmp')~=nil)
-assert(Files.readConfigValues(base,{}, {row}).X==8)
-assert(read(base..'.mc.tmp')==nil and read(base..'.mc.bak')==nil)
+assert(read(new)~=nil)
+assert(Files.readConfigValues(base,{}, {row}).X==8 and read(new)==nil)
 
--- Failure when publishing the temp must roll back to the original.
-os.rename=function(from,to)
-    if from==base..'.mc.tmp' and to==base then return nil,'injected publish rename failure' end
-    return originalRename(from,to)
-end
-assert(not pcall(Files.ensureConfig,base,{row,extra},{}))
-os.rename=originalRename
-assert(Files.readConfigValues(base,{}, {row}).X==8)
-assert(read(base..'.mc.tmp')==nil and read(base..'.mc.bak')==nil)
+-- Crash after moving the original out publishes the complete replacement.
+originalRemove(base)
+write(old,'[Templates]\nX=8\n')
+write(new,'[Templates]\nX=6\n')
+assert(Files.readConfigValues(base,{}, {row}).X==6)
+assert(read(new)==nil and read(old)=='[Templates]\nX=8\n')
 
--- A failed backup removal after publication is recovered on the next read.
-os.remove=function(path)
-    if path==base..'.mc.bak' then return nil,'injected backup removal failure' end
-    return originalRemove(path)
-end
-assert(not pcall(Files.ensureConfig,base,{row,extra},{}))
-os.remove=originalRemove
-assert(read(base..'.mc.bak')~=nil)
-assert(Files.readConfigValues(base,{}, {row,extra}).Y==2)
-assert(read(base..'.mc.bak')==nil)
+-- A removed config with only a backup is not resurrected.
+originalRemove(base)
+assert(Files.ensureConfig(base,{row},{})==true)
+assert(Files.readConfigValues(base,{}, {row}).X==1, 'defaults, not the backup')
 print('PASS: interrupted menu writes recover original or published config')

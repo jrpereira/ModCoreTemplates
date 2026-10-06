@@ -118,7 +118,7 @@ test('settings invoke update, not attach or detach', function()
     assert(#f.calls == 2 and f.calls[2] == 'a:update:one:2')
 end)
 
-test('readiness and late parent assignment; parent removal detaches descendants', function()
+test('readiness and late parent assignment', function()
     local f = fixture(false, {root={source='lookup',object='root'}, slots={source='lookup',class='Slot', within='root'}})
     local root = f.object('root', 'Root')
     local child = f.object('child', 'Slot', nil, false)
@@ -127,8 +127,6 @@ test('readiness and late parent assignment; parent removal detaches descendants'
     f.emit('changed', child); assert(#f.calls == 1)
     child.parent, child.ready = root, true
     f.emit('changed', root); assert(#f.calls == 2)
-    f.emit('lost', root)
-    assert(#f.calls == 4 and next(f.runtime:attachments('a')) == nil)
 end)
 
 test('reparenting valid objects detaches and can reattach', function()
@@ -147,7 +145,6 @@ test('invalid objects never receive detach, replacements attach independently', 
     local old = f.object('old')
     f.runtime:select('player.quickslots', {a={}}); f.runtime:start()
     old.valid = false
-    f.emit('lost', old)
     local new = f.object('new'); new.path = old.path
     f.emit('changed', new)
     assert(#f.calls == 2 and f.runtime:attachments('a').old == nil)
@@ -162,20 +159,6 @@ test('disable and single selection switch detach before attaching', function()
     assert(f.calls[2] == 'b:detach:one' and f.calls[3] == 'a:attach:one:nil')
     f.runtime:select('player.quickslots', {})
     assert(f.calls[4] == 'a:detach:one')
-end)
-
-test('world invalidation discards records and rejects stale queued events', function()
-    local f = fixture()
-    local old = f.object('old')
-    f.runtime:select('player.quickslots', {a={}}); f.runtime:start()
-    old.valid = false
-    f.emit('world_invalidated', nil, 1)
-    assert(f.runtime.epoch == 2 and next(f.runtime:attachments('a')) == nil)
-    local new = f.object('new')
-    f.emit('changed', new, 1); assert(#f.calls == 1)
-    f.emit('changed', new, 2); assert(#f.calls == 1)
-    f.emit('world_ready', nil, 2)
-    assert(#f.calls == 2 and f.calls[2] == 'a:attach:new:nil')
 end)
 
 test('callback errors do not prevent other templates and retry only on an event', function()
@@ -335,19 +318,6 @@ test('subscription is active before snapshot and duplicate notifications are har
     end
     f.runtime:select('player.quickslots', {a={}}); f.runtime:start()
     assert(#f.calls == 1)
-end)
-
-test('loss during subscription is applied before initial attachment', function()
-    local f = fixture()
-    local object = f.object('one')
-    local subscribe = f.host.subscribe
-    f.host.subscribe = function(sink, epoch)
-        local stop = subscribe(sink, epoch)
-        sink({kind='lost', id=object.id, epoch=epoch()})
-        return stop
-    end
-    f.runtime:select('player.quickslots', {a={}}); f.runtime:start()
-    assert(#f.calls == 0)
 end)
 
 test('failed initial discovery closes subscriptions and fails startup', function()

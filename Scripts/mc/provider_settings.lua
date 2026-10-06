@@ -116,7 +116,7 @@ function M.template(menu, variations)
     U.array(menu, 'template menu')
     assert(type(variations) == 'table', 'template variations must be a table')
     local variationNames, variationFields, variationIds, variationChoices = {}, {}, {}, {}
-    local resolvedVariationIds = {ControlLayoutLink=true}
+    local resolvedVariationIds = {}
     for name, source in pairs(variations) do
         identifier(name, 'variation id')
         assert(type(source) == 'table', 'variation must be a table')
@@ -143,13 +143,13 @@ function M.template(menu, variations)
             description=source.description,
         }
     end
-    variationFields[#variationFields + 1] = {
-        id='ControlLayoutLink',label='Control Layout',type='navigation',
-        values={0,1},labels={'Edit controls','Open'},default=0,
-        linkProvider='ModCoreControls',
-        description='Open ModCore Controls to choose and edit the control layout.',
-    }
-    local groups = {{id='Template',label='Template',heading=false,fields=variationFields}}
+    -- Variations lead the menu in their own group, when the template declares any.
+    -- Standalone group ids count the Template group's position even when it is absent,
+    -- so generated ids do not depend on whether a template declares variations.
+    local groups, absentTemplate = {}, 1
+    if #variationFields > 0 then
+        groups[1], absentTemplate = {id='Template',label='Template',heading=false,fields=variationFields}, 0
+    end
     local groupIds, fieldIds, pickers = {Template=true}, {}, {}
     for _, field in ipairs(variationFields) do
         fieldIds[field.id] = true
@@ -173,7 +173,7 @@ function M.template(menu, variations)
                 level=sourceGroup.level,description=sourceGroup.description}
             conditions(field, sourceGroup, '', pickers)
             if field.type == 'picker' then pickers[id] = true end
-            local groupId = 'Standalone' .. tostring(#groups)
+            local groupId = 'Standalone' .. tostring(#groups + absentTemplate)
             assert(not groupIds[groupId], 'reserved template menu id collision ' .. groupId)
             groupIds[groupId] = true
             groups[#groups + 1] = {id=groupId,label=sourceGroup.label,heading=false,fields={field}}
@@ -266,7 +266,7 @@ function M.normalize(declaration)
             assert(type(source) == 'table', 'provider field must be a table')
             allowed(source, {id=true,label=true,type=true,order=true,default=true,values=true,
                 labels=true,min=true,max=true,step=true,suffix=true,tab=true,level=true,description=true,
-                after=true,visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
+                visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
                 labelText=true,tabNavigation=true,linkProvider=true}, 'provider field')
             identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
             level(source.level, source.type == 'picker' or source.type == 'navigation')
@@ -297,7 +297,6 @@ function M.normalize(declaration)
             assert((field.labelWhen == nil) == (field.labelValues == nil)
                 and (field.labelWhen == nil) == (field.labelText == nil),
                 'provider label requires labelWhen, labelValues and labelText')
-            assert(field.after == nil, 'field.after is unsupported')
             assert(field.tab == nil or type(field.tab) == 'boolean', 'provider tab must be boolean')
             assert(field.tabNavigation == nil or (field.type == 'navigation'
                 and field.tab == true and field.tabNavigation == 1),

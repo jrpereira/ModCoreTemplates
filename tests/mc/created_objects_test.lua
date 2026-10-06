@@ -91,9 +91,6 @@ assert(manager:attach(root,named(),{settings={}}))
 assert(made==3 and seen[#seen]~=seen[1])
 manager:forget(root)
 assert(root:GetChildrenCount()==0 and not manager:hasState(root))
-assert(manager:attach(root,named(),{settings={}}))
-manager:reset()
-assert(root:GetChildrenCount()==0 and not manager:hasState(root))
 
 local layoutRoot,layoutOuter=object('layout-root'),object('layout-tree')
 function layoutRoot:GetOuter() return layoutOuter end

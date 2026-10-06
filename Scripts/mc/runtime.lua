@@ -57,7 +57,7 @@ function M.new(host, definitions, templates, state)
     local self = {epoch=1, phase='new', errors={},state=state}
     local categories, byId, candidates, queue = {}, {}, {}, {}
     local activeRoots, searchSignature = {}, nil
-    local busy, unsubscribe, suspended = false, nil, false
+    local busy, unsubscribe = false, nil
     local failedInTurn = nil
     local function managedRecord(definition, graph, targets, externallyCreated)
         local specs=TargetState.specs(graph,targets)
@@ -408,7 +408,7 @@ function M.new(host, definitions, templates, state)
             end
             for _, id in ipairs(keys(category.templates)) do
                 local record = category.templates[id]
-                if record.enabled and not suspended then
+                if record.enabled then
                     local objects,bundles=resolved[id].objects,resolved[id].bundles
                     for _, token in ipairs(keys(objects)) do
                         local object, blocked = objects[token], false
@@ -471,7 +471,7 @@ function M.new(host, definitions, templates, state)
                     refreshSettings(category, record)
                 end
             end
-            if self.phase == 'running' and not suspended then refreshDiscovery(); reconcile() end
+            if self.phase == 'running' then refreshDiscovery(); reconcile() end
         end)
     end
     function self:setCategorySettings(categoryName, settings)
@@ -484,7 +484,7 @@ function M.new(host, definitions, templates, state)
             for _, record in pairs(category.templates) do
                 if record.enabled then refreshSettings(category, record) end
             end
-            if self.phase == 'running' and not suspended then reconcile() end
+            if self.phase == 'running' then reconcile() end
         end)
     end
     -- State changes never rebuild templates. Event callbacks run once per live
@@ -495,7 +495,6 @@ function M.new(host, definitions, templates, state)
         assert(event==nil or type(event)=='table' and type(event.name)=='string',
             'invalid template event')
         serialize(function()
-            if suspended then return end
             for _,id in ipairs(keys(byId)) do
                 local record=byId[id]
                 local callback=record.enabled and event and record.definition.events
@@ -546,52 +545,21 @@ function M.new(host, definitions, templates, state)
                     end
                 end
             end
-            if next(pending) and self.phase == 'running' and not suspended then
+            if next(pending) and self.phase == 'running' then
                 refreshDiscovery(); reconcile()
             end
         end)
     end
+    -- The object source reports only changes; a destroyed object fails validity and
+    -- is dropped at the next reconcile.
     function self:event(event)
         assert(type(event) == 'table', 'lifecycle event required')
         local kind, object, epoch = event.kind, event.object, event.epoch
-        assert(kind == 'changed' or kind == 'lost' or kind == 'world_invalidated' or kind == 'world_ready', 'unknown lifecycle event')
+        assert(kind == 'changed', 'unknown lifecycle event')
         assert(type(epoch) == 'number', 'event must carry the epoch captured before queuing')
-        -- lost carries the identity captured while the object was valid.
-        local id = event.id
-        assert(kind ~= 'lost' or type(id) == 'string', 'lost event requires captured identity')
         serialize(function()
             if self.phase ~= 'running' or epoch ~= self.epoch then return end
-            if kind == 'world_invalidated' then
-                self.epoch, suspended, candidates = self.epoch + 1, true, {}
-                reconcile()
-                for _, category in pairs(categories) do
-                    category.objects = {}
-                    for _, record in pairs(category.templates) do
-                        if record.manager then
-                            local ok,why=pcall(record.manager.reset,record.manager)
-                            if not ok then report('reset',record.definition.id,why) end
-                        end
-                        for token,attached in pairs(record.attached) do
-                            if not record.manager or not record.manager:hasState(attached.root) then
-                                record.attached[token]=nil
-                            end
-                        end
-                        for token,pending in pairs(record.pending) do
-                            if not record.manager:hasState(pending.root) then record.pending[token]=nil end
-                        end
-                        record.waiting={}
-                    end
-                end
-                return
-            elseif kind == 'world_ready' then
-                if not suspended then return end
-                suspended = false
-                discover()
-            elseif suspended then return
-            elseif kind == 'lost' then candidates[id] = nil
-            else
-                include(object)
-            end
+            include(object)
             reconcile()
         end)
     end
@@ -607,7 +575,7 @@ function M.new(host, definitions, templates, state)
                 refreshDiscovery()
                 -- Drain notifications captured during subscription/snapshot before attaching.
                 queue[#queue + 1] = function()
-                    if self.phase == 'running' and not suspended then reconcile() end
+                    if self.phase == 'running' then reconcile() end
                 end
             end)
             if not ok then

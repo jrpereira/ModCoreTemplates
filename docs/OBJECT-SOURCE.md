@@ -23,20 +23,42 @@ to another blueprint with the same final widget name are excluded.
 
 ## Readiness and hierarchy
 
-`NotifyOnNewObject` registers for declared classes and WidgetTree owners. A
-creation notification retains an unready candidate; it does not trigger
-attachment by itself. `UserWidget:AddToViewport` and `AddToPlayerScreen` mark the owner ready
+Only categories with at least one registered template are watched: the runtime
+ignores the others, and the source registers its notifications once templates
+are loaded, before the first snapshot. `NotifyOnNewObject` registers for those
+categories' root classes and WidgetTree owners, never for a WidgetTree child's
+widget class. An owner notification looks up its
+declared children on the next three game-thread dispatches. A creation
+notification retains an unready candidate; it does not trigger attachment by
+itself. `from` targets register nothing: they are read again from their root
+on every reconcile.
+
+## Game state
+
+Widget hooks exist only while a root is live:
+
+- idle (boot, main menu, loading): no widget hooks, only root-class
+  notifications, whose classes exist only in a loaded world;
+- waiting (a live root is not ready): all widget hooks, including `AddChild`;
+- ready (every live root is ready): all except `AddChild`.
+
+Hook changes run on the next game-thread dispatch, never inside a callback. A
+hooked call that finds every known root invalid returns the source to idle, so
+leaving a world needs no LoadMap hook. Filters are lookups on known root and
+owner addresses and on the panels that hold them; only `within` groups walk
+widget ancestry. `UserWidget:AddToViewport` and `AddToPlayerScreen` mark the owner ready
 and wake cached candidates. Nested HUD widgets can also become ready when
 they have a live world and a valid panel parent; `IsInViewport()` is not a
 usable signal for Dawnwalker's nested `WBP_GameHUD`. `Widget:RemoveFromParent`
 marks a user-widget owner unready before removal and detaches valid matches.
 An already parented HUD widget may attach from a snapshot.
 
-For widget selectors, including `within` groups, hooks on reflected
-`PanelWidget:AddChild`, `PanelWidget:RemoveChild` and
-`PanelWidget:ClearChildren` wake cached candidates after hierarchy changes.
-`Widget:RemoveFromParent` also wakes descendants after removal. An `AddChild`
-callback clears a nested UserWidget's removal marker so it can attach again.
+For widget selectors, hooks on reflected `PanelWidget:AddChild`,
+`PanelWidget:RemoveChild` and `PanelWidget:ClearChildren` wake cached
+candidates when a known root, or a panel holding one, changes. `within` groups
+also wake for changes beneath a known root, and `Widget:RemoveFromParent`
+wakes their descendants after removal. An `AddChild` callback clears a known
+UserWidget's removal marker so it can attach again.
 Non-root widgets require a valid panel parent even when their owner is ready.
 `GetParent` supplies widget ancestry. Other object classes use `GetOuter`.
 MCT registers no LoadMap hooks. On a map change the old world's objects become

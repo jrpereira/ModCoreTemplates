@@ -72,6 +72,7 @@ function M.build(definitions, templates, locations)
     function registry.categories:getCategory(name) return assert(categories[name], 'unknown category') end
     for index, template in ipairs(templates) do
         local category = registry.categories:getCategory(template.category)
+        category.count = (category.count or 0) + 1
         assert(type(template.settings) ~= 'table'
             or (template.settings.fields == nil and template.settings.groups == nil
                 and template.settings.target == nil),
@@ -93,7 +94,13 @@ function M.build(definitions, templates, locations)
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             single=category.single, location=assert(locations[index], 'template source path required')}
     end
-    return {registry=registry, categories=runtimeCategories, templates=templates}
+    -- A category without templates has nothing to attach, so the runtime and object
+    -- source never watch its objects.
+    local used = {}
+    for _, runtime in ipairs(runtimeCategories) do
+        if categories[runtime.name].count then used[#used + 1] = runtime end
+    end
+    return {registry=registry, categories=used, templates=templates}
 end
 
 return M

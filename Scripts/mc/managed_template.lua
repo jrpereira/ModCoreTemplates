@@ -269,18 +269,6 @@ function M.new(template,specs,order,createdSpecs)
     function manager:hasState(root)
         return states[root]~=nil
     end
-    function manager:reset()
-        local failure
-        for root,state in pairs(states) do
-            local ok,why=pcall(function()
-                cleanup(state)
-                release(state.created)
-            end)
-            if ok then states[root]=nil
-            else failure=failure or why end
-        end
-        if failure then error(failure,0) end
-    end
     return manager
 end
 

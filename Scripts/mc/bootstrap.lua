@@ -31,8 +31,13 @@ function M.new(options)
     -- templates still run on their saved settings, so a failure is only reported.
     local function publishMenu(menu)
         local Contribution=require('mc.menu_contribution')
+        local SafeFile=require('mc.safe_file')
+        -- The vendored client stays unchanged; MCT supplies crash-safe file access.
+        -- Removing a retired generation file also removes its kept backup.
         menuPublisher=menuPublisher or require('mc.menu_contributions').publisher(options.menuShared,
-            {id=Contribution.id,directory=require('mc.layout').paths(options.menuRoot).cache})
+            {id=Contribution.id,directory=require('mc.layout').paths(options.menuRoot).cache,
+                read=SafeFile.read,write=SafeFile.write,
+                remove=function(path) os.remove(path..'.old'); return os.remove(path) end})
         return menuPublisher:publish(Contribution.build(menu,options.menuRoot))
     end
     function self:registerTemplate(path)
@@ -153,6 +158,9 @@ function M.new(options)
             end)
             self.menu,self.runtime=session.menu,session.runtime
             self.menuController=session.menuController
+            -- Object notifications cover only categories with templates; they start
+            -- before the runtime's first snapshot.
+            if options.activateSource then options.activateSource(session.categories) end
             session:start()
             if options.menuShared then
                 local published,why=pcall(publishMenu,session.menu)

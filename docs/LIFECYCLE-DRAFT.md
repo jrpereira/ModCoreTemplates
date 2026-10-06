@@ -157,17 +157,13 @@ Deliver events on the game thread. Capture the epoch before queuing work:
 
 ```lua
 sink({kind='changed', object=object, epoch=capturedEpoch})
-sink({kind='lost', id=capturedInstanceIdentity, epoch=capturedEpoch})
-sink({kind='world_invalidated', epoch=capturedEpoch})
-sink({kind='world_ready', epoch=currentEpoch})
 ```
 
-Old epochs are ignored. `changed` covers creation/readiness/parent changes;
-`lost` removes a captured identity. `world_invalidated` means objects are already
-invalid: forget them and increment the epoch. `world_ready` resumes discovery
-with the new epoch. Partial subscription failures must release installed hooks.
+Old epochs are ignored. `changed` covers creation, readiness and parent changes.
+There is no loss or world event: a destroyed object fails `valid` and is forgotten,
+without a detach callback, at the next reconcile. Partial subscription failures must
+release installed hooks.
 
-Startup and world readiness enumerate objects; later events reevaluate cached
-candidates. Missing native notifications cannot be inferred without polling.
+Startup enumerates objects; later events reevaluate cached candidates. Missing native notifications cannot be inferred without polling.
 Use the [build guide](BUILD.md) for validation; native hook coverage and timely
 invalidation still require in-game checks.

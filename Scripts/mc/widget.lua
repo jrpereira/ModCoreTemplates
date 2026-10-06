@@ -25,11 +25,9 @@ end
 local function vector(widget, member)
     -- UE4SS struct fields are views into their parent struct. Keep that
     -- parent wrapper alive while reading the nested vector components.
-    local transform = M.property(widget, 'RenderTransform')
+    local transform = assert(M.property(widget, 'RenderTransform'), 'render transform unavailable')
     local value = M.property(transform, member)
-    local x, y = M.number(value, 'X'), M.number(value, 'Y')
-    assert(transform ~= nil, 'render transform unavailable')
-    return {X=x, Y=y}
+    return {X=M.number(value, 'X'), Y=M.number(value, 'Y')}
 end
 
 function M.translation(widget) return vector(widget, 'Translation') end
@@ -64,24 +62,6 @@ end
 
 function M.setOpacity(widget, value)
     if M.opacity(widget) ~= value then widget:SetRenderOpacity(value) end
-end
-
-function M.appearance(widget, settings, prefix, position)
-    M.setTranslation(widget, position.X + settings[prefix .. 'X'],
-        position.Y + settings[prefix .. 'Y'])
-    M.setScale(widget, settings[prefix .. 'Size'] / 100)
-    M.setOpacity(widget, settings[prefix .. 'Opacity'] / 100)
-end
-
-function M.reparent(widget, parent)
-    local previous = assert(Objects.parent(widget), 'widget parent unavailable')
-    assert(previous:RemoveChild(widget) ~= false, 'could not remove widget from parent')
-    local slot = assert(parent:AddChild(widget), 'could not reparent widget')
-    assert(Objects.valid(slot), 'widget slot unavailable after reparenting')
-    slot:SetPadding({Left=0, Top=0, Right=0, Bottom=0})
-    slot:SetHorizontalAlignment(1)
-    slot:SetVerticalAlignment(1)
-    return slot
 end
 
 function M.prepareLayout(widget)
@@ -227,16 +207,6 @@ function M.restoreSlot(widget, state)
     slot:SetPadding(state.padding)
     slot:SetHorizontalAlignment(state.horizontal)
     slot:SetVerticalAlignment(state.vertical)
-end
-
-function M.readback(widget)
-    local ok, result = pcall(function()
-        local position = M.translation(widget)
-        return 'opacity=' .. tostring(M.opacity(widget))
-            .. ' scale=' .. tostring(M.scale(widget).X)
-            .. ' x=' .. tostring(position.X) .. ' y=' .. tostring(position.Y)
-    end)
-    return ok and result or 'unavailable (' .. tostring(result) .. ')'
 end
 
 return M

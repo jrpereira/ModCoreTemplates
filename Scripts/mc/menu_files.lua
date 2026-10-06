@@ -1,5 +1,6 @@
 local Layout = require('mc.layout')
 local Provider = require('mc.provider_settings')
+local SafeFile = require('mc.safe_file')
 local M = {}
 
 local function read(path)
@@ -10,7 +11,8 @@ local function read(path)
     return content
 end
 
-local function recover(path)
+-- Earlier versions replaced files through <path>.mc.tmp and <path>.mc.bak.
+local function recoverLegacy(path)
     local backup,temporary=path..'.mc.bak',path..'.mc.tmp'
     if read(backup)~=nil then
         if read(path)==nil then
@@ -26,29 +28,15 @@ local function recover(path)
     end
 end
 
+local function recover(path)
+    recoverLegacy(path)
+    SafeFile.recover(path)
+end
+
 local function writeChanged(path, content)
     recover(path)
-    local old = read(path)
-    if old == content then return false end
-    local temporary = path .. '.mc.tmp'
-    assert(not read(temporary), 'stale temporary menu file: ' .. temporary)
-    local file = assert(io.open(temporary, 'wb'))
-    assert(file:write(content))
-    assert(file:close())
-    local backup = path .. '.mc.bak'
-    if old then
-        assert(not read(backup), 'stale backup menu file: ' .. backup)
-        local moved, why = os.rename(path, backup)
-        if not moved then os.remove(temporary); error(why) end
-    end
-    local renamed, why = os.rename(temporary, path)
-    if not renamed then
-        if old then assert(os.rename(backup, path), 'could not restore previous menu file') end
-        os.remove(temporary)
-        error(why)
-    end
-    if old then assert(os.remove(backup)) end
-    return true
+    if read(path) == content then return false end
+    return SafeFile.write(path, content)
 end
 
 local function catalogSource(catalog)
@@ -97,6 +85,12 @@ local function accepted(row, value)
         if value == tonumber(candidate) then return true end
     end
     return false
+end
+
+-- Replace a setting line's value, keeping any trailing ; or # comment.
+local function setLine(line, key, value)
+    local comment = line and line:match('=[^;#]-(%s*[;#].*)$') or ''
+    return key .. '=' .. value .. comment
 end
 
 local function validText(spec, value)
@@ -152,7 +146,7 @@ local function ensureConfig(path, rows, textSettings, initialValues)
             else
                 local raw = lines[index]:match('=%s*([^;#]+)')
                 if not valid(raw and tonumber(raw:match('^%s*(.-)%s*$'))) then
-                    lines[index] = row.Id .. '=' .. string.format('%.17g', default); repaired = true
+                    lines[index] = setLine(lines[index], row.Id, string.format('%.17g', default)); repaired = true
                 end
             end
         end
@@ -167,7 +161,7 @@ local function ensureConfig(path, rows, textSettings, initialValues)
         else
             local raw = lines[index]:match('=%s*([^;#]*)')
             if not valid(raw and raw:match('^%s*(.-)%s*$')) then
-                lines[index] = settingId .. '=' .. default; repaired = true
+                lines[index] = setLine(lines[index], settingId, default); repaired = true
             end
         end
     end
@@ -244,7 +238,7 @@ local function editValues(path, changes, name)
             key = key and key:match('^%s*(.-)%s*$')
             if key and changes[key] == false then
             elseif key and changes[key] ~= nil then
-                out[#out + 1] = key .. '=' .. value(changes[key]); pending[key] = nil
+                out[#out + 1] = setLine(line, key, value(changes[key])); pending[key] = nil
             else out[#out + 1] = line end
         end
     end

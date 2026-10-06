@@ -142,7 +142,10 @@ end
 assert(acceptsVersion(5,nil) and acceptsVersion(nil,5),
     'either API 5 version field must allow the probed lifetime service')
 assert(not acceptsVersion(4,4), 'older API versions must be rejected')
-assert(created[classPath] and created['/Script/UMG.WidgetSwitcher'] and created['/Script/UMG.SlotWidget'])
+assert(created[classPath] and created['/Script/UMG.SlotWidget'])
+assert(not created['/Script/UMG.WidgetSwitcher'],
+    'a WidgetTree child is found through its owner, not a class-wide notification')
+assert(next(hooks)==nil, 'no widget hooks before a root is known')
 local host=References.new(source)
 local lifecycleEvents=0
 local subscribe=host.subscribe
@@ -254,10 +257,63 @@ do
     assert(#sourceErrors==1 and sourceErrors[1].stage=='identity')
     serialByAddress[replacement.address]=currentSerial
 end
-local singleton=Source.new({{name='singleton',objects={switcher={source='lookup',object=objectPath}}}},api)
-assert(hooks['/Script/UMG.PanelWidget:AddChild']) -- leaf can join after creation
-singleton.stop()
-assert(next(hooks)==nil)
+do
+    -- Game state scopes the widget hooks: none while idle, AddChild only while
+    -- a root waits for readiness, and none again once every root is gone.
+    local scoped={name='scoped',objects={
+        switcher={source='lookup',object=objectPath},
+        hud_root={source='reference',from='switcher',member='@owner.WidgetTree.RootWidget'}}}
+    nextOwner.alive,nextRoot.alive=false,false
+    local game=Source.new({scoped},api)
+    assert(next(hooks)==nil, 'boot and main menu register no widget hooks')
+    local hud=obj(70,'WBP_GameHUD_C /Engine/Transient.GameEngine_0.WBP_GameHUD_C_4',
+        {['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
+    hud.class=ownerClass; hud.world=nextWorld
+    local hudTree=obj(71,'WidgetTree /Engine/Transient.GameEngine_0.WBP_GameHUD_C_4.WidgetTree',{},hud)
+    local hudPanel=obj(72,'CanvasPanel /Engine/Transient.GameEngine_0.WBP_GameHUD_C_4.WidgetTree.Root',
+        {['/Script/UMG.Widget']=true},hudTree)
+    local hudSwitcher=obj(73,'WidgetSwitcher /Engine/Transient.GameEngine_0.WBP_GameHUD_C_4.WidgetTree.QuickslotsSwitcher',
+        {['/Script/UMG.Widget']=true,['/Script/UMG.WidgetSwitcher']=true},hudTree)
+    hudSwitcher.class=widgetClass -- not yet in a panel: waiting
+    hud.WidgetTree=hudTree; hudTree.RootWidget=hudPanel
+    local events={}
+    game.watch({scoped.objects.switcher})
+    game.subscribe(function(event) events[#events+1]=event end,function() return 1 end)
+    created[classPath](hud)
+    assert(#events>=1 and events[#events].object==hudSwitcher)
+    local AddChild='/Script/UMG.PanelWidget:AddChild'
+    assert(hooks[AddChild] and hooks['/Script/UMG.Widget:RemoveFromParent'],
+        'a root waiting for readiness arms every widget hook')
+    -- A menu widget is rejected without walking its parents.
+    local walks,found=0,#events
+    local menuPanel=obj(80,'VerticalBox /Engine/Transient.Menu.Rows',{['/Script/UMG.Widget']=true})
+    function menuPanel:GetParent() walks=walks+1 end
+    local menuRow=obj(81,'Border /Engine/Transient.Menu.Row',{['/Script/UMG.Widget']=true})
+    hooks[AddChild].post(wrap(menuPanel),wrap(menuRow))
+    hooks['/Script/UMG.PanelWidget:RemoveChild'].post(wrap(menuPanel),wrap(menuRow))
+    hooks['/Script/UMG.PanelWidget:ClearChildren'].post(wrap(menuPanel))
+    hooks['/Script/UMG.Widget:RemoveFromParent'].pre(wrap(menuRow))
+    assert(walks==0 and #events==found, 'menu widgets must cost no ancestry walk or wake')
+    hudSwitcher.parent=hudPanel
+    hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(hud))
+    assert(#events==found+1 and not hooks[AddChild], 'a ready root needs no AddChild hook')
+    assert(hooks['/Script/UMG.PanelWidget:ClearChildren'], 'removal hooks stay while attached')
+    hooks['/Script/UMG.Widget:RemoveFromParent'].pre(wrap(hud))
+    assert(hooks[AddChild], 'a removed HUD waits for AddChild again')
+    local slot=obj(82,'Overlay /Engine/Transient.GameEngine_0.Player.Slot',{['/Script/UMG.Widget']=true})
+    hud.parent=slot
+    hooks[AddChild].post(wrap(slot),wrap(hud))
+    assert(game.ready(hudSwitcher) and not hooks[AddChild], 'rejoining a panel makes the HUD ready')
+    local before=#events
+    hooks['/Script/UMG.PanelWidget:ClearChildren'].post(wrap(slot))
+    assert(#events==before+1, 'clearing the panel holding the HUD wakes the runtime')
+    -- Returning to the main menu: the HUD dies and the next menu call disarms.
+    hud.alive,hudSwitcher.alive,hudPanel.alive=false,false,false
+    hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(obj(83,'WBP_MainMenu_C /Engine/Transient.Menu',
+        {['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})))
+    assert(next(hooks)==nil, 'leaving the world removes every widget hook')
+    game.stop()
+end
 local unloaded=Source.new({{name='unloaded',objects={widget={source='lookup',class='/Game/HUD/Missing.Missing_C'}}}},api)
 assert(#unloaded.find({class='/Game/HUD/Missing.Missing_C'})==0)
 unloaded.stop()
@@ -277,6 +333,8 @@ do
     function api.ExecuteInGameThread(callback) pending[#pending+1]=callback end
     local delayed=Source.new({category},api)
     delayed.watch({category.objects.switcher})
+    -- watch queues a widget hook refresh; run it before the owner event.
+    assert(#pending==1); table.remove(pending)()
     local observed={}
     delayed.subscribe(function(event) observed[#observed+1]=event end,function() return 1 end)
     created[classPath](lateOwner)

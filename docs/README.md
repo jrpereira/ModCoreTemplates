@@ -4,6 +4,27 @@ ModCore Templates (MCT) loads Lua templates, generates their settings menus, and
 attaches them when their declared game objects are ready. A **category** defines
 available objects; a **template** selects objects and changes their appearance or behavior.
 
+## Features and benefits
+
+- **Declare objects of interest:** select category objects and the properties you
+  change; MCT resolves their dependencies and supplies the requested objects.
+- **Avoid repeated discovery scans:** MCT starts with a snapshot, then uses
+  object-creation and readiness notifications to reevaluate cached candidates.
+- **Let MCT manage object lifecycle:** it waits for ready targets, checks validity
+  and lifetime identity before callbacks, and attaches again as targets change.
+  Use supplied objects during callbacks rather than retaining widget references.
+- **Let managed templates track changes:** MCT captures declared properties and
+  restores them on rebuild or valid detachment. Selecting None restores the
+  original state; invalid objects are forgotten without accessing dead widgets.
+- **Implement the visual change in one callback:** managed templates need only
+  `attach`; MCT handles restoration and reruns it after committed settings changes.
+- **Generate settings menus from the template:** declare fields, variations and
+  conditions alongside the visual behavior; MCT handles menus, saved values and Apply.
+- **Place settings where players need them:** use module/category pages or a
+  declared slot such as Controls' quickslot visuals area.
+- **React to declared events:** active templates receive game-thread callbacks,
+  with one shared subscription per event and isolated callback failures.
+
 ## Choose the right module
 
 | Module | Responsibility |
@@ -49,6 +70,7 @@ Logs appear in `UE4SS.log`. The default level is WARN. For more detail, put
 
 ## Documentation
 
+- [Nexus description](https://github.com/jrpereira/ModCoreTemplates/blob/main/docs/NEXUS.md): condensed, paste-ready module description in BBCode.
 - [Developer guide](DEVELOPERS.md): first template and managed callbacks.
 - [Template menus](MENUS.md): fields, variations, placement and storage.
 - [Lifecycle reference](LIFECYCLE-DRAFT.md): registration, callbacks and host contracts.

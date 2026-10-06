@@ -57,7 +57,8 @@ local function fixture(template,targets)
     return runtime,o,host,errors
 end
 
-for _,kind in ipairs({'lost','world_invalidated'}) do
+do
+    -- A destroyed root is forgotten at the next lifecycle event, running its cleanups.
     local subscriptions,cleanups=0,0
     local r,o=fixture({objects={'root'},attach=function(_,params,saved)
         subscriptions=subscriptions+1
@@ -65,10 +66,11 @@ for _,kind in ipairs({'lost','world_invalidated'}) do
         return saved
     end})
     r:start(); assert(subscriptions==1)
-    if kind=='lost' then o.valid=false end
-    r:event({kind=kind,id=o.id,epoch=r.epoch})
-    r:stop()
+    o.valid=false
+    r:event({kind='changed',object=o,epoch=r.epoch})
     assert(next(r:attachments('t'))==nil and subscriptions==0 and cleanups==1)
+    r:stop()
+    assert(subscriptions==0 and cleanups==1)
 end
 
 do

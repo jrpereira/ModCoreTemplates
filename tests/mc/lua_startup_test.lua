@@ -59,6 +59,35 @@ boot:stop()
 assert(boot.phase=='stopped')
 print('PASS: Lua-only startup and map-scoped references')
 
+do
+    -- The object source watches only categories that have templates.
+    local notified,queued={}, {}
+    local api={
+        FindAllOf=function() return {} end,
+        NotifyOnNewObject=function(class) notified[#notified+1]=class end,
+        RegisterHook=function() return 1,2 end,
+        UnregisterHook=function() end,
+        IsInGameThread=function() return true end,
+        ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
+        UE4SSLuaEventBridge={API_VERSION=5,
+            GetCapabilities=function() return {api=5,object_lifetimes=true} end,
+            lifetimes={captureObject=function() return '1' end}},
+    }
+    local used={name='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
+    local unused={name='player.radial',objects={root={source='lookup',class='/Game/HUD/Unused.Unused_C'}}}
+    local files={used=used,unused=unused,template=template}
+    local live=Startup.start({categoryFiles={'used','unused'},
+        execute=function(path) return files[path] end},api)
+    assert(#notified==0, 'no object notifications before templates are known')
+    live:registerTemplate('template')
+    table.remove(queued,1)()
+    assert(live.phase=='running')
+    assert(#notified==1 and notified[1]=='/Game/HUD/Used.Used_C',
+        'a category without templates registers no object notification')
+    live:stop()
+end
+print('PASS: object source skips categories without templates')
+
 local original=package.loaded['mc.lua_startup']
 local originalRegistration=package.loaded['mc.registration']
 local originalModRef=_G.ModRef

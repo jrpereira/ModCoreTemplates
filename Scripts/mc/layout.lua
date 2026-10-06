@@ -6,9 +6,17 @@ function M.paths(root)
     root = root:gsub('[/\\]+$', '')
     return {root=root, categories=root .. '/Scripts/categories',
         cache=root .. '/Scripts/cache', config=root .. '/' .. M.configFile,
-        catalog=root .. '/Scripts/cache/identity-catalog.lua',
+        catalog=root .. '/Scripts/cache/identity-catalog.lua', version=root .. '/VERSION',
         -- Files from the former DMM handoff, removed when MCT publishes.
         retired={root .. '/mod_settings.ini', root .. '/Scripts/cache/menu-pages.lua'}}
+end
+-- The release version from VERSION at the mod root, or nil when absent or invalid.
+function M.version(root)
+    local file = io.open(M.paths(root).version, 'rb')
+    if not file then return nil end
+    local value = file:read('a'):match('^%s*(%d+%.%d+%.%d+)%s*$')
+    file:close()
+    return value
 end
 local function mkdir(path)
     local command

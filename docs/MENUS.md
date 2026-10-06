@@ -31,6 +31,13 @@ Fangdango settings are stored in `9_ModCore_Fangdango/config.ini`. On the first 
 after this change, matching values in the former shared config are copied to the
 module config. Both locations contain user settings and must be preserved.
 
+MCT replaces every file it writes (configs, the catalog and published pages) by
+writing `<file>.new`, moving the current file to `<file>.old` and then renaming
+`<file>.new` into place. `<file>.old` is kept as the previous version. After a crash,
+the next read publishes a complete `<file>.new` whose original was already moved out,
+and discards any other `<file>.new`. A file deleted on purpose is not restored from
+its `.old`.
+
 ## Where pages appear
 
 - **ModCore Templates:** category selectors, template toggles and shared category settings.
@@ -65,7 +72,7 @@ category page rather than its module page.
   limited to its own templates, in the central config. It starts with a small notice,
   "These settings have been merged into Controls and can also be edited there", whose
   button (`mcLinkPage=<slot address>`) opens the slot. That notice is the page's only
-  link; navigation rows such as Control Layout are left out, as in the slot. When the
+  link; navigation rows are left out, as in the slot. When the
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
@@ -77,8 +84,9 @@ separate from the player's selection.
 ## Field declarations
 
 Keep runtime values in `settings`. A template's `menu` is its ordered list of
-groups; MCT renders variations first, the standard Control Layout link second,
-and these groups last:
+groups; MCT renders variations first and these groups after them. MCT adds no
+link rows of its own: a slot template reaches its slot host through the merged
+notice above.
 
 ```lua
 local template = {

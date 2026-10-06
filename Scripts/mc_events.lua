@@ -1,9 +1,26 @@
 -- Cross-Lua ModCore event transport. Add event codecs here, independent of categories.
+-- ModCoreControls holds the source; other mods vendor this file unchanged.
+--
+-- Failures are written through api.log, the caller's mc_log logger (or a plain
+-- function(message)), so they follow its log_level.txt. Without one, a WARN-level
+-- mc_log logger is used.
 local M={focus='controls.group.focus'}
 local definitions={
     [M.focus]={command='MCC_Controls_GroupFocus_v1',data='MCC.Controls.GroupFocus.v1.data',
         initial={group={from=1,to=1}}},
 }
+
+local function logger(api)
+    local ok,Log=pcall(require,'mc_log')
+    if api and api.log~=nil then
+        if ok then return Log.wrap(api.log) end
+        if type(api.log)=='table' then return api.log end
+        local write=api.log
+        return {warn=function(...) pcall(write,table.concat({...})) end}
+    end
+    if ok then return Log.new({name='ModCore Events'}) end
+    return {warn=function() end}
+end
 
 local function copy(value)
     if type(value)~='table' then return value end
@@ -65,6 +82,7 @@ function M.subscribe(api,name,onChange)
     assert(onChange==nil or type(onChange)=='function','event callback must be a function')
     local state={revision=0,payload=copy(definition.initial)}
     local active=true
+    local log=logger(api)
     local function receive()
         if not active then return false end
         local nextRevision,payload=decode(api.ModRef:GetSharedVariable(definition.data))
@@ -73,10 +91,14 @@ function M.subscribe(api,name,onChange)
         if onChange then onChange({name=name,revision=nextRevision,group=copy(payload.group)},state) end
         return true
     end
-    if api.ModRef:GetSharedVariable(definition.data)~=nil then receive() end
-    local ok,result=pcall(api.RegisterConsoleCommandHandler,definition.command,function()
+    -- An unreadable event is reported and skipped; the next valid one still arrives.
+    local function deliver()
         local delivered,why=pcall(receive)
-        if not delivered then print('[ModCore Events] delivery failed: '..tostring(why)..'\n') end
+        if not delivered then log.warn('event delivery failed: ',name,': ',tostring(why)) end
+    end
+    if api.ModRef:GetSharedVariable(definition.data)~=nil then deliver() end
+    local ok,result=pcall(api.RegisterConsoleCommandHandler,definition.command,function()
+        deliver()
         return true
     end)
     if not ok or result==false then error(tostring(ok and 'event registration rejected' or result),0) end

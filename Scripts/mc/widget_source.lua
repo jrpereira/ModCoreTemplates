@@ -1,5 +1,6 @@
--- UE4SS event source for live category selectors. Install while main.lua is
--- loading, before game-thread startup.
+-- UE4SS event source for live category selectors. Create while main.lua is
+-- loading; activate with the categories that have templates before the
+-- runtime's first snapshot.
 local ObjectSelector = require('mc.object_selector')
 local Widget = require('mc.widget')
 local Log = require('mc_log')
@@ -49,36 +50,43 @@ function M.new(categories, api, log)
         and type(lifetimes.captureObject)=='function',
         'MCT requires UE4SSLuaEventBridge API 5 object lifetimes')
     local source = {}
-    local selectors, notifyClasses, ownerClasses, hasGroups, hasWidgets = {}, {}, {}, false, false
-    for _, category in ipairs(categories) do
-        for _, selector in pairs(category.objects or {}) do
-            if selector.source == 'create' then
-                -- Construction belongs to the selected managed template.
-            elseif selector.from then
-                hasGroups, hasWidgets = true, true
-            else
-                ObjectSelector.className(selector)
-                if selector.within then hasGroups = true end
-                if selector.object and selector.object:find(':WidgetTree.',1,true)
-                    or selector.class and selector.class:find('/Script/UMG.',1,true) then
-                    hasWidgets = true
+    local selectors, notifyClasses, ownerClasses, hasWithin, hasWidgets = {}, {}, {}, false, false
+    local function analyze(used)
+        for _, category in ipairs(used) do
+            for _, selector in pairs(category.objects or {}) do
+                if selector.source == 'create' then
+                    -- Construction belongs to the selected managed template.
+                elseif selector.from then
+                    -- Scoped targets are read again from their root on every
+                    -- reconcile, so they need no events of their own.
+                else
+                    ObjectSelector.className(selector)
+                    if selector.within then hasWithin = true end
+                    if selector.object and selector.object:find(':WidgetTree.',1,true)
+                        or selector.class and selector.class:find('/Script/UMG.',1,true) then
+                        hasWidgets = true
+                    end
+                    -- A WidgetTree child is found through its owner's creation
+                    -- and the owner revisits, not by watching its widget class.
+                    local first, second = eventClass(selector)
+                    if first then notifyClasses[first] = true end
+                    if second and first then ownerClasses[first] = true end
                 end
-                local first, second = eventClass(selector)
-                if first then notifyClasses[first] = true end
-                if second then notifyClasses[second] = true end
-                if second and first then ownerClasses[first] = true end
             end
         end
     end
     local known = setmetatable({}, {__mode='k'})
     local knownAddresses = {}
+    -- Parents of known roots and their owners; clearing one may remove a root.
+    local panelAddresses = {}
     local pendingRemoval = {}
     local built = {}
     local sink, getEpoch, subscribed, active = nil, nil, false, true
     local mutationDepth, wakePending = 0, false
     local identityFailureReported=false
     local lifetimeMode=nil
-    local hooks = {}
+    local hooks, hookSpecs = {}, {}
+    local refreshHooks = function() end
     -- level (optional) overrides the stage's level for one report.
     local function errorReport(stage, message, level)
         local error = {stage=stage,message=tostring(message)}
@@ -94,7 +102,9 @@ function M.new(categories, api, log)
         selectors=roots
         known=setmetatable({}, {__mode='k'})
         knownAddresses={}
+        panelAddresses={}
         pendingRemoval={}
+        refreshHooks()
     end
     local function token(object)
         if not ObjectSelector.valid(object) then return nil end
@@ -135,6 +145,7 @@ function M.new(categories, api, log)
                 knownAddresses[address] = safe(value, 'GetFullName')
             end
         end
+        refreshHooks()
     end
     function source.valid(object)
         if not ObjectSelector.valid(object) then return false end
@@ -286,6 +297,12 @@ function M.new(categories, api, log)
         local name = address and knownAddresses[address]
         return name ~= nil and safe(object, 'GetFullName') == name
     end
+    local function knownPanel(object)
+        local address = safe(object, 'GetAddress')
+        return type(address) == 'number'
+            and (panelAddresses[address] == true or knownAddresses[address] ~= nil)
+    end
+    -- Ancestry is needed only by within groups; every other check is one lookup.
     local function related(object)
         local seen={}
         for _=1,32 do
@@ -298,10 +315,80 @@ function M.new(categories, api, log)
         end
         return false
     end
-    local function hook(path, before, after)
-        local pre, post = api.RegisterHook(path,before,after)
-        assert(type(pre)=='number' and type(post)=='number', 'invalid hook IDs: '..path)
-        hooks[#hooks+1] = {path=path,pre=pre,post=post}
+    local function anyKnownValid()
+        for object in pairs(known) do
+            if ObjectSelector.valid(object) then return true end
+        end
+        return false
+    end
+    -- An unrelated call while every known root is gone means the game left
+    -- the world (map change or main menu): drop the widget hooks.
+    local function missed()
+        if not anyKnownValid() then refreshHooks() end
+    end
+    -- Game state decides which widget hooks exist:
+    --   idle     no live root (boot, main menu, loading): none
+    --   waiting  a live root is not ready yet: all, including AddChild
+    --   ready    every live root is ready: all except AddChild
+    -- within groups keep AddChild while armed, since their members can join later.
+    local function wanted()
+        local armed, waiting = false, false
+        -- Rebuilt from live roots so addresses from an earlier map cannot match.
+        panelAddresses, knownAddresses = {}, {}
+        for object in pairs(known) do
+            if source.valid(object) then
+                armed = true
+                if not waiting and not source.ready(object) then waiting = true end
+                for _, value in ipairs({object, ObjectSelector.owner(object)}) do
+                    local address = safe(value, 'GetAddress')
+                    if type(address) == 'number' then knownAddresses[address] = safe(value, 'GetFullName') end
+                    local parent = safe(value, 'GetParent')
+                    local address = ObjectSelector.valid(parent) and safe(parent, 'GetAddress')
+                    if type(address) == 'number' then panelAddresses[address] = true end
+                end
+            end
+        end
+        return armed, waiting
+    end
+    local function applyHooks()
+        local armed, waiting = wanted()
+        for _, spec in ipairs(hookSpecs) do
+            local want = armed and (not spec.waiting or waiting or hasWithin)
+            local current = hooks[spec.path]
+            if want and not current then
+                local pre, post = api.RegisterHook(spec.path, spec.before, spec.after)
+                assert(type(pre)=='number' and type(post)=='number', 'invalid hook IDs: '..spec.path)
+                hooks[spec.path] = {pre=pre,post=post}
+            elseif not want and current then
+                hooks[spec.path] = nil
+                pcall(api.UnregisterHook, spec.path, current.pre, current.post)
+            end
+        end
+    end
+    local function removeHooks()
+        for _, spec in ipairs(hookSpecs) do
+            local current = hooks[spec.path]
+            if current then
+                hooks[spec.path] = nil
+                pcall(api.UnregisterHook, spec.path, current.pre, current.post)
+            end
+        end
+    end
+    -- Hooks change on the next game-thread dispatch, never inside a callback.
+    local refreshQueued = false
+    refreshHooks = function()
+        if refreshQueued or not active then return end
+        refreshQueued = true
+        api.ExecuteInGameThread(function()
+            refreshQueued = false
+            if not active then return end
+            local ok, why = pcall(applyHooks)
+            if not ok then errorReport('object-event', 'widget hook update failed: '..tostring(why)) end
+        end)
+    end
+    local function spec(path, before, after, waitingOnly)
+        hookSpecs[#hookSpecs+1] = {path=path, before=before or function() end,
+            after=after or function() end, waiting=waitingOnly}
     end
     local function install()
         local function revisitOwner(class,remaining)
@@ -315,6 +402,7 @@ function M.new(categories, api, log)
                 if remaining>1 then revisitOwner(class,remaining-1) end
             end)
         end
+        -- Root classes exist only in a loaded world, so these stay registered.
         for class in pairs(notifyClasses) do
             api.NotifyOnNewObject(class,function(object)
                 if not active then return end
@@ -328,64 +416,86 @@ function M.new(categories, api, log)
                 end
             end)
         end
+        local function ours(object)
+            return knownObject(object) or hasWithin and related(object)
+        end
         -- Verified in the installed UE4SS build: Construct/Destruct and
         -- OnInitialized reject RegisterHook, but these viewport methods work.
         for _, name in ipairs({'AddToViewport','AddToPlayerScreen'}) do
-            hook('/Script/UMG.UserWidget:'..name,function() end,function(context)
+            spec('/Script/UMG.UserWidget:'..name,nil,function(context)
                 if not active then return end
                 local owner = unwrap(context)
-                if not related(owner) then return end
+                if not ours(owner) then return missed() end
                 local id = token(owner)
                 if id then built[id] = true; wakeKnown() end
+                refreshHooks()
             end)
         end
-        hook('/Script/UMG.Widget:RemoveFromParent',function(context)
+        spec('/Script/UMG.Widget:RemoveFromParent',function(context)
             if not active then return end
             local owner = unwrap(context)
-            if not related(owner) then return end
+            if not ours(owner) then return missed() end
             local address = safe(owner, 'GetAddress')
             if type(address) == 'number' then pendingRemoval[address] = true end
             if isa(owner,'/Script/UMG.UserWidget') then
                 local id = token(owner)
                 if id then built[id] = false; wakeKnown() end
             end
+            refreshHooks()
         end,function(context)
             if not active then return end
             local address = safe(unwrap(context), 'GetAddress')
             if type(address) == 'number' and pendingRemoval[address] then
                 pendingRemoval[address] = nil
                 wakeKnown()
+                refreshHooks()
             end
         end)
-        if hasGroups or hasWidgets then
+        if hasWidgets then
             -- A removed UserWidget is unready until it joins a panel again.
-            hook('/Script/UMG.PanelWidget:AddChild',function() end,function(parentParam, childParam)
+            spec('/Script/UMG.PanelWidget:AddChild',nil,function(parentParam, childParam)
                 if not active then return end
-                local parent=unwrap(parentParam)
                 local child = unwrap(childParam)
-                if not related(parent) and not knownObject(child) then return end
-                if source.valid(child) then
-                    if isa(child,'/Script/UMG.UserWidget') then
-                        local id = token(child)
-                        if id then built[id] = nil end
-                    end
+                if not (knownObject(child) or hasWithin and related(unwrap(parentParam))) then
+                    return missed()
+                end
+                if source.valid(child) and isa(child,'/Script/UMG.UserWidget') then
+                    local id = token(child)
+                    if id then built[id] = nil end
                 end
                 wakeKnown()
+                refreshHooks()
+            end, true)
+            spec('/Script/UMG.PanelWidget:RemoveChild',nil,function(parentParam, childParam)
+                if not active then return end
+                local parent = unwrap(parentParam)
+                if not (knownObject(unwrap(childParam)) or knownPanel(parent)
+                    or hasWithin and related(parent)) then return missed() end
+                wakeKnown()
+                refreshHooks()
             end)
-            for _, name in ipairs({'RemoveChild','ClearChildren'}) do
-                hook('/Script/UMG.PanelWidget:'..name,function() end,function(parentParam)
-                    if active and related(unwrap(parentParam)) then wakeKnown() end
-                end)
-            end
+            spec('/Script/UMG.PanelWidget:ClearChildren',nil,function(parentParam)
+                if not active then return end
+                local parent = unwrap(parentParam)
+                if not (knownPanel(parent) or hasWithin and related(parent)) then return missed() end
+                wakeKnown()
+                refreshHooks()
+            end)
         end
     end
-    local ok, why = pcall(install)
-    if not ok then
-        active = false
-        for i=#hooks,1,-1 do
-            local h=hooks[i]; pcall(api.UnregisterHook,h.path,h.pre,h.post)
+    -- Notifications cannot be withdrawn, so they are registered once, for the
+    -- categories that have templates.
+    local activated = false
+    function source.activate(used)
+        assert(active and not activated, 'object source already activated or stopped')
+        assert(type(used) == 'table', 'object source categories required')
+        activated = true
+        analyze(used)
+        local ok, why = pcall(install)
+        if not ok then
+            active = false
+            error('object source hook installation failed: '..tostring(why))
         end
-        error('object source hook installation failed: '..tostring(why))
     end
     function source.subscribe(callback, epoch)
         assert(active and not subscribed, 'object source already subscribed or stopped')
@@ -397,10 +507,9 @@ function M.new(categories, api, log)
         if not active then return end
         active, sink, getEpoch, subscribed = false,nil,nil,false
         mutationDepth, wakePending = 0, false
-        for i=#hooks,1,-1 do
-            local h=hooks[i]; pcall(api.UnregisterHook,h.path,h.pre,h.post)
-        end
+        removeHooks()
     end
+    if categories then source.activate(categories) end
     return source
 end
 return M

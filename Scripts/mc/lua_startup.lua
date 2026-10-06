@@ -17,7 +17,9 @@ function M.start(options, api)
         end
     end
     if not configured.host and not configured.objectSource then
-        configured.objectSource = require('mc.widget_source').new(configured.categories, api, configured.log)
+        -- Activated by bootstrap with the categories that have templates.
+        configured.objectSource = require('mc.widget_source').new(nil, api, configured.log)
+        configured.activateSource = configured.objectSource.activate
     end
     if configured.objectSource then
         assert(not configured.host, 'supply either objectSource or host')
@@ -37,7 +39,9 @@ function M.start(options, api)
     -- No group has focus until ModCore Controls reports its Default wheel.
     configured.state=configured.state or {revision=0,controls={group={}}}
     if not configured.events and api.ModRef and type(api.RegisterConsoleCommandHandler)=='function' then
-        configured.events=Events.hub(api,configured.state,function(event)
+        -- Event delivery failures go through MCT's logger and its log_level.txt.
+        local eventApi=setmetatable({log=configured.log},{__index=api})
+        configured.events=Events.hub(eventApi,configured.state,function(event)
             if bootstrap and bootstrap.runtime then bootstrap.runtime:stateChanged(event) end
         end)
         configured.closeState=function() return configured.events:stop() end

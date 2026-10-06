@@ -11,8 +11,7 @@ local declaration,groups=Provider.template({
 },{style={description='Layout',values={[1]='Separate',[0]='Swap'},default=0}})
 
 assert(declaration.groups[1].fields[1].id=='Style')
-assert(declaration.groups[1].fields[2].id=='ControlLayoutLink')
-assert(declaration.groups[1].fields[2].tab==nil)
+assert(declaration.groups[1].fields[2]==nil,'no automatic Control Layout link')
 assert(groups[2].fields[1].id=='Opacity' and groups[2].fields[1].suffix=='%')
 assert(groups[3].id=='Wheels' and groups[3].variationSource=='Style')
 assert(groups[3].fields[1].id=='WheelsX')
@@ -26,14 +25,14 @@ assert(groups[2].fields[1].tab==nil)
 local _,dropdown=Provider.template({
     {id='Display',label='Display',values={[0]='Off',[1]='On'},default=1,tab=false},
 }, {})
-assert(dropdown[2].fields[1].tab==false)
+assert(#dropdown==1 and dropdown[1].fields[1].tab==false,'no empty Template group')
 
 local choices={}
 for value=1,9 do choices[value]='Choice '..value end
 local _,largePicker=Provider.template({
     {id='Choice',label='Choice',values=choices,default=1},
 }, {})
-assert(largePicker[2].fields[1].tab==nil)
+assert(largePicker[1].fields[1].tab==nil)
 
 local _,relativeGroups=Provider.template({
     {id='.Branch',label='Branch',variation={style=1},fields={
@@ -60,13 +59,13 @@ local _,conditional=Provider.template({
                 label={field='.A',match={5},text='Vertical Keys'}}},
     }},
 },{})
-local kh,kv=conditional[2].fields[2],conditional[2].fields[3]
+local kh,kv=conditional[1].fields[2],conditional[1].fields[3]
 assert(kh.visibleWhen=='BarsA' and kh.visibleValues[1]==7 and kh.labelWhen==nil)
 assert(kv.visibleWhen=='BarsA' and kv.visibleValues[1]==5)
 assert(kv.labelWhen=='BarsA' and kv.labelValues[1]==5 and kv.labelText=='Vertical Keys')
 local _,plain=Provider.template({{id='Bars',label='Bars',fields={
     {id='.A',label='Orientation',values=orientation,default=7}}}},{})
-assert(plain[2].fields[1].visibleWhen==nil and plain[2].fields[1].labelWhen==nil)
+assert(plain[1].fields[1].visibleWhen==nil and plain[1].fields[1].labelWhen==nil)
 
 local function rejects(menu,variations,pattern)
     local ok,why=pcall(Provider.template,menu,variations or {})

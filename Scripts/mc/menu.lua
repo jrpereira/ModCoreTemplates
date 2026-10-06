@@ -23,8 +23,11 @@ end
 
 -- The returned catalog must be persisted alongside the manifest before startup.
 -- Removed mappings remain reserved, preventing saved numeric choices from changing meaning.
+-- options.version is the release from VERSION; manifests omit Version without it.
 function M.generate(registry, options)
     options = options or {}
+    assert(options.version == nil or type(options.version) == 'string' and options.version:match('^%d+%.%d+%.%d+$'),
+        'invalid menu version')
     local catalog = U.copy(options.catalog or {version = 1, next = 1, entries = {}})
     assert(catalog.version == 1 and type(catalog.entries) == 'table', 'invalid identity catalog')
     assert(type(catalog.next) == 'number' and catalog.next >= 1 and catalog.next % 1 == 0
@@ -69,7 +72,7 @@ function M.generate(registry, options)
         assert(result ~= '', 'public menu name is empty')
         return result
     end
-    local lines, rows, groups, bindings, selectors, multiSelectors, warnings = {}, {}, {}, {}, {}, {}, {}
+    local lines, rows, groups, selectors, multiSelectors = {}, {}, {}, {}, {}
     local groupSections, groupOrder = {}, {}
     local aggregateGroups, aggregateGroupOrder = {}, {}
     local aggregateRows, pageRows, categoryLabels, currentCategory, currentOwner = {}, {}, {}, nil, nil
@@ -82,7 +85,7 @@ function M.generate(registry, options)
         for _, name in ipairs(names) do lines[#lines + 1] = name .. '=' .. tostring(fields[name]) end
         lines[#lines + 1] = ''
     end
-    emit('Mod', {Id = 'ModCoreTemplates', Name = 'ModCore Templates', Version = '1.0.1',
+    emit('Mod', {Id = 'ModCoreTemplates', Name = 'ModCore Templates', Version = options.version,
         Description = options.description and text(options.description) or nil})
     local function row(fields)
         assert(#rows < 256, 'generated menu exceeds DMM limit of 256 settings')
@@ -144,9 +147,9 @@ function M.generate(registry, options)
             or title(category:gsub('%.', ' '))
         categoryLabels[category] = categoryLabel
         local available = perCategory[category]
-        if not available then
-            warnings[#warnings + 1] = category .. ': empty category omitted; DMM cannot render a None-only picker'
-        else
+        -- Categories without templates are reserved for future providers and get no
+        -- page: DMM cannot render a None-only picker.
+        if available then
             currentCategory = category
             local categorySingle = available[1].single == true
             -- A slot category is shown only in its slot, through its own hidden page.
@@ -260,82 +263,75 @@ function M.generate(registry, options)
                     multiSelectors[category][#multiSelectors[category] + 1] = {
                         id=ownerSelector, value=value, definition=definition}
                 end
-                local function emitProviderFields(after)
-                    for _, providerGroup in ipairs(providerGroups) do
-                        local groupId
-                        for _, field in ipairs(providerGroup.fields) do
-                            if field.after == after then
-                                assert(not field.after or category == 'player.quickslots',
-                                    'AccessMethod placement requires player.quickslots')
-                                local groupSource, groupValues = ownerSelector, ownerValue
-                                if providerGroup.variationSource then
-                                    groupSource = assert(providerFieldIds[providerGroup.variationSource],
-                                        'group variation source must precede its group')
-                                    groupValues = table.concat(providerGroup.variationValues, '|')
-                                end
-                                groupId = groupId or group(key({identity, 'provider', providerGroup.id}),
-                                    providerGroup.label, ownerSelector, ownerValue, groupSource, groupValues,
-                                    providerGroup.level, providerGroup.heading == false and 0 or nil,
-                                    scopePrefix .. publicName(providerGroup.id))
-                                local settingId = namedId(scopePrefix .. publicName(field.id),
-                                    {'provider', identity, field.id})
-                                local metadata = {Id=settingId, Label=field.label, Group=groupId,
-                                    Type=field.type == 'navigation' and 'picker' or field.type,
-                                    Default=field.default, Description=field.description,
-                                    mcHeading=field.level==1 and true or nil,
-                                    mcLevel=field.level~=1 and field.level or nil,
-                                    mcLinkPage=field.linkProvider}
-                                if providerGroup.variationSource then
-                                    metadata.VisibleWhen = ownerSelector
-                                    metadata.VisibleValues = ownerValue
-                                end
-                                if field.visibleWhen then
-                                    local sourceId = providerFieldIds[field.visibleWhen]
-                                    assert(sourceId, 'provider visibility source must precede dependent field: '
-                                        .. field.id)
-                                    metadata.VisibleWhen = sourceId
-                                    metadata.VisibleValues = table.concat(field.visibleValues, '|')
-                                end
-                                if field.labelWhen then
-                                    metadata.mcLabelWhen = assert(providerFieldIds[field.labelWhen],
-                                        'provider label source must precede dependent field: ' .. field.id)
-                                    local labels = {}
-                                    for _, value in ipairs(field.labelValues) do
-                                        labels[#labels + 1] = tostring(value) .. ':' .. field.labelText
-                                    end
-                                    metadata.mcLabels = table.concat(labels, ';')
-                                end
-                                if field.type == 'picker' or field.type == 'navigation' then
-                                    metadata.PresetValues = table.concat(field.values, '|')
-                                    metadata.PresetLabels = table.concat(field.labels, '|')
-                                    metadata.mcType = field.tab and 'tab' or nil
-                                    metadata.mcNavigation = field.type == 'navigation' and 1 or nil
-                                    metadata.tabNavigation = field.tabNavigation
-                                else
-                                    metadata.Minimum, metadata.Maximum, metadata.Step = field.min, field.max, field.step
-                                    metadata.Suffix = field.suffix
-                                end
-                                row(metadata)
-                                -- Slot rows carry no Category rules, so each takes the
-                                -- condition its group or field would apply.
-                                if slot then
-                                    if field.visibleWhen then
-                                        slotRow(metadata.VisibleWhen, metadata.VisibleValues, metadata.VisibleWhen)
-                                    else
-                                        slotRow(groupSource, groupValues, groupSource)
-                                    end
-                                end
-                                providerFieldIds[field.id] = settingId
-                                if field.type == 'navigation' then
-                                    definition.navigation[field.id] = settingId
-                                else
-                                    definition.settings[field.id] = settingId
-                                end
+                for _, providerGroup in ipairs(providerGroups) do
+                    local groupId
+                    for _, field in ipairs(providerGroup.fields) do
+                        local groupSource, groupValues = ownerSelector, ownerValue
+                        if providerGroup.variationSource then
+                            groupSource = assert(providerFieldIds[providerGroup.variationSource],
+                                'group variation source must precede its group')
+                            groupValues = table.concat(providerGroup.variationValues, '|')
+                        end
+                        groupId = groupId or group(key({identity, 'provider', providerGroup.id}),
+                            providerGroup.label, ownerSelector, ownerValue, groupSource, groupValues,
+                            providerGroup.level, providerGroup.heading == false and 0 or nil,
+                            scopePrefix .. publicName(providerGroup.id))
+                        local settingId = namedId(scopePrefix .. publicName(field.id),
+                            {'provider', identity, field.id})
+                        local metadata = {Id=settingId, Label=field.label, Group=groupId,
+                            Type=field.type == 'navigation' and 'picker' or field.type,
+                            Default=field.default, Description=field.description,
+                            mcHeading=field.level==1 and true or nil,
+                            mcLevel=field.level~=1 and field.level or nil,
+                            mcLinkPage=field.linkProvider}
+                        if providerGroup.variationSource then
+                            metadata.VisibleWhen = ownerSelector
+                            metadata.VisibleValues = ownerValue
+                        end
+                        if field.visibleWhen then
+                            local sourceId = providerFieldIds[field.visibleWhen]
+                            assert(sourceId, 'provider visibility source must precede dependent field: '
+                                .. field.id)
+                            metadata.VisibleWhen = sourceId
+                            metadata.VisibleValues = table.concat(field.visibleValues, '|')
+                        end
+                        if field.labelWhen then
+                            metadata.mcLabelWhen = assert(providerFieldIds[field.labelWhen],
+                                'provider label source must precede dependent field: ' .. field.id)
+                            local labels = {}
+                            for _, value in ipairs(field.labelValues) do
+                                labels[#labels + 1] = tostring(value) .. ':' .. field.labelText
                             end
+                            metadata.mcLabels = table.concat(labels, ';')
+                        end
+                        if field.type == 'picker' or field.type == 'navigation' then
+                            metadata.PresetValues = table.concat(field.values, '|')
+                            metadata.PresetLabels = table.concat(field.labels, '|')
+                            metadata.mcType = field.tab and 'tab' or nil
+                            metadata.mcNavigation = field.type == 'navigation' and 1 or nil
+                            metadata.tabNavigation = field.tabNavigation
+                        else
+                            metadata.Minimum, metadata.Maximum, metadata.Step = field.min, field.max, field.step
+                            metadata.Suffix = field.suffix
+                        end
+                        row(metadata)
+                        -- Slot rows carry no Category rules, so each takes the
+                        -- condition its group or field would apply.
+                        if slot then
+                            if field.visibleWhen then
+                                slotRow(metadata.VisibleWhen, metadata.VisibleValues, metadata.VisibleWhen)
+                            else
+                                slotRow(groupSource, groupValues, groupSource)
+                            end
+                        end
+                        providerFieldIds[field.id] = settingId
+                        if field.type == 'navigation' then
+                            definition.navigation[field.id] = settingId
+                        else
+                            definition.settings[field.id] = settingId
                         end
                     end
                 end
-                emitProviderFields(nil)
             end
             currentOwner = nil
         end
@@ -358,7 +354,7 @@ function M.generate(registry, options)
             if item.mcHeading == true then headerPickers = headerPickers + 1 end
         end
         assert(headerPickers <= 1, providerName .. ': only one heading picker per page')
-        append(output, 'Mod', {Id=providerId, Name=providerName, Version='1.0.1',
+        append(output, 'Mod', {Id=providerId, Name=providerName, Version=options.version,
             Description=options.description and text(options.description) or nil})
         local usedGroups = {}
         for _, item in ipairs(selectedRows) do
@@ -577,7 +573,7 @@ function M.generate(registry, options)
                 if item._category == category and item._slot then selectedRows[#selectedRows + 1] = item end
             end
             local output = {}
-            append(output, 'Mod', {Id=providerId, Name=categoryLabels[category], Version='1.0.1'})
+            append(output, 'Mod', {Id=providerId, Name=categoryLabels[category], Version=options.version})
             append(output, 'Category.Slot', {})
             for _, item in ipairs(selectedRows) do
                 local stored = U.copy(item)
@@ -680,7 +676,7 @@ function M.generate(registry, options)
         return state
     end
     return {manifest = aggregateManifest, fullManifest = table.concat(lines, '\n'), catalog = catalog,
-        rows = rows, selectors = selectors, multiSelectors=multiSelectors, definitions = decoded, warnings = warnings,
+        rows = rows, selectors = selectors, multiSelectors=multiSelectors, definitions = decoded,
         textSettings = textSettings, decodeState=decodeState, categorySettings=categorySettings,
         decode = makeDecoder(rows, allCategories), aggregate=aggregate, pages=pages,
         pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}
