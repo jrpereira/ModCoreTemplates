@@ -554,7 +554,8 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     local page=assert(f.menu.pageBySlot['player.quickslots'])
     assert(page.slot=='controls:visuals' and not page.category and not page.module)
     assert(#f.menu.aggregate.rows==0 and not f.menu.pageByCategory['player.quickslots'])
-    assert(not f.menu.pageByModule.Alpha and not f.menu.pageByModule.Beta,'slot templates leave their module pages')
+    assert(not f.menu.pageByModule.Alpha.module and not f.menu.pageByModule.Beta.module,
+        'slot templates leave their own module configs')
     local selector=f.menu.selectors['player.quickslots']
     local alpha,beta
     for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value else beta=value end end
@@ -669,18 +670,44 @@ test('slot pages publish hidden with rows addressed to the slot', function()
     assert(plain.rows==nil,'without slots the contribution keeps contract 1')
 end)
 
-test('modules whose templates moved to a slot keep an entry that opens it', function()
+test('modules whose templates moved to a slot keep their page with a link to the slot', function()
     local f=slotFixture()
     local contribution=Contribution.build(f.menu,'/Mods/3_ModCore_Templates')
     assert(Contributions.validate('ModCoreTemplates',contribution))
-    local links={}
-    for _,page in ipairs(contribution.pages) do if page.link then links[#links+1]=page end end
-    assert(#links==2 and links[1].id=='ModCoreTemplates.module.Alpha' and links[2].id=='ModCoreTemplates.module.Beta')
-    local beta=links[2]
-    assert(beta.link=='controls:visuals' and beta.attach=='Beta' and beta.group=='module'
-        and beta.author=='Example Author' and beta.manifest==nil and beta.configDirectory==nil)
-    assert(not f.menu.providers[beta.id],'a link entry is not an Apply provider')
-    -- A module that still has its own settings keeps its page instead of a link.
+    local merged={}
+    for _,page in ipairs(contribution.pages) do
+        assert(not page.link,'merged modules publish pages, not link entries')
+        if page.group=='module' then merged[#merged+1]=page end
+    end
+    assert(#merged==2 and merged[1].id=='ModCoreTemplates.module.Alpha' and merged[2].id=='ModCoreTemplates.module.Beta')
+    local beta=merged[2]
+    assert(beta.attach=='Beta' and beta.author=='Example Author'
+        and beta.configDirectory=='/Mods/3_ModCore_Templates','merged pages store in the central config')
+    local page=f.menu.pageByModule.Beta
+    assert(f.menu.providers[beta.id]==page and page.merged=='controls:visuals')
+    local notice=section(page.manifest,'MCT_MergedNotice')
+    assert(page.rows[1].Id=='MCT_MergedNotice' and notice.mcLinkPage=='controls:visuals'
+        and notice.mcNavigation=='1' and notice.mcType=='tab' and notice.mcLevel=='5'
+        and notice.PresetLabels=='Controls|Controls' and notice.ConfigFile==nil)
+    assert(notice.Label=='These settings have been merged into Controls and can also be edited there')
+    local selector=f.menu.selectors['player.quickslots']
+    local size=section(page.manifest,f.definitions.Beta.settings.Size)
+    assert(section(page.manifest,selector.id) and size.ConfigFile=='Scripts/cache/config.ini',
+        'the page edits the slot rows in the central config')
+    assert(not page.manifest:find('Setting.'..f.definitions.Alpha.settings.Size,1,true),'only its own templates')
+    for index,row in ipairs(page.rows) do
+        assert(index==1 or row.mcNavigation~=1,row.Id..': the notice is the only link')
+    end
+    assert(not page.manifest:find('Label=Control Layout',1,true))
+    if Choices then
+        local items=Presentation.parse(page.manifest,Choices.parse(page.manifest))
+        assert(items[1].id=='MCT_MergedNotice' and items[1].mcTabs and items[1].mcFont==5,
+            'the notice renders as a small label with one link button')
+    end
+    -- Apply from the module page reaches the runtime like the slot page.
+    f.controller:apply(event(f,page,1,function(v) f.choose(v,'Beta',true);v[f.definitions.Beta.settings.Size]=42 end))
+    assert(#f.calls==1 and f.calls[1].id=='Beta' and f.calls[1].settings.Size==42)
+    -- A module that still has its own settings keeps its own page.
     local other={name='player.stats',single=true,objects={root={source='lookup',object='switcher'}}}
     local extra={id='Gamma',name='Gamma',category='player.stats',objects={'root'},managed=false,
         menu={{id='Layout',label='Layout',fields={field('Size',20)}}},
@@ -688,8 +715,8 @@ test('modules whose templates moved to a slot keep an entry that opens it', func
     local model=Model.build({f.category,other},{f.a,f.b,extra},
         {f.locations[1],f.locations[2],'/Mods/Beta/Scripts/templates/other.lua'})
     local menu=Menu.generate(model.registry)
-    assert(menu.pageByModule.Beta and not menu.pageByModule.Alpha)
-    for _,page in ipairs(menu.pages) do assert(not (page.link and page.name=='Beta')) end
+    assert(menu.pageByModule.Beta.module=='Beta' and not menu.pageByModule.Beta.merged)
+    assert(menu.pageByModule.Alpha.merged=='controls:visuals')
 end)
 
 test('slot Apply selects templates and updates their settings', function()

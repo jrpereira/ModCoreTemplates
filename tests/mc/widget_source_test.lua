@@ -100,6 +100,30 @@ do
     root.alive=true
     degraded.stop()
 end
+-- The address-identity fallback works, so its notice is TRACE: silent at the default WARN.
+do
+    local Log=require('mc_log')
+    for _,case in ipairs({{level='trace',lines=1},{level=nil,lines=0}}) do
+        local quiet={}
+        for key,value in pairs(api) do quiet[key]=value end
+        quiet.MCTOnError=nil
+        quiet.RegisterHook=function() return 1,2 end
+        quiet.UnregisterHook=function() end
+        quiet.NotifyOnNewObject=function() end
+        quiet.UE4SSLuaEventBridge={API_VERSION=5,
+            GetCapabilities=function() return {api=5,object_lifetimes=false} end,
+            lifetimes={captureObject=function() return nil,'object lifetime service is unavailable' end}}
+        local lines={}
+        local log=Log.new({name='ModCoreTemplates',level=case.level,write=function(line) lines[#lines+1]=line end})
+        local fallback=Source.new({},quiet,log)
+        assert(fallback.identity(root))
+        assert(#lines==case.lines,'identity fallback notice at level '..tostring(case.level))
+        if case.lines>0 then
+            assert(lines[1]:find('[ModCoreTemplates] TRACE identity: native object lifetimes unavailable',1,true))
+        end
+        fallback.stop()
+    end
+end
 local function acceptsVersion(capabilityVersion, facadeVersion)
     local candidate={}
     for key,value in pairs(api) do candidate[key]=value end

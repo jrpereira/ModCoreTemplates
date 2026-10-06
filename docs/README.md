@@ -1,154 +1,57 @@
 # ModCore Templates
 
-The fresh lifecycle design and executable draft are documented in
-[Lifecycle draft](LIFECYCLE-DRAFT.md), with copied menu generation and Apply
-routing described in [Template menus](MENUS.md). The previous runtime remains available in Git history while this implementation
-is being tested in Dawnwalker.
+ModCore Templates (MCT) loads Lua templates, generates their settings menus, and
+attaches them when their declared game objects are ready. A **category** defines
+available objects; a **template** selects objects and changes their appearance or behavior.
 
-Mod data lives in `Scripts/categories` and `Scripts/cache`; providers keep their
-explicitly registered template entries in their own `Scripts` folders.
-Generated settings and page data use the cache. Menu pages are published through
-ModCoreSettings; MCT writes nothing to the mod root.
+## Choose the right module
 
-Build modular game-feature and UI customizations as Lua templates. Register
-categories, expose settings, and implement `attach`.
-ModCoreTemplates manages selection and lifecycle; the template supplies behavior.
+| Module | Responsibility |
+| --- | --- |
+| ModCoreSettings (MCS) | Menu controls, pending edits and Apply |
+| ModCoreControls (MCC) | Input bindings and quickslot actions |
+| ModCoreTemplates (MCT) | Visual templates, settings and object lifecycle |
 
-## Features
-
-- Single-selection or multiple-enabled templates per category.
-- Generated category and module settings pages.
-- Category-owned object and group selectors with event-driven lifecycle checks.
-- Template callbacks receive effective settings: category settings overlaid by template settings.
-
-## Template Best Practices
-
-See the complete [Wheel Nudge example](https://github.com/jrpereira/ModCoreTemplates/tree/main/examples/wheel-nudge) for a
-small working template and its `main.lua` loader.
-
-### Categories and templates
-
-Choose a category by the objects it recognizes, then declare only the objects your
-template needs in `template.objects`. MCT resolves those objects and their
-dependencies before calling the template. A category's other objects are not looked
-up merely because they exist. Group related objects when order matters, for example
-`objects = {buttons = {'ability_left', 'ability_right'}}`; the callback receives the
-same structure as `objects.buttons`.
-
-Each category object declares a `source`: `lookup` finds a live object by path or
-class; `reference` reads a member from another declared object; `create` constructs
-a class with the WidgetTree of its declared `outer` as owner. For example,
-`actions = {source='create', class='/Script/UMG.CanvasPanel', outer='switcher', parent='hud_root'}`
-constructs a CanvasPanel and adds it to the declared `hud_root` before the first
-managed `attach`. The visual layout remains the template's responsibility. MCT
-reuses the panel across updates and removes it from its parent during cleanup.
-A template must include `switcher`, `hud_root`, and `actions` in its `objects`
-declaration to use them.
-
-Categories may instead declare `sharedObjects`, a nonempty array of private
-targets required to prepare every selected template in that category. MCT runs
-their managed lifecycle before the selected template attaches and restores them
-only after that template detaches. Templates neither request nor receive those
-objects. `player.quickslots` uses this to move the wheel panels out of the native
-`WidgetSwitcher`, leaving template layouts independent of its active panel.
-
-If no category describes the objects you need, define one with its own target
-selectors. Put settings shared by its templates in the category's `menu.groups[].fields`
-(and defaults in `settings`). MCT deep-copies the category settings, then overlays
-deep-copied template defaults and committed values by key. Nested tables are copied
-too; overriding a key replaces that whole value rather than merging its members.
-A template can therefore use a category field directly or override its value with
-a template field of the same ID, without changing the category's copy.
-
-Template menus are ordered arrays of groups. Fields may use a leading-dot relative
-ID (`Wheels + .X` becomes `WheelsX`), and `values` may be a numeric range, a
-numeric-to-label picker map, or a named domain such as `percent`. Templates declare
-variations separately; variation branches belong to whole groups. MCT supplies the
-standard Control Layout link automatically. See [Template menus](MENUS.md).
-
-### Attach and update
-
-Templates use managed lifecycle by default. Define
-`attach(objects, params, original)`, where `objects` contains the declared objects
-and `original` contains the values MCT captured from their declared `properties`.
-Return `original` (or the same-shaped original values) so MCT can restore them on
-detach. Declare additional properties on a target or target group when the
-template changes them.
-
-`params.settings` contains the effective category and template settings.
-`params.screen` contains `width` and `height`, plus horizontal reference points
-`left = 0`, `center = width / 2`, `right = width`, and vertical reference points
-`bottom = 0`, `middle = height / 2`, `top = height`. For example,
-`params.screen.right - 20` is 20 units left of the right reference point; account
-for the widget parent's coordinate system when applying it.
-
-Use the supplied `objects` rather than searching for widgets in the callback, and
-do not retain object references after it returns. MCT checks availability and
-handles their lifecycle. A managed template does not need an `update` function:
-when committed settings change, MCT restores the saved values and calls `attach`
-again with fresh `params`. Set `managed = false` only if the template must own
-its lifecycle; then implement
-`attach(root, params, objects)`, `update(root, params, objects)`, and
-`detach(root, params, objects)` yourself; `update` must reapply the new settings
-without accumulating changes from the previous call.
-
-### Register templates
-
-Keep each template's object, menu declaration, and callbacks in its own file. A
-provider's UE4SS `Scripts/main.lua` registers each sibling template; MCT does not
-scan installed modules:
-
-```lua
-local M = require('mc')
-M.registerTemplate('layout')
-```
-
-This registers `mc_layout.lua`; that template declares its own category. MCT loads
-it at the startup barrier and discovers the module ID, author, and version from
-the provider's `mod.json`. On launch MCT installs its dependency-free registration
-client as `Mods/shared/mc.lua`; provider Lua states publish template paths through
-that client before MCT closes the startup barrier. Declare the properties changed by shared helpers in each template's
-`objects`, allowing MCT to restore them.
+Start with the [developer guide](DEVELOPERS.md) and the runnable
+[Wheel Nudge example](https://github.com/jrpereira/ModCoreTemplates/tree/main/examples/wheel-nudge).
 
 ## Requirements and installation
 
-Use UE4SS with Lua 5.4, Dawnwalker Mod Menu, ModCoreSettings for the documented
-menu presentation, and UE4SSLuaEventBridge API 5 with `lifetimes.captureObject`.
-MCT does not require the `object_lifetimes` capability flag at startup. If the
-bridge reports that its native lifetime service is unavailable, MCT uses its
-address and full-name identity so templates can still attach. This fallback
-cannot distinguish an object recreated at the same address with the same name;
-native lifetime capture remains preferred.
-Other capture failures leave the affected object unattached. Install under
-`Mods/3_ModCore_Templates` and enable the mod.
-Disable the old `_UE4SSTemplatingEngine` installation before starting the game.
-The Lua runtime starts on UE4SS's game thread and consumes only explicit provider
-registrations made before its startup barrier.
+Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge API 5 or newer with
+`lifetimes.captureObject`, and ModCoreSettings with Dawnwalker Mod Menu (DMM).
+Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
+`_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.
+MCC supplies the Controls page that hosts quickslot visual settings.
 
-ModCoreControls owns input separately. Select a visual template without moving
-its input bindings into the template; one wheel should not need two steering columns.
+MCT installs its registration client as `Mods/shared/mc.lua`. Providers register
+from their `Scripts/main.lua` before MCT's startup barrier; MCT does not scan
+installed mods for templates.
 
-## Lifecycle contract
+## Settings and lifecycle
 
-MCT calls `attach` when a selected template's objects are available. Committed
-settings changes update the attachment using the callback form described above.
-For managed templates, MCT restores declared properties on detach; unmanaged
-templates own their detach behavior. Invalid objects are forgotten without a
-detach callback.
+Managed templates declare the properties they change and implement
+`attach(objects, params, original)`. Return `original` so MCT can restore those
+properties. Apply restores the previous values and attaches again with the new
+settings; selecting None restores the original state.
+
+Keep `Scripts/cache/config.ini`, `Scripts/cache/identity-catalog.lua`, and provider
+`config.ini` files when updating. Generated menu files can be rebuilt; edit Lua
+menu declarations, not generated manifests.
+
+If the bridge reports its native lifetime service unavailable, MCT falls back
+to address/full-name identity. That fallback cannot distinguish an object recreated
+with the same address and name. See [Object source](OBJECT-SOURCE.md) for limits.
 
 ## Logging
 
-ModCore Templates writes to the UE4SS log at levels TRACE, DEBUG, INFO, WARN, ERROR
-and CRITICAL. Only WARN and above are written by default. Template and provider
-failures are ERROR, a failed startup is CRITICAL, and degraded behavior such as a
-config falling back to defaults is WARN. To see more, create
-`Mods/3_ModCore_Templates/log_level.txt` containing one level name, such as `info`,
-and restart the game.
+Logs appear in `UE4SS.log`. The default level is WARN. For more detail, put
+`debug` in `Mods/3_ModCore_Templates/log_level.txt` and restart.
 
 ## Documentation
 
-- [Lifecycle contract](LIFECYCLE-DRAFT.md): current callbacks and registration.
-- [Build guide](BUILD.md): source preparation and tests.
-- [Changelog](CHANGELOG.md): changes by version.
-
-Live selector resolution and UE4SS lifecycle hooks: [Object source](OBJECT-SOURCE.md).
+- [Developer guide](DEVELOPERS.md): first template and managed callbacks.
+- [Template menus](MENUS.md): fields, variations, placement and storage.
+- [Lifecycle reference](LIFECYCLE-DRAFT.md): registration, callbacks and host contracts.
+- [Object source](OBJECT-SOURCE.md): UE4SS discovery and readiness.
+- [Build guide](BUILD.md): offline tests and in-game checks.
+- [Changelog](CHANGELOG.md): version history.

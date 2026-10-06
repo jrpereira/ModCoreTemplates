@@ -2,11 +2,11 @@ local MC=require('mc')
 local Widget=MC('widget')
 
 -- Declare only the wheel this template changes. The category resolves its
--- switcher dependency and already knows how to save the wheel's position.
+-- switcher dependency. Declare position so MCT captures and restores it.
 local template={
     name='Wheel Nudge',
     category='player.quickslots',
-    objects={abilities={}},
+    objects={abilities={properties={'position'}}},
     settings={HorizontalPercent=0,VerticalPercent=0},
     menu={{id='Position',label='Position',fields={
         {id='HorizontalPercent',label='Horizontal offset',

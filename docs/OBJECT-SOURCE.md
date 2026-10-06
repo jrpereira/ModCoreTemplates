@@ -45,12 +45,14 @@ new HUD is found through its creation notification and attaches once shown.
 Lua references check `IsValid` and object identity before callbacks. Identity
 includes the UE4SSLuaEventBridge object lifetime token, which distinguishes a
 reused address and full name through Unreal's object-item serial. The bridge
-must expose API 5 and `lifetimes.captureObject`. A failed native ABI probe does
-not prevent MCT startup; capture then fails and the source does not attach that
-object. The source reports identity failure once. A live
+must expose API 5 and `lifetimes.captureObject`. If capture reports `object lifetime service is unavailable`, the source falls
+back to address/full-name identity. This cannot detect reuse of the same address
+and name. Other capture failures leave that object unattached and are reported
+once. A live
 hook survey found `UserWidget:Construct`, `Destruct` and `OnInitialized`
 unavailable to `RegisterHook`. Viewport, parenting and removal hooks registered
 successfully, but direct engine changes can bypass those reflected hooks.
 Group parent changes and timely invalidation remain live validation limits.
 
-Live gameplay acceptance for the current runtime remains unverified.
+Offline tests do not establish live gameplay acceptance; validate the affected
+hooks and templates in game.

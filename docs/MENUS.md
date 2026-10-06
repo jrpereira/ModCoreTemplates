@@ -1,21 +1,24 @@
 # Template menus
 
-The fresh `mct` implementation reuses the menu generator, field validation,
-settings notification client and persistence helpers adapted
-from the previous runtime. It generates menus after all registered templates load,
-at the startup barrier, before attaching objects.
+MCT generates menus after registered templates load, before attaching objects.
+Start with the [developer guide](DEVELOPERS.md) for a complete template. Examples
+below focus on menu declarations; callbacks must still declare their targets.
 
 ## Mod layout
 
 ```text
-<Mod>/
-├── Scripts/                  Lua entry points, runtime code, and mod data
-│   ├── mc_<name>.lua         Explicitly registered template declarations
-│   ├── categories/           Category source files
-│   └── cache/
-│       ├── config.ini        Saved settings; preserve this file
-│       ├── identity-catalog.lua
-│       └── mcs_menu.<generation>*.ini   Published menu pages
+3_ModCore_Templates/
+└── Scripts/
+    ├── categories/           Category definitions
+    └── cache/
+        ├── config.ini        Central saved settings
+        ├── identity-catalog.lua
+        └── mcs_menu.<generation>*.ini   Generated pages
+YourProvider/
+├── config.ini               Module-target settings, when generated
+└── Scripts/
+    ├── main.lua             Registers templates
+    └── mc_<name>.lua         Template declaration
 ```
 
 Generated catalogs, published pages, and aggregate/category settings go into
@@ -58,8 +61,11 @@ category page rather than its module page.
   category gains a slot copies its saved values from the template modules' configs
   (the last module wins, as before) and records `slot.<category>=1` under
   `[Migrations]`; module configs are left unchanged. A module whose templates all
-  moved to slots keeps its entry in the module group as a link (`link=<slot address>`)
-  that opens the slot; ModCoreSettings lists it only while the slot has rows. When the
+  moved to slots keeps its page in the module group. The page edits the same rows,
+  limited to its own templates, in the central config. It starts with a small notice,
+  "These settings have been merged into Controls and can also be edited there", whose
+  button (`mcLinkPage=<slot address>`) opens the slot. That notice is the page's only
+  link; navigation rows such as Control Layout are left out, as in the slot. When the
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
@@ -79,6 +85,7 @@ local template = {
     id = 'example.quickslots',
     name = 'Example quickslots',
     category = 'player.quickslots',
+    objects = {abilities = {}}, -- this example declares a menu without changing properties
     variations = {
         style = {
             description = 'Choose the visual arrangement.',
@@ -144,8 +151,8 @@ A field may declare `conditions` that depend on a picker in the same template:
   are still delivered in `params.settings`.
 
 Conditions compile to `VisibleWhen`/`VisibleValues` and `mcLabelWhen`/`mcLabels`
-on the generated row. ModCoreSettings does not yet copy `mcLabelWhen`/`mcLabels`
-into slot pages, so `label` applies only to the template's own page.
+on the generated row. Both apply on slot pages too; `label` there needs the
+ModCoreSettings release that copies slot label rules.
 
 A field may also appear directly in the `menu` array when it needs no visual group.
 Its ID must be absolute. MCT places it in an unheaded generated section while
@@ -165,7 +172,7 @@ Category `single` controls selection multiplicity.
 
 ## Startup integration
 
-`mc.bootstrap.new` now exposes `menu` and `menuController` after its
+`mc.bootstrap.new` exposes `menu` and `menuController` after its
 module-load barrier fires. In addition to the lifecycle host and registration
 options, provide:
 
@@ -206,7 +213,8 @@ snapshot, and decodes category settings separately from template overrides.
 Unowned fields are omitted from routed pages; their committed values are preserved.
 
 The controller calls `runtime:commit` once for a coherent batch. Existing attachments
-receive `update` with category values overlaid by template values. Switching templates
+receive effective category/template settings. Managed templates restore and rerun
+`attach`; unmanaged templates receive `update`. Switching templates
 detaches outgoing attachments first. Identical committed snapshots and replayed
 provider revisions cause no extra callbacks. Category text values are reread from
 committed config on Apply. Subscription teardown ignores already-queued events;
@@ -229,7 +237,7 @@ settings={focus={dim=0.7}}, -- template defaults, merged into params.settings
 events={
     ['controls.group.focus']=function(params,event,objects)
         -- params matches attach's: settings and screen from the last attach,
-        -- plus the current state. event.group.from and event.group.to are numbers.
+        -- plus current state. event.group.to is numeric; from may be nil initially.
         -- objects has the same shape as attach's objects.
     end,
 }

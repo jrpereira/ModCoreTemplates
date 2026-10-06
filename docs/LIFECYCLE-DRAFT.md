@@ -1,224 +1,159 @@
-# MCT lifecycle draft
+# Lifecycle reference
 
-This is the fresh implementation in `Scripts/mc/`. The previous runtime is preserved in
-Git history. This draft is executable with a host adapter and
-covered by offline tests. [Template menus](MENUS.md) route committed settings
-to this lifecycle. The Lua startup adapter schedules initialization on UE4SS's
-game thread and uses Lua references to check object validity and identity.
+This describes the current `Scripts/mc/` implementation. The filename is retained
+for existing links. Provider authors should start with the
+[developer guide](DEVELOPERS.md); the host contract below is for runtime adapters.
 
-## Startup
+## Startup and registration
 
-1. Load category definitions once and construct the object source from them.
-2. Accept explicitly registered provider template files without executing them.
-3. Schedule the one-shot startup callback on the game thread.
-4. Accept registrations from other modules while waiting.
-5. At the barrier, close registration and execute all registered template files.
-6. Validate definitions, generate menus, restore committed settings and subscribe to Apply.
-7. Subscribe to lifecycle notifications before taking the initial object snapshot.
-8. Process existing objects and then continue through lifecycle events.
+1. Load category definitions and construct the object source.
+2. Accept explicit provider paths through `MC.registerTemplate('name')`.
+3. At the one-shot game-thread startup barrier, close registration and load files.
+4. Validate metadata, templates and menus; restore settings and subscribe to Apply.
+5. Subscribe to lifecycle notifications before the first object snapshot.
+6. Attach selected templates when their objects are ready.
 
-`mc.bootstrap.new(options)` implements this sequence. Lua startup supplies the
-already-loaded categories, `host`, and `subscribeLoopStart(callback)`. Standalone
-hosts can supply those options directly, with optional initial
-`selections` and committed `categorySettings`. File lists are explicit; this draft does not search directories.
-`execute(path)` may be supplied for another loader; otherwise it uses `loadfile`.
-Category sources live in `Scripts/categories`; providers normally keep template
-sources directly in their own `Scripts` folder. Each category/template file returns
-one definition. The bootstrap object's
-`registerTemplate(path)` accepts registrations until the startup callback fires.
-The callback subscription must return an unsubscribe function.
+Each template file returns a table declaring `category` and `objects`. Its provider's
+`mod.json` supplies module identity, author and version. Registration loads no template
+code until the barrier. Late registrations are rejected, duplicates ignored, and a
+failing provider file is reported and skipped. Invalid categories or shared startup
+services fail startup.
 
-Installed providers use the public helper from `Scripts/main.lua`:
+An optional `template.loaded(onCleanup)` hook runs after metadata is applied.
+Register cleanup functions with `onCleanup` or return one. MCT runs them in reverse
+order on provider failure or session stop. Failed cleanup remains available for a
+later stop attempt. MCT cannot undo effects whose cleanup was never registered.
 
-```lua
-local M = require('mc')
-M.registerTemplate('layout')
-```
+For standalone hosts, `mc.bootstrap.new(options)` accepts categories, a host,
+`subscribeLoopStart(callback)` returning an unsubscribe function, and optional
+`execute(path)`. Its `registerTemplate(path)` accepts explicit paths until the
+barrier. Installed providers use the public client instead.
 
-`registerTemplate` resolves `layout` to `mc_layout.lua` beside the calling file and
-registers its path directly with MCT. The template declares `category`; MCT reads
-the module ID, author, and version from the provider's `mod.json`. MCT executes the
-file at the game-thread barrier. It does not enumerate installed directories.
+## Objects
 
-Late template registration is rejected explicitly. Duplicate file registrations
-are ignored. A provider file that fails execution, metadata validation, its
-loaded hook, or menu/runtime validation is reported and skipped; other providers
-continue loading. Invalid category definitions or shared startup services still
-fail startup before discovery begins.
+Categories declare named selectors in `objects`:
 
-After applying module metadata, MCT calls an optional `template.loaded(onCleanup)`
-once. The hook may register cleanup functions with `onCleanup`, or return one.
-MCT calls them in reverse order when that provider fails or the session stops.
-Hooks that create side effects must register their release functions; MCT cannot
-undo unregistered effects. Failed cleanup functions remain available for a
-later stop attempt. Generated menu and config files are durable; a failed
-startup leaves the menu handoff unready and the next startup refreshes them.
-Manifest identity fields come from the top-level JSON object. `id` is required;
-`author` and `version` are used when present.
+| Source | Required selector fields | Purpose |
+| --- | --- | --- |
+| `lookup` | `object` or `class` | Find a live object or class instances |
+| Scoped `lookup` | `from`, `class` | Find children relative to another object |
+| `reference` | `from`, `member` | Read a member of an already resolved object |
+| `create` | Native `class` path, `outer`; optional `parent` | Construct a widget with the outer's WidgetTree as owner |
 
-## Declared objects
+A lookup's `within` restricts matches to descendants of another selector.
+Unknown names and dependency cycles are rejected. Templates request a subset in
+`template.objects`; dependencies resolve automatically and only requested targets
+are passed to callbacks. A created target must be explicitly included to receive it.
+Groups preserve structure, for example `objects={buttons={'ability_left','ability_right'}}`.
 
-A category declares named objects in `.objects`:
+Declare captured properties on category targets or template targets/groups.
+For example, `abilities={properties={'position'}}` captures translation.
+A category's `required=true` targets must be ready; its `sharedObjects` are
+prepared before template attachment and restored after template detachment.
+A template does not need to request shared objects just to activate that preparation.
 
-```lua
-return {
-    name = 'player.quickslots',
-    single = true,
-    objects = {
-        switcher = { source = 'lookup', object = 'WidgetSwitcher /Game/...:WidgetTree.QuickslotsSwitcher' },
-        slots = { source = 'lookup', class = '/Game/.../WBP_Quickslot.WBP_Quickslot_C', within = 'switcher' },
-        hud_root = { source = 'reference', from = 'switcher', member = '@owner.WidgetTree.RootWidget' },
-        actions = { source = 'create', class = '/Script/UMG.CanvasPanel', outer = 'switcher', parent = 'hud_root' },
-    },
-}
-```
+Created objects require managed lifecycle. MCT attaches them to the declared
+parent before calling `attach`, reuses them during updates and removes them on
+cleanup. Templates own visual layout. See [Object source](OBJECT-SOURCE.md) for
+native lookup and identity limits.
 
-The example paths are illustrative. A `reference` source uses `from` and
-`member` to read a property from an already obtained object. A `create` source
-accepts a native `/Script/Module.Class` path, an `outer` object, and an optional
-visual `parent`. MCT uses the outer object's WidgetTree as the new object's
-owner and adds it to the declared parent before calling managed
-`attach(objects, params, original)`. Without `parent`, the created object remains
-unattached. The template must request the created name and its dependencies in
-`template.objects`.
-
-- `object` identifies an object; `class` selects a group of class instances.
-- `within` limits matches to descendants of every object selected by another entry.
-  It traverses all parent levels, excludes the root itself and tolerates hierarchy cycles.
-- Missing roots produce no descendants. Unknown selector names and dependency cycles
-  are rejected before discovery.
-- Each selector produces a set. The category uses their union; one object matching
-  several selectors still receives one attachment per template.
-- Root entries also belong to that union. Every selected template receives the root
-  as well as matching descendants. Selector-specific template subscriptions are
-  outside this draft.
-
-Native path interpretation belongs to the host. In particular, a blueprint's
-WidgetTree path is not automatically the full name of its live widget instance.
-The host must resolve this correctly and exclude class defaults, archetypes and
-objects from obsolete worlds. The runtime never guesses from a final object name.
-
-## Template contract
+## Managed callbacks (default)
 
 ```lua
-local template = { id = 'example.quickslots', category = 'player.quickslots' }
-
-function template.attach(object, settings)
-    -- Save original state for this object; apply initial settings.
+function template.attach(objects, params, original)
+    -- Change only declared properties on the supplied objects.
+    return original
 end
-
-function template.update(object, settings)
-    -- Apply changed effective settings to the existing attachment.
-end
-
-function template.detach(object, settings)
-    -- Restore state while valid, using the last successfully applied settings.
-end
-
-return template
 ```
 
-These are plain function calls, not colon methods. All three callbacks are required.
-Templates may import `local MC = require('mc')` for `MC.valid(object)`,
-`MC.same(a, b)`, and `MC.parent(object)`. `parent` returns a valid UMG panel
-parent or nil; it does not traverse UObject outers. `same` compares valid wrappers
-by full name and is not a lifetime token. `MC.call(object, method, ...)` returns
-the first result, or nil when the method throws. Runtime hosts retain their
-additional world/readiness and lifetime checks.
+Return the captured table, or equivalent original values in the same shape.
+Returning nothing is an error. MCT captures declared properties, restores them
+before rebuilding, and calls `attach` again for committed settings changes.
+Managed `update` and `detach` callbacks are unnecessary.
 
-For widget helpers use `local Widget = MC('widget')` or
-`local Widget = MC.load('widget')`. These calls return the same helper module.
-The widget helper includes `appearance(widget, settings, prefix, position)` for
-offset, scale, and opacity fields, plus `reparent(widget, parent)`,
-`measure(widget)`, and `position(widget, bounds, x, y, scale)` for rendered layout.
-From a template entry file, `MC.template('wheels')` loads its sibling
-`mc_wheels.lua` and returns the template table. A name ending in `.lua`, such as
-`MC.template('mc_wheels.lua')`, loads that exact sibling filename. Names cannot
-contain path separators.
-An optional second table supplies shared defaults. The loaded template's keys
-override those defaults, and each call receives its own copy of nested tables.
+`params` contains copied `settings`, `screen` and `state`. During managed attach,
+`params.onCleanup(fn)` registers attachment cleanup. It runs before restoration
+on rebuild/detach/failure and when invalid objects are forgotten. Cleanup must
+not assume that the world or widgets still exist.
 
-All three callbacks receive effective settings: category values overlaid with
-template values, with the template taking precedence. Each callback receives its
-own copy. The same effective values are available on `template.settings` during
-the call, so a callback that only accepts `object` can use that property.
+Settings precedence is category values → template defaults → committed template
+overrides. Each key replaces the whole value; nested tables are copied rather
+than recursively merged. `false` and `0` are real overrides.
 
-Precedence is category settings → template-declared defaults → committed template
-overrides. Overlays replace whole values by setting key; nested tables are copied
-rather than recursively combined. `false` and `0` are real overrides. Omit a key
-from the committed overrides to fall back to the template default, or to the
-category value when the template has no default.
+## Unmanaged callbacks
 
-`runtime:setCategorySettings(categoryName, settings)` replaces the category's
-committed values and updates its attached templates with their newly merged
-settings. Definition `category.settings` supplies initial category values. Settings
-passed to `select` are template overrides, not an already flattened merged table;
-this preserves inheritance when category values change.
+Set `managed=false` and provide all three plain functions:
 
-Each successful attachment/update records its effective settings. `detach`
-receives that last successful snapshot, including if a later update failed.
+```lua
+function template.attach(root, params, objects)
+    -- Capture and apply your own state.
+end
+function template.update(root, params, objects)
+    -- Reapply settings without accumulating the previous change.
+end
+function template.detach(root, params, objects)
+    -- Restore your state while objects are valid.
+end
+```
 
-Use `runtime:select(categoryName, { [templateId] = settings })` to commit a category's
-selection/settings. An empty selection disables all its templates. Single categories
-accept at most one selection. New templates attach to existing matches; changed
-settings call `update(object, settings)`, not detach/attach. Each explicit select of an already enabled
-template counts as a settings commit, even if the values are equal. Staged UI values
-must not call this API. New objects receive the latest committed settings.
+`root` is the live attachment root; `objects` holds requested targets.
+`params.settings` is the effective settings map. Detach receives the last
+successfully applied settings and screen snapshot. Throws or `false, reason`
+report failure; `false, 'not_ready'` waits for a relevant event. Other returns,
+including no return, mean success for unmanaged callbacks.
 
-MCT tracks each template/object-instance pair. Templates own any original-state
-records needed by their callbacks. Those records should not retain native objects
-strongly; invalid objects do not receive a cleanup callback. Runtime settings are
-plain acyclic Lua tables. Declare UI fields separately in `menu`, as described in
-[Template menus](MENUS.md).
+## Transitions and failures
 
-### Transitions
+| Trigger | Managed | Unmanaged |
+| --- | --- | --- |
+| Selected template becomes ready | Capture and attach | `attach` |
+| Committed settings change | Restore and attach again | `update` |
+| Valid objects lose readiness, selection changes, or stop | Cleanup and restore | `detach` |
+| Objects become invalid | Cleanup and forget; no property restoration | Forget; no `detach` |
 
-| Trigger | Action |
-|---|---|
-| Matching object ready, selected template not attached | `attach(object, settings)` |
-| Committed template/category settings change on attached object | `update(object, settings)` |
-| Valid object leaves the category set or loses readiness | `detach(object, settings)` |
-| Template disabled, replaced, or runtime stopped; object valid | `detach(object, settings)` |
-| Object invalid | Forget attachment; never call `detach` |
-| World confirmed invalidated | Forget all objects and attachments; preserve selections |
-| New world ready | Discover existing objects again and attach |
+Outgoing detaches precede incoming attaches. Failed detach can block a replacement
+on that object. Other templates/objects continue. Managed failures attempt
+restoration; unmanaged code must undo partial mutations itself. Repeating `stop()`
+can retry failed detaches. Callbacks run serially; reentrant work is queued.
 
-Outgoing detaches run before incoming attaches. If a single-category detach fails,
-its replacement remains blocked on that object. Other objects/templates continue.
-Callback throws and `false, reason` mean failure. `false, 'not_ready'` waits quietly
-for another relevant event. Other returns, including no return, mean success.
-Failed updates preserve the old attachment; failed detaches retain their records.
-Callbacks must avoid partial mutation on failure or restore their own changes before
-reporting failure. MCT cannot undo arbitrary Lua callback side effects.
+With menu subscriptions, use committed menu state as the selection authority.
+Standalone hosts may use `runtime:select(category, {[templateId]=overrides})` and
+`runtime:setCategorySettings(category, settings)`. An empty selection disables
+all templates in that category. Do not mix direct edits with a menu controller's
+saved snapshot. `runtime.errors` and `runtime:attachments(id)` expose diagnostics.
 
-Callbacks run serially. Reentrant selection/events are queued until the current
-operation completes. Exceptions are reported through the host's error callback.
-`runtime.errors` also retains diagnostics; `runtime:attachments(id)` exposes a copy
-of attachment membership for inspection. `stop()` unsubscribes and detaches valid
-objects. Repeating `stop()` can retry failed detaches.
+## Helpers and events
+
+`local MC=require('mc')` exposes `valid`, `same`, `parent` and `call` helpers.
+`same` compares valid full names, not lifetime tokens. `parent` returns a UMG
+panel parent. `MC.call` returns the first method result or nil on failure.
+`MC('widget')` and `MC.load('widget')` load the widget helper.
+
+`MC.template('wheels', defaults)` loads sibling `mc_wheels.lua`, with template
+keys overriding copied defaults; it does not register another template.
+Names cannot contain path separators. An explicit `.lua` filename is also accepted.
+
+Declared event callbacks receive `(params, event, objects)` once per live
+attachment. Events update shared state without rebuilding templates; later attach
+calls see that state. See [Template menus](MENUS.md#apply-behavior).
 
 ## Event host contract
 
-The draft deliberately requires these concrete host operations:
-
 | Operation | Responsibility |
-|---|---|
-| `valid(object)` | Safe validity check, including invalid references |
-| `identity(object)` | Stable string identifying a live instance, including its generation |
-| `ready(object)` | Whether this object is ready for template callbacks |
-| `matches(object, selector)` | Exact object/class match before applying `within` |
-| `parent(object)` | Parent used for descendant membership, or nil |
-| `find(selector)` | Snapshot array of live candidates, including unready candidates; ignore `within` here |
-| `subscribe(sink, getEpoch)` | Subscribe to lifecycle events; return unsubscribe |
-| `onError(error)` | Report runtime/template/startup failures |
-| `unwrap(object)` (optional) | Return the actual UObject from a private reference before callbacks; nil suppresses delivery |
+| --- | --- |
+| `valid(object)` | Safe validity check |
+| `identity(object)` | String identifying a live instance and its generation |
+| `ready(object)` | Whether callbacks may use it |
+| `matches(object, selector)` | Object/class match before `within` filtering |
+| `parent(object)` | Parent for descendant membership, or nil |
+| `find(selector)` | Snapshot of candidates, including unready ones |
+| `screen(object)` | Screen dimensions/reference points, or nil when not ready |
+| `subscribe(sink, getEpoch)` | Subscribe to events; return unsubscribe |
+| `onError(error)` | Report failures |
+| `unwrap(object)` (optional) | Resolve the native object; nil suppresses callbacks |
+| `mutate(callback)` (optional) | Run work inside the host's mutation scope |
 
-Never identify an instance only by its object path or a reusable address. Invalid
-objects are checked before identity is read. The host should supply weak/native-safe
-references so candidate bookkeeping does not prevent destruction.
-
-Deliver events on the game thread. Capture `getEpoch()` **before** queuing a native
-notification and include it in the event. Old-epoch events are ignored.
+Deliver events on the game thread. Capture the epoch before queuing work:
 
 ```lua
 sink({kind='changed', object=object, epoch=capturedEpoch})
@@ -227,51 +162,12 @@ sink({kind='world_invalidated', epoch=capturedEpoch})
 sink({kind='world_ready', epoch=currentEpoch})
 ```
 
-- `changed` covers creation, readiness, parent changes and membership changes.
-  A child discovered before parenting stays a candidate until a later event lets
-  MCT reevaluate containment. A parent-change event reevaluates cached descendants.
-- `lost` removes an instance from discovery, whether the reference is still valid
-  or already invalid. Its ID must have been captured while valid. A later `changed`
-  event may reintroduce an object that legitimately reenters the set.
-- `world_invalidated` means the old world is already invalid, not about to unload.
-  It increments the epoch and suspends attachment. Cleanup of valid objects before
-  teardown must instead happen through loss events while they remain usable.
-- `world_ready` resumes discovery using the new epoch. Capture it after invalidation
-  has been delivered; the adapter owns event ordering.
+Old epochs are ignored. `changed` covers creation/readiness/parent changes;
+`lost` removes a captured identity. `world_invalidated` means objects are already
+invalid: forget them and increment the epoch. `world_ready` resumes discovery
+with the new epoch. Partial subscription failures must release installed hooks.
 
-Initial startup and new-world readiness enumerate objects. Subsequent events
-reevaluate cached candidates, without periodic enumeration or timer retries.
-A host must deliver creation events for all possible candidates and explicit
-readiness/parent/loss notifications. Missing notifications cannot be inferred
-without polling; this implementation does not conceal that gap.
-
-## Live integration still to resolve
-
-`Scripts/main.lua` wires the Lua startup adapter and
-[UE4SS object source](OBJECT-SOURCE.md). Valid detach,
-complete parent-change coverage, and timely object-loss delivery remain pending.
-The adapter must clean up any partial
-subscription if `subscribe` fails before returning its unsubscribe function.
-
-UE4SS documents class-construction notifications through
-[NotifyOnNewObject](https://docs.ue4ss.com/dev/lua-api/global-functions/notifyonnewobject.html).
-That event alone does not establish readiness, parenting or destruction coverage.
-The prior host also attempted widget construction and map-load hooks. Neither is
-assumed to supply a complete lifecycle in this draft.
-
-Existing template `render`, category contexts/events and legacy callback signatures
-have not been carried into this fresh contract. They require explicit integration decisions; the draft is not a drop-in
-replacement for the parked runtime.
-
-## Validation
-
-```sh
-python3 tools/run-tests.py --lua lua5.4 \
-  --dmm-choices /path/to/DawnwalkerModMenu/Scripts/choices.lua \
-  --presentation /path/to/ModCoreSettings/Scripts/presentation.lua
-```
-
-This runs syntax checks for fresh runtime/category files and the draft lifecycle
-and menu suites, including the actual DMM parser. The original `tools/run-tests.py` and legacy tests still refer to the old
-`ket.*` module layout, which was moved aside before this draft. They are not evidence
-for or against the new contract. Native hooks and game behavior remain unverified.
+Startup and world readiness enumerate objects; later events reevaluate cached
+candidates. Missing native notifications cannot be inferred without polling.
+Use the [build guide](BUILD.md) for validation; native hook coverage and timely
+invalidation still require in-game checks.

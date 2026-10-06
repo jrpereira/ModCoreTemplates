@@ -525,7 +525,9 @@ function M.generate(registry, options)
                 local module = (template.module or parent:match('([^/]+)$')):gsub('^_', '')
                 slotModules[module] = slotModules[module] or {root=parent, slot=slot,
                     author=template.author and text(template.author),
-                    version=template.version and text(template.version)}
+                    version=template.version and text(template.version), owned={}, categories={}}
+                slotModules[module].owned[entry.id] = true
+                slotModules[module].categories[template.category] = true
             end
         elseif template.menu.target == 'templates' then
             categoryOwned[template.category] = categoryOwned[template.category] or {}
@@ -612,16 +614,31 @@ function M.generate(registry, options)
         page.decode = makeDecoder(page.rows, moduleCategories[module], moduleOwned[module])
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end
-    -- Link entries have no settings, so they are not Apply providers.
-    local linkNames = {}
+    -- A module whose templates all moved to a slot keeps its own page over the slot's
+    -- rows and central storage, headed by a notice that opens the slot.
+    local mergedNames = {}
     for module in pairs(slotModules) do
-        if not moduleOwned[module] then linkNames[#linkNames + 1] = module end
+        if not moduleOwned[module] then mergedNames[#mergedNames + 1] = module end
     end
-    table.sort(linkNames)
-    for _, module in ipairs(linkNames) do
+    table.sort(mergedNames)
+    for _, module in ipairs(mergedNames) do
         local entry = slotModules[module]
-        pages[#pages + 1] = {id=aggregateId .. '.module.' .. publicName(module), name=module,
-            link=entry.slot, moduleRoot=entry.root, author=entry.author, version=entry.version}
+        local providerId = aggregateId .. '.module.' .. publicName(module)
+        -- The notice is the page's only link: navigation rows stay out, as in the slot.
+        local selectedRows = {}
+        for _, item in ipairs(routedRows(entry.categories, entry.owned)) do
+            if item.mcNavigation ~= 1 then selectedRows[#selectedRows + 1] = item end
+        end
+        local host = title(entry.slot:match('^[^:]+'))
+        table.insert(selectedRows, 1, {Id='MCT_MergedNotice', Group=selectedRows[1].Group,
+            Label='These settings have been merged into ' .. host .. ' and can also be edited there',
+            Type='picker', PresetValues='0|1', PresetLabels=host .. '|' .. host, Default=0,
+            mcNavigation=1, mcType='tab', mcLinkPage=entry.slot, mcLevel=5})
+        local page = {id=providerId, name=module, merged=entry.slot, moduleRoot=entry.root,
+            author=entry.author, version=entry.version, rows=selectedRows,
+            manifest=providerManifest(providerId, module, selectedRows, false)}
+        page.decode = makeDecoder(page.rows, entry.categories, entry.owned)
+        pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end
     local decodeAll = makeDecoder(rows, allCategories)
     local function decodeState(values)

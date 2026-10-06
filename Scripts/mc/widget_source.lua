@@ -79,10 +79,11 @@ function M.new(categories, api, log)
     local identityFailureReported=false
     local lifetimeMode=nil
     local hooks = {}
-    local function errorReport(stage, message)
+    -- level (optional) overrides the stage's level for one report.
+    local function errorReport(stage, message, level)
         local error = {stage=stage,message=tostring(message)}
         if type(api.MCTOnError)=='function' then pcall(api.MCTOnError,error)
-        else log[levels[stage] or 'error'](error.stage, ': ', error.message) end
+        else log[level or levels[stage] or 'error'](error.stage, ': ', error.message) end
     end
     source.onError = function(error) errorReport(error.stage or 'object', error.message) end
     local function onGameThread()
@@ -111,7 +112,8 @@ function M.new(categories, api, log)
         end
         if lifetimeMode==nil and captured and why=='object lifetime service is unavailable' then
             lifetimeMode='legacy'
-            errorReport('identity', 'native object lifetimes unavailable; using address identity')
+            -- Address identity works in this case; the notice is for tracing only.
+            errorReport('identity', 'native object lifetimes unavailable; using address identity', 'trace')
             return tostring(address) .. ':' .. name
         end
         if not identityFailureReported then

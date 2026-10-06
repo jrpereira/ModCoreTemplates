@@ -56,13 +56,15 @@ function M.build(menu, root)
                 attach=page.moduleRoot and folder(page.moduleRoot) or nil, group='module'}
         end
     end
-    -- A module whose settings all moved to a slot keeps its entry, which opens the slot.
+    -- A module whose settings all moved to a slot keeps its page; it edits the slot's
+    -- rows in the central config and links to the slot.
     for _, page in ipairs(menu.pages) do
-        if page.link then
+        if page.merged then
             pages[#pages + 1] = {id=page.id, name=page.name,
                 author=page.author or 'ModCoreTemplates', version=page.version or '1.0.1',
-                description='Opens the settings for ' .. page.name .. '.',
-                attach=folder(page.moduleRoot), group='module', link=page.link}
+                description='Templates and settings for ' .. page.name .. '.',
+                manifest=page.manifest, configDirectory=root,
+                attach=page.moduleRoot and folder(page.moduleRoot) or nil, group='module'}
         end
     end
     return {pages=pages, rows=#rows > 0 and rows or nil}

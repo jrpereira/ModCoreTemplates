@@ -5,12 +5,13 @@
 - Template fields may declare `conditions`: `visible = {field, match}` shows a row
   only while a picker in the same template holds a matching value, and
   `label = {field, match, text}` swaps its label. Rows hide and relabel live,
-  including on slot pages (visibility only). Hidden values are kept and still
-  delivered to templates.
+  including on slot pages. Hidden values are kept and still delivered to
+  templates.
 - Release packages include `enabled.txt`, so the mod is enabled when installed.
 - Log at levels TRACE, DEBUG, INFO, WARN, ERROR and CRITICAL, writing WARN and above
   by default; `log_level.txt` in the mod folder sets the level. Messages use the
-  `[ModCoreTemplates]` prefix instead of `[MCT]`.
+  `[ModCoreTemplates]` prefix instead of `[MCT]`. Falling back to address identity
+  when native object lifetimes are unavailable is a TRACE notice.
 - Configuration never prevents startup: an invalid saved value, such as a
   selected template whose provider was removed, is rewritten with its default; a
   repeated key or section keeps its first value; a config that cannot be prepared
@@ -29,8 +30,9 @@
   templates leave their module pages. Each row shows only while its template (or
   variation) is selected. Values are stored in MCT's central config; on first start
   they are copied once from module configs, which are left untouched. A module whose
-  templates all moved keeps its entry as a link that opens the slot.
-  Requires ModCoreSettings with slot rows and links (descriptor contract 2).
+  templates all moved keeps its own page over the same settings and storage, headed
+  by a notice that they were merged into Controls, with a button that opens the slot.
+  Requires ModCoreSettings with slot rows and slot-address page links.
 
 - No control group has focus at startup: `state.controls.group` stays empty until
   ModCore Controls reports one, instead of assuming abilities (group 1).
