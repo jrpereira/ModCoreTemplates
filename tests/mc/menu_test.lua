@@ -577,6 +577,46 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     assert(not page.manifest:find('%[Category%.[^S]'),'source Category rules are not published')
 end)
 
+test('the template picker notes each choice with its module', function()
+    local f=fixture(true,'module','module')
+    f.category.slot={provider='controls',slot='visuals'}
+    local function generate()
+        local model=Model.build({f.category},{U.copy(f.a),U.copy(f.b)},f.locations)
+        return Menu.generate(model.registry)
+    end
+    -- Without module metadata the picker keeps one line per choice.
+    local menu=generate()
+    local selector=menu.selectors['player.quickslots']
+    local page=menu.pageBySlot['player.quickslots']
+    assert(section(page.manifest,selector.id).mcChoiceNotes==nil)
+    f.a.module,f.b.module='Alpha','Beta'
+    menu=generate()
+    selector,page=menu.selectors['player.quickslots'],menu.pageBySlot['player.quickslots']
+    local expected={}
+    for value,id in pairs(selector.byValue) do expected[tostring(value)]=id end
+    local notes,count=section(page.manifest,selector.id).mcChoiceNotes,0
+    for value,text in assert(notes):gmatch('([^:;]+):([^;]+)') do
+        assert(expected[value]==text and value~='0','None has no note: '..value)
+        expected[value]=nil;count=count+1
+    end
+    assert(count==2 and next(expected)==nil)
+    if Choices then
+        local choices=Choices.parse(page.manifest)
+        Presentation.parse(page.manifest,choices)
+    end
+    -- A template without a module has no note; the others keep theirs.
+    f.b.module=nil
+    menu=generate()
+    notes=section(menu.pageBySlot['player.quickslots'].manifest,
+        menu.selectors['player.quickslots'].id).mcChoiceNotes
+    assert(notes:match('^%d+:Alpha$'),notes)
+    -- Notes follow the menu text rules and fit MCS's 64-character limit.
+    f.b.module=('x'):rep(65)
+    assert(not pcall(generate))
+    f.b.module='Beta;Two'
+    assert(not pcall(generate))
+end)
+
 local function conditionalPage()
     local f=fixture(true,'module','module')
     f.a.menu={barsGroup()}

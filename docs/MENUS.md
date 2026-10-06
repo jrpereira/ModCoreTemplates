@@ -76,8 +76,10 @@ category page rather than its module page.
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
-Single categories get a template picker with `None`. Other categories get a toggle
-per template. A template with `enabled = false` remains represented in the
+Single categories get a template picker with `None`. Each template choice notes its
+module, the `id` from the module's `mod.json`, through `mcChoiceNotes`; ModCoreSettings
+shows it on a second line under the template name. `None` and templates without a module
+have no note. Other categories get a toggle per template. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
 

@@ -100,13 +100,15 @@ function M.generate(registry, options)
         emit('Setting.' .. fields.Id, fields)
         return fields.Id
     end
-    local function picker(settingId, label, group, values, labels, source, visible, level, default)
+    -- notes are value:text pairs ModCoreSettings shows on a choice's second line.
+    local function picker(settingId, label, group, values, labels, source, visible, level, default, notes)
         return row({Id = settingId, Label = text(label), Group = group, Type = 'picker',
             PresetValues = table.concat(values, '|'), PresetLabels = table.concat(labels, '|'),
             Default = default == nil and values[1] or default,
             VisibleWhen = source, VisibleValues = visible,
             mcHeading = level == 1 and true or nil,
-            mcLevel = level ~= 1 and level or nil})
+            mcLevel = level ~= 1 and level or nil,
+            mcChoiceNotes = notes and #notes > 0 and table.concat(notes, ';') or nil})
     end
     local function group(identity, label, selector, selected, source, visible, level, heading, publicId,
         labelValues)
@@ -170,11 +172,17 @@ function M.generate(registry, options)
             end
             assert(#available <= 63, category .. ': more than 63 templates exceeds picker capacity including None')
             local selector
-            local values, labels, byValue = {0}, {'None'}, {}
+            local values, labels, notes, byValue = {0}, {'None'}, {}, {}
             for _, entry in ipairs(available) do
                 local value = allocate({'template', storageIdentity(entry)})
                 values[#values + 1], labels[#labels + 1] = value, text(entry.template.name)
                 byValue[value] = entry.id
+                -- Each template choice names its module on a second line.
+                local module = entry.template.module
+                if module ~= nil then
+                    assert(#text(module) <= 64, 'module name longer than 64 characters: ' .. module)
+                    notes[#notes + 1] = value .. ':' .. module
+                end
             end
             local prefix, suffix = assert(category:match('^([^.]+)%.([^.]+)$'))
             local aggregateGroup = title(prefix)
@@ -189,7 +197,7 @@ function M.generate(registry, options)
                 selector = namedId(selectorName, {'selector', category})
                 local isQuickslots = category == 'player.quickslots'
                 picker(selector, title(suffix), aggregateGroup, values, labels, nil, nil,
-                    isQuickslots and 1 or nil)
+                    isQuickslots and 1 or nil, nil, notes)
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                 if slot then slotRow() end
