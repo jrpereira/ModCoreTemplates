@@ -625,8 +625,13 @@ function M.generate(registry, options)
         local entry = slotModules[module]
         local providerId = aggregateId .. '.module.' .. publicName(module)
         -- The notice is the page's only link: navigation rows stay out, as in the slot.
+        -- The template picker sits below the notice as in the slot, not in the title row.
         local selectedRows = {}
         for _, item in ipairs(routedRows(entry.categories, entry.owned)) do
+            if item.mcHeading == true then
+                item = U.copy(item)
+                item.mcHeading, item.mcLevel = nil, nil
+            end
             if item.mcNavigation ~= 1 then selectedRows[#selectedRows + 1] = item end
         end
         local host = title(entry.slot:match('^[^:]+'))

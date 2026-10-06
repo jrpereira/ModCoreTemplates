@@ -694,6 +694,10 @@ test('modules whose templates moved to a slot keep their page with a link to the
     local size=section(page.manifest,f.definitions.Beta.settings.Size)
     assert(section(page.manifest,selector.id) and size.ConfigFile=='Scripts/cache/config.ini',
         'the page edits the slot rows in the central config')
+    assert(page.rows[2].Id==selector.id and section(page.manifest,selector.id).mcHeading==nil
+        and section(page.manifest,selector.id).mcLevel==nil,
+        'the template picker follows the notice as a plain row, not in the title row')
+    assert(f.menu.selectors['player.quickslots'] and f.menu.pageBySlot['player.quickslots'].rows[1].Id==selector.id)
     assert(not page.manifest:find('Setting.'..f.definitions.Alpha.settings.Size,1,true),'only its own templates')
     for index,row in ipairs(page.rows) do
         assert(index==1 or row.mcNavigation~=1,row.Id..': the notice is the only link')
