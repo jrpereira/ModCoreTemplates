@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.2
 
 - Fix a crash when loading a save from a running game. MCT kept UE4SS object
   wrappers across garbage collection and later called them; UE4SS `IsValid`
