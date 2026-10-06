@@ -13,10 +13,18 @@ function M.new(template,specs,order,createdSpecs)
     assert(#createdSpecs==0 or tree, 'created objects require an object declaration tree')
     local states=setmetatable({}, {__mode='k'})
     local manager={}
+    -- Created and moved objects outlive the call that made them, so they are
+    -- kept as weak handles and read with Objects.get.
+    local function keep(object,name)
+        local handle,why=Objects.hold(object)
+        if not handle then error(name..' cannot be kept: '..tostring(why),0) end
+        return handle
+    end
     local function release(created)
         local failure
-        for name,object in pairs(created and created.objects or {}) do
-            if Objects.valid(object) then
+        for _,handle in pairs(created and created.objects or {}) do
+            local object=Objects.get(handle)
+            if object then
                 local parent=Objects.parent(object)
                 if parent then
                     local ok,why=pcall(function()
@@ -31,9 +39,10 @@ function M.new(template,specs,order,createdSpecs)
         -- Remove placeholders before restoring native sibling order and slots.
         local targets,specs,saved,order={},{},{},{}
         for index,move in ipairs(created and created.moves or {}) do
-            if Objects.valid(move.object) and Objects.valid(move.saved.parent) then
+            local object=Objects.get(move.object)
+            if object and Objects.get(move.saved.parent) then
                 local name='move'..index
-                targets[name],specs[name],saved[name]=move.object,move.properties,move.saved
+                targets[name],specs[name],saved[name]=object,move.properties,move.saved
                 order[#order+1]=name
             end
         end
@@ -108,9 +117,11 @@ function M.new(template,specs,order,createdSpecs)
         end
         for _,move in ipairs(moves) do
             local object,parent,spec=move.object,move.parent,move.spec
+            local kept=keep(object,move.sourceName)
             assert(parent:RemoveChild(object)~=false,
                 move.sourceName..' could not be detached')
-            created.moves[#created.moves+1]=move
+            created.moves[#created.moves+1]={object=kept,properties=move.properties,
+                saved=move.saved}
             local slot=move.destination:AddChild(object)
             assert(Objects.valid(slot),move.sourceName..' could not be attached to '
                 ..(spec.destination or spec.name))
@@ -134,7 +145,7 @@ function M.new(template,specs,order,createdSpecs)
                 local object=assert(StaticConstructObject(class,outer),
                     spec.name..' construction failed')
                 assert(Objects.valid(object), spec.name..' constructed object invalid')
-                created.objects[spec.name]=object
+                created.objects[spec.name]=keep(object,spec.name)
                 dependencies[spec.name]=object
                 TemplateTargets.assign(tree,targets,spec.name,object)
                 local slot=attachCreated(spec,object,targets,dependencies)
@@ -143,7 +154,7 @@ function M.new(template,specs,order,createdSpecs)
             reparentCreated(created,targets,dependencies)
             for _,spec in ipairs(createdSpecs) do
                 if spec.prepass then
-                    Widget.prepareLayout(created.objects[spec.name])
+                    Widget.prepareLayout(dependencies[spec.name])
                 end
             end
         end)
@@ -163,11 +174,49 @@ function M.new(template,specs,order,createdSpecs)
         end
         if failure then error(failure,0) end
     end
+    -- Weak handles for every target an attachment keeps, so its wrappers are
+    -- called again only while all of their objects live.
+    local function holdTargets(targets)
+        local held={}
+        local function leaf(value)
+            if Objects.valid(value) then held[#held+1]=keep(value,'target')
+            elseif type(value)=='table' then
+                for _,item in ipairs(value) do leaf(item) end
+            end
+        end
+        local function visit(node,value)
+            if node.name then return leaf(value) end
+            for _,key in ipairs(node.order) do visit(node.children[key],value and value[key]) end
+        end
+        if tree then visit(tree,targets)
+        else
+            for _,name in ipairs(order) do
+                if specs[name] then leaf(targets[name]) end
+            end
+        end
+        return held
+    end
+    local function live(state)
+        for _,handle in ipairs(state.held or {}) do
+            if not Objects.get(handle) then return false end
+        end
+        return true
+    end
+    -- A target that died takes its properties with it; only cleanup and
+    -- created objects remain to undo.
     local function restore(state)
         cleanup(state)
-        State.restore(state.targets,specs,order,state.saved)
+        if live(state) then State.restore(state.targets,specs,order,state.saved) end
         release(state.created)
         return true
+    end
+    local function liveCreated(created)
+        local objects={}
+        for name,handle in pairs(created.objects) do
+            objects[name]=Objects.get(handle)
+            if not objects[name] then return nil end
+        end
+        return objects
     end
     local function apply(root,targets,params,previous,dependencies)
         dependencies=dependencies or {}
@@ -186,20 +235,27 @@ function M.new(template,specs,order,createdSpecs)
             if not ok then previous.incomplete=true; return false,why end
         end
         local created=previous and previous.created
+        local objects=created and liveCreated(created)
+        if created and not objects then
+            -- A created object died: build the set again.
+            local cleaned,why=pcall(release,created)
+            if not cleaned then return false,why end
+            created=nil
+        end
         if created then
-            for name,object in pairs(created.objects) do
+            for name,object in pairs(objects) do
                 dependencies[name]=object
                 TemplateTargets.assign(tree,targets,name,object)
             end
             local attached,reason=pcall(function()
                 for _,spec in ipairs(createdSpecs) do
-                    local object=assert(created.objects[spec.name])
+                    local object=assert(objects[spec.name])
                     local slot=attachCreated(spec,object,targets,dependencies)
                     configureCreated(spec,object,slot)
                 end
                 reparentCreated(created,targets,dependencies)
                 for _,spec in ipairs(createdSpecs) do
-                    if spec.prepass then Widget.prepareLayout(created.objects[spec.name]) end
+                    if spec.prepass then Widget.prepareLayout(objects[spec.name]) end
                 end
             end)
             if not attached then
@@ -211,12 +267,16 @@ function M.new(template,specs,order,createdSpecs)
             if not ok then return false,value end
             created=value
         end
-        local ok,saved=pcall(State.capture,targets,specs,order)
+        local held
+        local ok,saved=pcall(function()
+            held=holdTargets(targets)
+            return State.capture(targets,specs,order)
+        end)
         if not ok then
             if not previous and created then release(created) end
             return false,saved
         end
-        local state={targets=targets,saved=saved,params=copy(params),incomplete=true,
+        local state={targets=targets,held=held,saved=saved,params=copy(params),incomplete=true,
             created=created}
         states[root]=state
         local scoped=copy(params)
@@ -245,7 +305,7 @@ function M.new(template,specs,order,createdSpecs)
         if ok then return true end
         -- A failed replacement can retain its own unfinished cleanup. Do not
         -- overwrite that state while recovering the previous attachment.
-        if previous and not previous.incomplete and states[root]==previous then
+        if previous and not previous.incomplete and states[root]==previous and live(previous) then
             local recovered,reason=apply(root,previous.targets,previous.params,previous,dependencies)
             if not recovered then why=tostring(why)..'; rollback failed: '..tostring(reason) end
         end

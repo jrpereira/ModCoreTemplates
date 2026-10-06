@@ -1,4 +1,5 @@
 package.path='./Scripts/?.lua;'..package.path
+dofile('tests/support/lifetimes.lua').install()
 local Runtime=require('mc.runtime')
 local category=dofile('Scripts/categories/player_notifications.lua')
 assert(category.name=='player.notifications' and category.single==nil,

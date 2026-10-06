@@ -95,8 +95,19 @@ nested table. `0` and `false` are valid overrides. Screen reference points are
 account for the target parent's coordinate system.
 
 Use supplied objects during callbacks. For subscriptions, register cleanup with
-`params.onCleanup(unsubscribe)` and avoid retaining widgets. Cleanup must remain
-safe after world teardown. Prefer declared [event callbacks](MENUS.md#apply-behavior)
+`params.onCleanup(unsubscribe)`. Cleanup also runs after world teardown, when
+the attachment's widgets have been collected: never call a widget kept from an
+earlier callback, since UE4SS `IsValid` itself reads the freed object. Keep it
+as a weak handle and read it back, which returns nil once it died:
+
+```lua
+local Objects = require('mc').load('objects')
+local kept = Objects.hold(widget)        -- a supplied or freshly read object
+params.onCleanup(function()
+    local live = Objects.get(kept)
+    if live then Widget.setOpacity(live, opacity) end
+end)
+``` Prefer declared [event callbacks](MENUS.md#apply-behavior)
 when reacting to wheel focus.
 
 Managed templates need only `attach`. With `managed=false`, all three callbacks

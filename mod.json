@@ -12,8 +12,8 @@
     },
     {
       "id": "UE4SSLuaEventBridge",
-      "name": "UE4SSLuaEventBridge with object lifetimes (API 5 or newer)",
-      "version": "API 5+",
+      "name": "UE4SSLuaEventBridge with weak handles (1.0.9, API 6 or newer)",
+      "version": "1.0.9+",
       "url": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"
     },
     {

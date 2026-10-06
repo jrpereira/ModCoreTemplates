@@ -3,6 +3,7 @@ local Selectors = require('mc.selectors')
 local ManagedTemplate = require('mc.managed_template')
 local TargetState = require('mc.target_state')
 local TemplateTargets = require('mc.template_targets')
+local Objects = require('mc.objects')
 local array = require('mc.util').array
 local copy = require('mc.util').copy
 local M = {}
@@ -47,7 +48,12 @@ local function targetNames(targets)
     return names
 end
 
-function M.new(host, definitions, templates, state)
+-- options: defer(ms, callback), which runs callback later on the game thread. Without
+-- defer, attachDelay is ignored.
+function M.new(host, definitions, templates, state, options)
+    options = options or {}
+    local defer = options.defer
+    assert(defer == nil or type(defer) == 'function', 'defer must be a function')
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
         assert(type(host[name]) == 'function', 'host requires ' .. name)
     end
@@ -102,6 +108,13 @@ function M.new(host, definitions, templates, state)
                 targetTree=TemplateTargets.compile(graph,definition.sharedObjects),
                 manager=managedRecord(sharedDefinition,sharedGraph,definition.sharedObjects),
                 attached={},exposed={}}
+        end
+        -- attachDelay (ms): the game may create a root before filling its content.
+        -- A newly found root attaches this long after it first could.
+        if definition.attachDelay ~= nil then
+            assert(type(definition.attachDelay) == 'number' and definition.attachDelay > 0,
+                definition.name..'.attachDelay must be a positive number of milliseconds')
+            category.attachDelay = {ms=definition.attachDelay, roots={}}
         end
         categories[definition.name] = category
     end
@@ -203,6 +216,15 @@ function M.new(host, definitions, templates, state)
         end
         return false
     end
+    local reconcile
+    -- Restores a root hidden while its attachDelay ran; a dead root is not touched.
+    local function revealRoot(state)
+        if type(state)~='table' or not state.hidden then return end
+        local live=Objects.get(state.hidden)
+        if live then pcall(function() live:SetRenderOpacity(state.opacity) end) end
+        Objects.release(state.hidden)
+        state.hidden=nil
+    end
     local function include(object)
         if not host.valid(object) then return end
         for _, selector in ipairs(activeRoots) do
@@ -258,7 +280,7 @@ function M.new(host, definitions, templates, state)
         host.watch(roots)
         discover()
     end
-    local function reconcile()
+    function reconcile()
         for id, object in pairs(candidates) do
             if not host.valid(object) then candidates[id] = nil end
         end
@@ -273,8 +295,56 @@ function M.new(host, definitions, templates, state)
                     end
                 end
             end
+            -- Whether a root's attachDelay has passed. A root waits until no reconcile
+            -- has reached it for delay.ms; each one restarts its timer. Once settled, a
+            -- root attaches without waiting, so a later menu selection does not wait.
+            -- While it waits the root is hidden, so its unfinished native content never
+            -- shows; it is revealed in the same game-thread call that attaches it.
+            local settledThisTurn={}
+            local function settledFor(token,object)
+                local delay=category.attachDelay
+                if not delay or not defer then return true end
+                local state=delay.roots[token]
+                if state=='settled' then return true end
+                if settledThisTurn[token]~=nil then return settledThisTurn[token] end
+                settledThisTurn[token]=false
+                if not state then
+                    state={generation=0}
+                    local live=host.unwrap and host.unwrap(object) or object
+                    local ok,opacity=pcall(function() return live:GetRenderOpacity() end)
+                    local handle=ok and tonumber(opacity) and Objects.hold(live)
+                    if handle and pcall(function() live:SetRenderOpacity(0) end) then
+                        state.hidden,state.opacity=handle,tonumber(opacity)
+                    elseif handle then Objects.release(handle) end
+                end
+                state.generation=state.generation+1
+                delay.roots[token]=state
+                local generation=state.generation
+                local ok,why=pcall(defer,delay.ms,function()
+                    if delay.roots[token]~=state or state.generation~=generation then return end
+                    delay.roots[token]='settled'
+                    revealRoot(state)
+                    if self.phase=='running' then serialize(function() reconcile() end) end
+                end)
+                if not ok then
+                    delay.roots[token],settledThisTurn[token]='settled',true
+                    revealRoot(state)
+                    report('attach delay',nil,why)
+                    return true
+                end
+                return false
+            end
             local _,requiredObjects=Selectors.resolve(category.requiredGraph,candidates,host)
             for token,object in pairs(requiredObjects) do allObjects[token]=object end
+            if category.attachDelay then
+                -- Forget roots that are gone; a pending delay for one then does nothing.
+                for token,state in pairs(category.attachDelay.roots) do
+                    if not candidates[token] then
+                        category.attachDelay.roots[token]=nil
+                        revealRoot(state)
+                    end
+                end
+            end
             local shared,sharedObjects,sharedBundles=category.shared,{},{ }
             local sharedActive=shared and hasEnabledTemplate(category)
             if sharedActive then
@@ -387,7 +457,8 @@ function M.new(host, definitions, templates, state)
                 if sharedActive then
                     for _,token in ipairs(keys(sharedObjects)) do
                         local object=sharedObjects[token]
-                        if not shared.attached[token] and host.valid(object) and host.ready(object) then
+                        if not shared.attached[token] and host.valid(object) and host.ready(object)
+                            and settledFor(token,object) then
                             local targets=sharedBundles[token]
                             local applied,screen,exposed=invoke(shared,'attach',object,nil,targets)
                             if applied and host.valid(object) then
@@ -426,7 +497,8 @@ function M.new(host, definitions, templates, state)
                             and (not shared or shared.attached[token])
                             and retainsTargets(record.waiting[token],bundles[token],host)
                             and (not old or old.revision ~= record.revision)
-                            and not (failedInTurn[record] and failedInTurn[record][token]) then
+                            and not (failedInTurn[record] and failedInTurn[record][token])
+                            and (old or settledFor(token,object)) then
                             local operation = old and 'update' or 'attach'
                             local targets = bundles[token]
                             local applied,screen=invoke(record, operation, object, nil, targets)
@@ -514,6 +586,26 @@ function M.new(host, definitions, templates, state)
                         if not ok then report('event',id,why) end
                     end
                 end
+            end
+        end)
+    end
+    -- Ends every pending attachDelay at once, e.g. when the loading screen has lifted.
+    function self:settle()
+        serialize(function()
+            local pending=false
+            for _,category in pairs(categories) do
+                if category.attachDelay then
+                    for token,state in pairs(category.attachDelay.roots) do
+                        if type(state)=='table' then
+                            category.attachDelay.roots[token]='settled'
+                            revealRoot(state)
+                            pending=true
+                        end
+                    end
+                end
+            end
+            if pending and self.phase=='running' then
+                reconcile()
             end
         end)
     end
@@ -609,6 +701,12 @@ function M.new(host, definitions, templates, state)
             local watched,result,detail=pcall(host.watch,{})
             if not watched or result==false then failed('watch',watched and detail or result) end
             candidates,activeRoots,searchSignature = {},{},nil
+            for _,category in pairs(categories) do
+                if category.attachDelay then
+                    for _,state in pairs(category.attachDelay.roots) do revealRoot(state) end
+                    category.attachDelay.roots={}
+                end
+            end
         end)
         if #failures>0 then return false,table.concat(failures,'; ') end
         return true

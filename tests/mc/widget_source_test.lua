@@ -9,7 +9,7 @@ local nextSerial,serialByAddress=0,{}
 local function obj(address,full,classes,outer)
     nextSerial=nextSerial+1
     serialByAddress[address]=nextSerial
-    local o={address=address,full=full,classes=classes or {},outer=outer,alive=true}
+    local o={address=address,full=full,classes=classes or {},outer=outer,alive=true,serial=nextSerial}
     function o:GetAddress() return self.address end
     function o:IsValid() return self.alive end
     function o:GetFullName() return self.full end
@@ -39,13 +39,13 @@ child.class=slotClass
 local api={}
 local sourceErrors={}
 api.MCTOnError=function(error) sourceErrors[#sourceErrors+1]=error end
-api.UE4SSLuaEventBridge={API_VERSION=5,
-    GetCapabilities=function() return {api=5,object_lifetimes=true} end,
-    lifetimes={captureObject=function(value)
-        local serial=serialByAddress[value.address]
-        return serial and tostring(serial) or nil,'native lifetime unavailable'
-    end,
-        valid=function() return true end}}
+-- The native lifetime: a live object whose address was not reused.
+local Lifetimes=dofile('tests/support/lifetimes.lua')
+local lifetimes=Lifetimes.service(function(value)
+    return type(value)=='table' and value.alive==true and value.serial~=nil
+        and serialByAddress[value.address]==value.serial
+end)
+api.UE4SSLuaEventBridge=Lifetimes.bridge(lifetimes)
 function api.StaticFindObject(path)
     if path~='/Script/UMG.Default__WidgetLayoutLibrary' then return nil end
     return {IsValid=function() return true end,
@@ -79,50 +79,33 @@ do
     unavailable.UE4SSLuaEventBridge=nil
     assert(not pcall(Source.new,{category},unavailable),
         'identity source must fail closed without serial-backed lifetimes')
-    unavailable.UE4SSLuaEventBridge={API_VERSION=5,
-        GetCapabilities=function()return {api=5,object_lifetimes=false}end,
-        lifetimes={captureObject=function() return nil,'object lifetime service is unavailable' end}}
+    -- A failed ABI probe leaves no way to keep objects: nothing is kept or
+    -- attached, and the bridge's reason is reported once. No fallback.
+    local function down() return nil,'object lifetime service is unavailable' end
+    unavailable.UE4SSLuaEventBridge={API_VERSION=6,
+        GetCapabilities=function()
+            return {api=6,object_lifetimes=false,weak_handles=false,
+                object_lifetimes_reason='probe verified 0 classes'}
+        end,
+        lifetimes={captureObject=down,weak=down}}
     unavailable.RegisterHook=function() return 1,2 end
     unavailable.UnregisterHook=function() end
     unavailable.NotifyOnNewObject=function() end
     local warnings={}
     unavailable.MCTOnError=function(error) warnings[#warnings+1]=error end
     local degraded=Source.new({},unavailable)
-    local before=degraded.identity(root)
-    assert(type(before)=='string' and before:find(tostring(root.address),1,true),
-        'failed native ABI probe must use the address identity')
-    assert(degraded.identity(root)==before and #warnings==1 and warnings[1].stage=='identity')
-    local fallbackHost=References.new(degraded)
-    local reference=assert(fallbackHost.capture(root))
-    assert(fallbackHost.valid(reference), 'fallback identity must permit attachment references')
-    root.alive=false
-    assert(not fallbackHost.valid(reference), 'a destroyed object must expire its fallback reference')
-    root.alive=true
+    assert(degraded.identity(root)==nil, 'a failed native ABI probe has no identity fallback')
+    local closedHost=References.new(degraded)
+    assert(closedHost.capture(root)==nil, 'a failed native ABI probe keeps no reference')
+    degraded.watch({category.objects.switcher})
+    local findsBefore=finds
+    assert(#degraded.find(category.objects.switcher)==1)
+    finds=findsBefore
+    assert(#warnings==1 and warnings[1].stage=='identity'
+        and warnings[1].message:find('probe verified 0 classes',1,true),
+        'the bridge reason is reported once')
     degraded.stop()
-end
--- The address-identity fallback works, so its notice is TRACE: silent at the default WARN.
-do
-    local Log=require('mc_log')
-    for _,case in ipairs({{level='trace',lines=1},{level=nil,lines=0}}) do
-        local quiet={}
-        for key,value in pairs(api) do quiet[key]=value end
-        quiet.MCTOnError=nil
-        quiet.RegisterHook=function() return 1,2 end
-        quiet.UnregisterHook=function() end
-        quiet.NotifyOnNewObject=function() end
-        quiet.UE4SSLuaEventBridge={API_VERSION=5,
-            GetCapabilities=function() return {api=5,object_lifetimes=false} end,
-            lifetimes={captureObject=function() return nil,'object lifetime service is unavailable' end}}
-        local lines={}
-        local log=Log.new({name='ModCoreTemplates',level=case.level,write=function(line) lines[#lines+1]=line end})
-        local fallback=Source.new({},quiet,log)
-        assert(fallback.identity(root))
-        assert(#lines==case.lines,'identity fallback notice at level '..tostring(case.level))
-        if case.lines>0 then
-            assert(lines[1]:find('[ModCoreTemplates] TRACE identity: native object lifetimes unavailable',1,true))
-        end
-        fallback.stop()
-    end
+    require('mc.objects').useLifetimes(lifetimes)
 end
 local function acceptsVersion(capabilityVersion, facadeVersion)
     local candidate={}
@@ -134,14 +117,21 @@ local function acceptsVersion(capabilityVersion, facadeVersion)
         GetCapabilities=function()
             return {api=capabilityVersion,object_lifetimes=true}
         end,
-        lifetimes=api.UE4SSLuaEventBridge.lifetimes}
+        lifetimes=lifetimes}
     local ok,createdSource=pcall(Source.new,{},candidate)
     if ok then createdSource.stop() end
     return ok
 end
-assert(acceptsVersion(5,nil) and acceptsVersion(nil,5),
-    'either API 5 version field must allow the probed lifetime service')
-assert(not acceptsVersion(4,4), 'older API versions must be rejected')
+assert(acceptsVersion(6,nil) and acceptsVersion(nil,6),
+    'either API 6 version field must allow weak handles')
+assert(not acceptsVersion(5,5), 'API 5 has no weak handles and must be rejected')
+do
+    local candidate={}
+    for key,value in pairs(api) do candidate[key]=value end
+    candidate.UE4SSLuaEventBridge={API_VERSION=6,GetCapabilities=function() return {api=6} end,
+        lifetimes={captureObject=lifetimes.captureObject}}
+    assert(not pcall(Source.new,{},candidate), 'a bridge without weak() must be rejected')
+end
 assert(created[classPath] and created['/Script/UMG.SlotWidget'])
 assert(not created['/Script/UMG.WidgetSwitcher'],
     'a WidgetTree child is found through its owner, not a class-wide notification')
@@ -254,8 +244,9 @@ do
     local currentSerial=serialByAddress[replacement.address]
     serialByAddress[replacement.address]=nil
     assert(not host.valid(newer),'native lifetime failure must invalidate the reference')
-    assert(#sourceErrors==1 and sourceErrors[1].stage=='identity')
     serialByAddress[replacement.address]=currentSerial
+    assert(not host.valid(newer),'a lost lifetime must not come back')
+    assert(#sourceErrors==0, 'expired references are not identity failures')
 end
 do
     -- Game state scopes the widget hooks: none while idle, AddChild only while

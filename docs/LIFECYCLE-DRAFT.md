@@ -8,7 +8,10 @@ for existing links. Provider authors should start with the
 
 1. Load category definitions and construct the object source.
 2. Accept explicit provider paths through `MC.registerTemplate('name')`.
-3. At the one-shot game-thread startup barrier, close registration and load files.
+3. At the one-shot startup barrier, close registration and load files. The barrier
+   is UE4SSLuaEventBridge's `onLoopStart`, which fires after UE4SS has started every
+   Lua mod; MCT then continues on the game thread. A bare `ExecuteInGameThread` is not
+   a barrier: the game thread already ticks while mods are starting.
 4. Validate metadata, templates and menus; restore settings and subscribe to Apply.
 5. Subscribe to lifecycle notifications before the first object snapshot.
 6. Attach selected templates when their objects are ready.
@@ -74,7 +77,9 @@ Managed `update` and `detach` callbacks are unnecessary.
 `params` contains copied `settings`, `screen` and `state`. During managed attach,
 `params.onCleanup(fn)` registers attachment cleanup. It runs before restoration
 on rebuild/detach/failure and when invalid objects are forgotten. Cleanup must
-not assume that the world or widgets still exist.
+not assume that the world or widgets still exist, and must not call a widget
+kept from the attach call: hold it with `MC.hold(widget)` and read it with
+`MC.get(handle)`, which returns nil once the widget was collected.
 
 Settings precedence is category values → template defaults → committed template
 overrides. Each key replaces the whole value; nested tables are copied rather
@@ -124,9 +129,13 @@ saved snapshot. `runtime.errors` and `runtime:attachments(id)` expose diagnostic
 
 ## Helpers and events
 
-`local MC=require('mc')` exposes `valid`, `same`, `parent` and `call` helpers.
+`local MC=require('mc')` exposes `valid`, `same`, `parent`, `call`, `hold`, `get`
+and `release` helpers. The first four take objects from the current call.
 `same` compares valid full names, not lifetime tokens. `parent` returns a UMG
 panel parent. `MC.call` returns the first method result or nil on failure.
+`MC.hold(object)` returns a UE4SSLuaEventBridge weak handle, or nil and a reason;
+`MC.get(handle)` returns the live object or nil once it died, without reading a
+dead object; `MC.release(handle)` drops it early.
 `MC('widget')` and `MC.load('widget')` load the widget helper.
 
 `MC.template('wheels', defaults)` loads sibling `mc_wheels.lua`, with template

@@ -68,16 +68,17 @@ function M.prepareLayout(widget)
     widget:ForceLayoutPrepass()
 end
 
+-- Slots are kept as weak handles: a slot can die before its widget.
 function M.rememberSlot(widget,slot)
-    if Objects.valid(widget) and Objects.valid(slot) then currentSlots[widget]=slot end
+    if Objects.valid(widget) and Objects.valid(slot) then currentSlots[widget]=Objects.hold(slot) end
     return slot
 end
 
 function M.slot(widget)
-    local slot=currentSlots[widget]
-    if Objects.valid(slot) then return slot end
+    local slot=Objects.get(currentSlots[widget])
+    if slot then return slot end
     slot=M.property(widget,'Slot')
-    if Objects.valid(slot) then currentSlots[widget]=slot; return slot end
+    if Objects.valid(slot) then currentSlots[widget]=Objects.hold(slot); return slot end
 end
 
 function M.box(widget)

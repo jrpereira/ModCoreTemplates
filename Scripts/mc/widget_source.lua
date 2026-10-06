@@ -2,6 +2,7 @@
 -- loading; activate with the categories that have templates before the
 -- runtime's first snapshot.
 local ObjectSelector = require('mc.object_selector')
+local Objects = require('mc.objects')
 local Widget = require('mc.widget')
 local Log = require('mc_log')
 local M = {}
@@ -40,15 +41,24 @@ function M.new(categories, api, log)
         ok,caps=pcall(bridge.GetCapabilities)
     end
 
-    -- Lifetime capture may be unavailable after a failed ABI probe. The
-    -- original map-scoped address/name identity remains usable in that case.
+    -- Objects are kept only as weak handles. If the bridge's ABI probe fails,
+    -- holding fails and nothing is kept or attached: there is no fallback.
     assert(ok
         and type(caps)=='table'
-        and (tonumber(caps.api or 0)>=5
-            or tonumber(bridge.API_VERSION or 0)>=5)
+        and (tonumber(caps.api or 0)>=6
+            or tonumber(bridge.API_VERSION or 0)>=6)
         and type(lifetimes)=='table'
-        and type(lifetimes.captureObject)=='function',
-        'MCT requires UE4SSLuaEventBridge API 5 object lifetimes')
+        and type(lifetimes.captureObject)=='function'
+        and type(lifetimes.weak)=='function',
+        'MCT requires UE4SSLuaEventBridge API 6 weak handles')
+    Objects.useLifetimes(lifetimes)
+    -- Adds the bridge's reason when its lifetime service is down.
+    local function lifetimeFailure(why)
+        local current=select(2,pcall(bridge.GetCapabilities))
+        local reason=type(current)=='table' and current.object_lifetimes~=true
+            and current.object_lifetimes_reason
+        return tostring(why)..(reason and ' (object lifetimes unavailable: '..tostring(reason)..')' or '')
+    end
     local source = {}
     local selectors, notifyClasses, ownerClasses, hasWithin, hasWidgets = {}, {}, {}, false, false
     local function analyze(used)
@@ -75,7 +85,9 @@ function M.new(categories, api, log)
             end
         end
     end
-    local known = setmetatable({}, {__mode='k'})
+    -- Live roots by lifetime token, as weak handles: an unrelated hook during a
+    -- save load visits them after the old world was collected.
+    local known = {}
     local knownAddresses = {}
     -- Parents of known roots and their owners; clearing one may remove a root.
     local panelAddresses = {}
@@ -84,7 +96,6 @@ function M.new(categories, api, log)
     local sink, getEpoch, subscribed, active = nil, nil, false, true
     local mutationDepth, wakePending = 0, false
     local identityFailureReported=false
-    local lifetimeMode=nil
     local hooks, hookSpecs = {}, {}
     local refreshHooks = function() end
     -- level (optional) overrides the stage's level for one report.
@@ -97,10 +108,24 @@ function M.new(categories, api, log)
     local function onGameThread()
         return api.IsInGameThread() == true
     end
+    local function forgetKnown()
+        for _,handle in pairs(known) do Objects.release(handle) end
+        known={}
+    end
+    -- The live known roots; dead ones are dropped without being read.
+    local function knownObjects()
+        local result={}
+        for key,handle in pairs(known) do
+            local object=Objects.get(handle)
+            if object then result[#result+1]=object
+            else known[key]=nil; Objects.release(handle) end
+        end
+        return result
+    end
     function source.watch(roots)
         assert(onGameThread(), 'selector activation requires the game thread')
         selectors=roots
-        known=setmetatable({}, {__mode='k'})
+        forgetKnown()
         knownAddresses={}
         panelAddresses={}
         pendingRemoval={}
@@ -112,23 +137,13 @@ function M.new(categories, api, log)
         if type(address) ~= 'number' then return nil end
         local name = safe(object,'GetFullName')
         if type(name) ~= 'string' then return nil end
-        if lifetimeMode=='legacy' then
-            return tostring(address) .. ':' .. name
-        end
         local captured,lifetime,why=pcall(lifetimes.captureObject,object)
         if captured and type(lifetime)=='string' then
-            lifetimeMode='native'
             return lifetime .. ':' .. tostring(address) .. ':' .. name
-        end
-        if lifetimeMode==nil and captured and why=='object lifetime service is unavailable' then
-            lifetimeMode='legacy'
-            -- Address identity works in this case; the notice is for tracing only.
-            errorReport('identity', 'native object lifetimes unavailable; using address identity', 'trace')
-            return tostring(address) .. ':' .. name
         end
         if not identityFailureReported then
             identityFailureReported=true
-            errorReport('identity',captured and (why or 'native lifetime unavailable') or lifetime)
+            errorReport('identity',lifetimeFailure(captured and (why or 'native lifetime unavailable') or lifetime))
         end
         return nil
     end
@@ -138,7 +153,16 @@ function M.new(categories, api, log)
         return ObjectSelector.valid(value) and value or nil
     end
     local function remember(object)
-        known[object] = true
+        local handle,why=Objects.hold(object)
+        if not handle then
+            if not identityFailureReported then
+                identityFailureReported=true
+                errorReport('identity',lifetimeFailure(why))
+            end
+            return
+        end
+        local key=(handle:identity()) or handle
+        if known[key] then Objects.release(handle) else known[key]=handle end
         for _, value in ipairs({object, ObjectSelector.owner(object)}) do
             local address = safe(value, 'GetAddress')
             if type(address) == 'number' then
@@ -263,7 +287,7 @@ function M.new(categories, api, log)
         emit('changed',object)
     end
     local function wakeKnownNow()
-        for object in pairs(known) do
+        for _,object in ipairs(knownObjects()) do
             if source.valid(object) then
                 -- A lifecycle event reconciles every cached candidate. One
                 -- representative object is enough to wake the runtime.
@@ -316,10 +340,7 @@ function M.new(categories, api, log)
         return false
     end
     local function anyKnownValid()
-        for object in pairs(known) do
-            if ObjectSelector.valid(object) then return true end
-        end
-        return false
+        return #knownObjects()>0
     end
     -- An unrelated call while every known root is gone means the game left
     -- the world (map change or main menu): drop the widget hooks.
@@ -335,7 +356,7 @@ function M.new(categories, api, log)
         local armed, waiting = false, false
         -- Rebuilt from live roots so addresses from an earlier map cannot match.
         panelAddresses, knownAddresses = {}, {}
-        for object in pairs(known) do
+        for _,object in ipairs(knownObjects()) do
             if source.valid(object) then
                 armed = true
                 if not waiting and not source.ready(object) then waiting = true end
@@ -508,6 +529,7 @@ function M.new(categories, api, log)
         active, sink, getEpoch, subscribed = false,nil,nil,false
         mutationDepth, wakePending = 0, false
         removeHooks()
+        forgetKnown()
     end
     if categories then source.activate(categories) end
     return source

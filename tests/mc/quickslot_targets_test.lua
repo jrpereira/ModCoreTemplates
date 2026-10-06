@@ -1,4 +1,5 @@
 package.path='./Scripts/?.lua;'..package.path
+dofile('tests/support/lifetimes.lua').install()
 local Selectors=require('mc.selectors')
 local Runtime=require('mc.runtime')
 local category=dofile('Scripts/categories/player_quickslots.lua')

@@ -1,4 +1,5 @@
 package.path='./Scripts/?.lua;'..package.path
+dofile('tests/support/lifetimes.lua').install()
 local Selectors=require('mc.selectors')
 local State=require('mc.target_state')
 local Manager=require('mc.managed_template')

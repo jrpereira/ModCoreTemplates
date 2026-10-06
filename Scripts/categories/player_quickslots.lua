@@ -14,6 +14,10 @@
 local category = {
     name = "player.quickslots",
     single = true,
+    -- A loading save creates the HUD with empty wheels and fills them a moment
+    -- later, while the loading screen still covers it. Attach once the HUD has
+    -- been quiet for two seconds.
+    attachDelay = 2000,
     -- The Template picker and the selected template's settings appear in
     -- ModCore Controls' Visuals section instead of an MCT or module page.
     slot = { provider = 'controls', slot = 'visuals' },

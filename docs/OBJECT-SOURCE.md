@@ -64,13 +64,18 @@ Non-root widgets require a valid panel parent even when their owner is ready.
 MCT registers no LoadMap hooks. On a map change the old world's objects become
 invalid, and their attachments are forgotten at the next lifecycle event; the
 new HUD is found through its creation notification and attaches once shown.
-Lua references check `IsValid` and object identity before callbacks. Identity
-includes the UE4SSLuaEventBridge object lifetime token, which distinguishes a
-reused address and full name through Unreal's object-item serial. The bridge
-must expose API 5 and `lifetimes.captureObject`. If capture reports `object lifetime service is unavailable`, the source falls
-back to address/full-name identity. This cannot detect reuse of the same address
-and name. Other capture failures leave that object unattached and are reported
-once. A live
+UE4SS `IsValid` reads the object, so calling it on a wrapper kept across garbage
+collection, as when a save loads from a running game, reads freed memory and
+crashes beyond the reach of `pcall`. MCT therefore keeps every object that
+outlives one call, including known roots, Lua references, created and moved
+widgets, saved parents and cached slots, as a UE4SSLuaEventBridge weak handle,
+and reads it back with `get()`, which checks the native lifetime first. Only a
+`get()` result or a fresh hook argument or lookup result is ever called.
+Identity includes the bridge's lifetime token, which distinguishes a reused
+address and full name through Unreal's object-item serial. The bridge must
+expose API 6 with `lifetimes.weak` and `lifetimes.captureObject`. If the bridge's
+lifetime service is unavailable, nothing is kept or attached and the bridge's
+reason is reported once; there is no address fallback. A live
 hook survey found `UserWidget:Construct`, `Destruct` and `OnInitialized`
 unavailable to `RegisterHook`. Viewport, parenting and removal hooks registered
 successfully, but direct engine changes can bypass those reflected hooks.

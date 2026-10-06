@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- Fix a crash when loading a save from a running game. MCT kept UE4SS object
+  wrappers across garbage collection and later called them; UE4SS `IsValid`
+  reads the freed object. Every object MCT keeps past one call, including known
+  HUD roots, references, created and moved widgets, saved parents and cached
+  slots, is now a UE4SSLuaEventBridge weak handle whose native lifetime is
+  checked first.
+- Require UE4SSLuaEventBridge 1.0.9 (API 6, weak handles). The address-identity
+  fallback is gone: when the bridge's lifetime service is unavailable, MCT keeps
+  nothing, attaches nothing and logs the bridge's reason once.
+- `MC.hold`, `MC.get` and `MC.release` let templates keep a widget past a
+  callback, for example in `onCleanup`, which also runs after world teardown.
+- Wait for a new HUD to settle before attaching. A loading save creates the HUD with
+  empty quickslot wheels and fills them a moment later; MCT could attach in between,
+  so a quickslot bar laid out empty slots and kept the native layout. A category can
+  now declare `attachDelay`: a newly found root stays hidden and attaches once no
+  lifecycle event has reached it for that long (2 seconds for quickslots), or as
+  soon as the loading screen finishes fading out.
+- Fix providers failing at launch with "MCT template registration is not open".
+  UE4SS starts Lua mods while the game thread is already ticking, so the first
+  game-thread callback could close registration before later mods loaded. The
+  startup barrier now waits for the bridge's loop start, which fires after every
+  Lua mod has started, and then continues on the game thread.
+
 ## v1.0.1
 
 - Template fields may declare `conditions`: `visible = {field, match}` shows a row

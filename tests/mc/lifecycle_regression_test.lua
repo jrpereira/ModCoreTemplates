@@ -1,6 +1,7 @@
 -- Regression coverage for managed cleanup and target replacement.
 local root=arg[1] or '..'
 package.path=root..'/ModCoreTemplates/Scripts/?.lua;'..package.path
+dofile(root..'/ModCoreTemplates/tests/support/lifetimes.lua').install()
 local Runtime=require('mc.runtime')
 local State=require('mc.target_state')
 local function object(id)

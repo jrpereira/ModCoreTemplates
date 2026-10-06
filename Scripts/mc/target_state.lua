@@ -29,7 +29,13 @@ local function read(object,name)
         return {enabled=Widget.property(object,'bOverride_'..field)==true,value=Widget.number(object,field)}
     end
     if name=='activeIndex' then return object:GetActiveWidgetIndex() end
-    if name=='parent' then return Objects.parent(object) end
+    -- Restored later, possibly after the parent died: kept as a weak handle.
+    if name=='parent' then
+        local parent=Objects.parent(object)
+        if parent==nil then return nil end
+        local handle,why=Objects.hold(parent)
+        return assert(handle,'target parent cannot be kept: '..tostring(why))
+    end
     if name=='order' then
         local parent=assert(Objects.parent(object), 'target has no panel parent')
         for index=0,parent:GetChildrenCount()-1 do
@@ -107,7 +113,7 @@ local function restoreParentRecords(records)
     local groups={}
     local function same(a,b) return Objects.same(a,b) end
     for _,record in ipairs(records) do
-        assert(Objects.valid(record.parent), 'saved parent unavailable')
+        record.parent=assert(Objects.get(record.parent), 'saved parent unavailable')
         local key=assert(Objects.call(record.parent,'GetFullName'), 'saved parent has no identity')
         local group=groups[key]
         if not group then group={parent=record.parent,records={}}; groups[key]=group end

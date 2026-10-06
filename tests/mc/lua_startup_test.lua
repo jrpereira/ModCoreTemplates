@@ -1,8 +1,13 @@
 package.path = './Scripts/?.lua;' .. package.path
 local Startup = require('mc.lua_startup')
 local References = require('mc.lua_references')
+local Lifetimes = dofile('tests/support/lifetimes.lua')
+Lifetimes.install()
 
-local object = {valid=true, id='1:100:Widget A'}
+local function widget(id)
+    return {valid=true, id=id, IsValid=function(self) return self.valid end}
+end
+local object = widget('1:100:Widget A')
 local events, epoch
 local source = {
     valid=function(value) return value.valid end,
@@ -32,8 +37,13 @@ local seen
 host.subscribe(function(event) seen=event end,function() return 1 end)
 events({kind='changed',object=object,epoch=epoch()})
 assert(seen.object==ref and seen.kind=='changed')
-object.id='2:100:Widget A'
+-- A reference to a dead object stays empty, even if the object reports
+-- itself valid again; its successor gets a new reference.
+object.valid=false
 assert(not host.valid(ref) and host.unwrap(ref)==nil)
+object.valid=true
+assert(not host.valid(ref), 'a dead handle must not come back')
+object=widget('2:100:Widget A')
 local newer=assert(host.capture(object))
 assert(newer~=ref and host.valid(newer))
 
@@ -50,9 +60,14 @@ local opts={categoryFiles={'category'},
         watch=function() end,
         screen=function() return source.screen() end,
         subscribe=function() return function() end end,onError=function(error) error(error.message) end}}
-local boot=Startup.start(opts,{ExecuteInGameThread=function(callback) jobs[#jobs+1]=callback end})
-assert(boot.phase=='registering' and #jobs==1)
+local bridge=Lifetimes.bridge()
+local boot=Startup.start(opts,{ExecuteInGameThread=function(callback) jobs[#jobs+1]=callback end,
+    UE4SSLuaEventBridge=bridge})
+-- Game-thread ticks during mod startup must not close registration.
+assert(boot.phase=='registering' and #jobs==0, 'barrier waits for the bridge loop start')
 boot:registerTemplate('template')
+bridge.loopStart()
+assert(boot.phase=='registering' and #jobs==1, 'loop start hands off to the game thread')
 jobs[1]()
 assert(boot.phase=='running')
 boot:stop()
@@ -69,9 +84,7 @@ do
         UnregisterHook=function() end,
         IsInGameThread=function() return true end,
         ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
-        UE4SSLuaEventBridge={API_VERSION=5,
-            GetCapabilities=function() return {api=5,object_lifetimes=true} end,
-            lifetimes={captureObject=function() return '1' end}},
+        UE4SSLuaEventBridge=Lifetimes.bridge(),
     }
     local used={name='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
     local unused={name='player.radial',objects={root={source='lookup',class='/Game/HUD/Unused.Unused_C'}}}
@@ -80,6 +93,7 @@ do
         execute=function(path) return files[path] end},api)
     assert(#notified==0, 'no object notifications before templates are known')
     live:registerTemplate('template')
+    api.UE4SSLuaEventBridge.loopStart()
     table.remove(queued,1)()
     assert(live.phase=='running')
     assert(#notified==1 and notified[1]=='/Game/HUD/Used.Used_C',
@@ -87,6 +101,20 @@ do
     live:stop()
 end
 print('PASS: object source skips categories without templates')
+
+do
+    -- Stopping before loop start cancels the barrier.
+    local queued,bridge={},Lifetimes.bridge()
+    local early=Startup.start(opts,{ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
+        UE4SSLuaEventBridge=bridge})
+    early:stop()
+    bridge.loopStart()
+    for _,job in ipairs(queued) do job() end
+    assert(early.phase=='stopped', 'a stopped session does not start at loop start')
+    local ok=pcall(Startup.start,opts,{ExecuteInGameThread=function() end})
+    assert(not ok, 'startup without the bridge loop start fails')
+end
+print('PASS: startup barrier follows the bridge loop start')
 
 local original=package.loaded['mc.lua_startup']
 local originalRegistration=package.loaded['mc.registration']

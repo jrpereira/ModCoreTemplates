@@ -1,4 +1,7 @@
--- Lua-only references. Identity is scoped to the current map generation.
+-- Lua-only references. Each keeps its object as a weak handle, so a
+-- reference that outlives its object is never read; identity also carries
+-- the native lifetime token.
+local Objects = require('mc.objects')
 local M = {}
 function M.new(source)
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
@@ -6,12 +9,17 @@ function M.new(source)
     end
     local host = {onError=source.onError}
     local records = setmetatable({}, {__mode='k'})
+    -- Keyed by wrappers from the current call; a hit is checked through its handle.
     local wrappers = setmetatable({}, {__mode='k'})
     local byIdentity = setmetatable({}, {__mode='v'})
-    function host.valid(reference)
+    local holdFailureReported = false
+    local function live(reference)
         local record = records[reference]
-        return record ~= nil and source.valid(record.object) == true
-            and source.identity(record.object) == record.id
+        local object = record and Objects.get(record.handle)
+        if object ~= nil and source.valid(object) == true then return object end
+    end
+    function host.valid(reference)
+        return live(reference) ~= nil
     end
     function host.capture(object)
         if object == nil then return nil end
@@ -27,8 +35,17 @@ function M.new(source)
         local reference = byIdentity[id]
         if reference and not host.valid(reference) then reference = nil end
         if not reference then
+            local handle, why = Objects.hold(object)
+            if handle == nil then
+                -- Fail closed: an object that cannot be held is never kept.
+                if not holdFailureReported then
+                    holdFailureReported = true
+                    pcall(source.onError, {stage='identity', message=why})
+                end
+                return nil
+            end
             reference = {}
-            records[reference] = {object=object, id=id}
+            records[reference] = {handle=handle, id=id}
             byIdentity[id] = reference
         end
         wrappers[object] = reference
@@ -38,7 +55,7 @@ function M.new(source)
         return assert(records[reference], 'unknown Lua reference').id
     end
     function host.unwrap(reference)
-        if host.valid(reference) then return records[reference].object end
+        return live(reference)
     end
     function host.ready(reference)
         local object = host.unwrap(reference)

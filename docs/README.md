@@ -10,9 +10,10 @@ available objects; a **template** selects objects and changes their appearance o
   change; MCT resolves their dependencies and supplies the requested objects.
 - **Avoid repeated discovery scans:** MCT starts with a snapshot, then uses
   object-creation and readiness notifications to reevaluate cached candidates.
-- **Let MCT manage object lifecycle:** it waits for ready targets, checks validity
-  and lifetime identity before callbacks, and attaches again as targets change.
-  Use supplied objects during callbacks rather than retaining widget references.
+- **Let MCT manage object lifecycle:** it waits for ready targets, keeps objects
+  only as UE4SSLuaEventBridge weak handles, checks their native lifetime before
+  callbacks, and attaches again as targets change. Use supplied objects during
+  callbacks; keep one past a callback only as an `Objects.hold` handle.
 - **Let managed templates track changes:** MCT captures declared properties and
   restores them on rebuild or valid detachment. Selecting None restores the
   original state; invalid objects are forgotten without accessing dead widgets.
@@ -38,8 +39,8 @@ Start with the [developer guide](DEVELOPERS.md) and the runnable
 
 ## Requirements and installation
 
-Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge API 5 or newer with
-`lifetimes.captureObject`, and ModCoreSettings with Dawnwalker Mod Menu (DMM).
+Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.0.9 or newer (API 6,
+weak handles), and ModCoreSettings with Dawnwalker Mod Menu (DMM).
 Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
 `_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.
 MCC supplies the Controls page that hosts quickslot visual settings.
@@ -59,9 +60,10 @@ Keep `Scripts/cache/config.ini`, `Scripts/cache/identity-catalog.lua`, and provi
 `config.ini` files when updating. Generated menu files can be rebuilt; edit Lua
 menu declarations, not generated manifests.
 
-If the bridge reports its native lifetime service unavailable, MCT falls back
-to address/full-name identity. That fallback cannot distinguish an object recreated
-with the same address and name. See [Object source](OBJECT-SOURCE.md) for limits.
+If the bridge reports its native lifetime service unavailable, MCT keeps no
+objects and attaches no templates; it logs the bridge's reason once. There is no
+fallback: a kept wrapper would read freed memory after a save loads. See
+[Object source](OBJECT-SOURCE.md).
 
 ## Logging
 

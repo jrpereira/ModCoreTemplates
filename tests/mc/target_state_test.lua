@@ -1,4 +1,5 @@
 package.path='./Scripts/?.lua;'..package.path
+dofile('tests/support/lifetimes.lua').install()
 local State=require('mc.target_state')
 local Widget=require('mc.widget')
 assert(Widget.property({bAutoSize=false},'bAutoSize')==false)
@@ -75,7 +76,9 @@ local tree=require('mc.template_targets').compile(graph,declaration)
 local nested=require('mc.template_targets').arrange(tree,{first=first,second=second})
 assert(nested.buttons.row[1]==first and nested.buttons.row[2]==second)
 local nestedSaved=State.capture(nested,State.specs(graph,declaration))
-assert(nestedSaved.buttons.row[1].parent==switcher
+-- Saved parents are weak handles, read back only while the parent lives.
+local Objects=require('mc.objects')
+assert(Objects.get(nestedSaved.buttons.row[1].parent)==switcher
     and nestedSaved.buttons.row[2].order==1)
 switcher:RemoveChild(second);elsewhere:AddChild(second)
 second:SetRenderTranslation({X=30,Y=40})
