@@ -71,8 +71,6 @@ end
 function api.NotifyOnNewObject(class,callback) created[class]=callback end
 function api.RegisterHook(path,pre,post) hooks[path]={pre=pre,post=post}; return 1,2 end
 function api.UnregisterHook(path) hooks[path]=nil end
-function api.RegisterLoadMapPreHook(callback) api.mapPre=callback end
-function api.RegisterLoadMapPostHook(callback) api.mapPost=callback end
 local category={name='quickslots',objects={switcher={source='lookup',object=objectPath},slots={source='lookup',class='/Script/UMG.SlotWidget',within='switcher'}}}
 local source=Source.new({category},api)
 do
@@ -87,22 +85,19 @@ do
     unavailable.RegisterHook=function() return 1,2 end
     unavailable.UnregisterHook=function() end
     unavailable.NotifyOnNewObject=function() end
-    unavailable.RegisterLoadMapPreHook=function(callback) unavailable.mapPre=callback end
-    unavailable.RegisterLoadMapPostHook=function(callback) unavailable.mapPost=callback end
     local warnings={}
     unavailable.MCTOnError=function(error) warnings[#warnings+1]=error end
     local degraded=Source.new({},unavailable)
     local before=degraded.identity(root)
     assert(type(before)=='string' and before:find(tostring(root.address),1,true),
-        'failed native ABI probe must use the map-scoped address identity')
+        'failed native ABI probe must use the address identity')
     assert(degraded.identity(root)==before and #warnings==1 and warnings[1].stage=='identity')
     local fallbackHost=References.new(degraded)
     local reference=assert(fallbackHost.capture(root))
     assert(fallbackHost.valid(reference), 'fallback identity must permit attachment references')
-    unavailable.mapPre()
-    unavailable.mapPost(nil,{get=function() return world end})
-    assert(degraded.identity(root)~=before, 'map transition must invalidate fallback identity')
-    assert(not fallbackHost.valid(reference), 'old fallback reference must expire after map change')
+    root.alive=false
+    assert(not fallbackHost.valid(reference), 'a destroyed object must expire its fallback reference')
+    root.alive=true
     degraded.stop()
 end
 local function acceptsVersion(capabilityVersion, facadeVersion)
@@ -111,8 +106,6 @@ local function acceptsVersion(capabilityVersion, facadeVersion)
     candidate.RegisterHook=function() return 1,2 end
     candidate.UnregisterHook=function() end
     candidate.NotifyOnNewObject=function() end
-    candidate.RegisterLoadMapPreHook=function() end
-    candidate.RegisterLoadMapPostHook=function() end
     candidate.UE4SSLuaEventBridge={API_VERSION=facadeVersion,
         GetCapabilities=function()
             return {api=capabilityVersion,object_lifetimes=true}
@@ -187,7 +180,8 @@ assert(#calls==3 and calls[3][1]=='detach' and calls[3][2]==child)
 hooks['/Script/UMG.Widget:RemoveFromParent'].pre(wrap(owner))
 assert(#calls==4 and calls[4][1]=='detach' and calls[4][2]==root)
 assert(finds==2) -- transitions rechecked cached objects; no recurring enumeration
-api.mapPre()
+-- A map change destroys the old HUD; the new one is announced by object creation.
+owner.alive,root.alive,child.alive=false,false,false
 local nextWorld=obj(21,'World /Game/NewMap.NewMap')
 local nextOwner=obj(30,'WBP_GameHUD_C /Engine/Transient.GameEngine_0.WBP_GameHUD_C_2',
     {['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
@@ -196,10 +190,10 @@ local nextTree=obj(31,'WidgetTree /Engine/Transient.GameEngine_0.WBP_GameHUD_C_2
 local nextRoot=obj(32,'WidgetSwitcher /Engine/Transient.GameEngine_0.WBP_GameHUD_C_2.WidgetTree.QuickslotsSwitcher',
     {['/Script/UMG.Widget']=true,['/Script/UMG.WidgetSwitcher']=true},nextTree)
 nextRoot.class=widgetClass; nextOwner.WidgetTree=nextTree; nextTree.RootWidget=nextRoot
-api.mapPost(nil,wrap(nextWorld))
-assert(finds==4) -- one event-driven snapshot after the world transition
-assert(#calls==4)
-nextRoot.parent=root -- model a WidgetTree child joining a panel
+created[classPath](nextOwner)
+assert(finds>2) -- the creation event looks up the new HUD's switcher
+assert(#calls==4) -- not ready until the new HUD is shown
+nextRoot.parent=nextOwner -- model a WidgetTree child joining a live panel
 assert(source.ready(nextRoot)) -- readiness does not require IsInViewport on its owner
 nextRoot.parent=nil
 local nested=obj(33,'WBP_HUD_Quickslots_C /Engine/Transient.GameEngine_0.WBP_GameHUD_C_2.WidgetTree.WBP_HUD_Quickslots',
@@ -215,7 +209,7 @@ nested.parent=nextRoot
 hooks['/Script/UMG.PanelWidget:AddChild'].post(wrap(nextRoot),wrap(nested))
 assert(source.ready(nested)) -- reparenting clears the removal marker
 hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(owner))
-assert(#calls==4) -- old HUD remains valid but belongs to another world
+assert(#calls==4) -- the destroyed HUD is ignored
 hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(nextOwner))
 assert(#calls==5 and calls[5][2]==nextRoot)
 runtime:stop(); source.stop()

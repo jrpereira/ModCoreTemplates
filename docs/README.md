@@ -1,8 +1,8 @@
 # ModCore Templates
 
 The fresh lifecycle design and executable draft are documented in
-[Lifecycle draft](docs/LIFECYCLE-DRAFT.md), with copied menu generation and Apply
-routing described in [Template menus](docs/MENUS.md). The previous runtime remains available in Git history while this implementation
+[Lifecycle draft](LIFECYCLE-DRAFT.md), with copied menu generation and Apply
+routing described in [Template menus](MENUS.md). The previous runtime remains available in Git history while this implementation
 is being tested in Dawnwalker.
 
 Mod data lives in `Scripts/categories` and `Scripts/cache`; providers keep their
@@ -23,7 +23,7 @@ ModCoreTemplates manages selection and lifecycle; the template supplies behavior
 
 ## Template Best Practices
 
-See the complete [Wheel Nudge example](examples/wheel-nudge/README.md) for a
+See the complete [Wheel Nudge example](https://github.com/jrpereira/ModCoreTemplates/tree/main/examples/wheel-nudge) for a
 small working template and its `main.lua` loader.
 
 ### Categories and templates
@@ -64,7 +64,7 @@ Template menus are ordered arrays of groups. Fields may use a leading-dot relati
 ID (`Wheels + .X` becomes `WheelsX`), and `values` may be a numeric range, a
 numeric-to-label picker map, or a named domain such as `percent`. Templates declare
 variations separately; variation branches belong to whole groups. MCT supplies the
-standard Control Layout link automatically. See [Template menus](docs/MENUS.md).
+standard Control Layout link automatically. See [Template menus](MENUS.md).
 
 ### Attach and update
 
@@ -116,11 +116,11 @@ Use UE4SS with Lua 5.4, Dawnwalker Mod Menu, ModCoreSettings for the documented
 menu presentation, and UE4SSLuaEventBridge API 5 with `lifetimes.captureObject`.
 MCT does not require the `object_lifetimes` capability flag at startup. If the
 bridge reports that its native lifetime service is unavailable, MCT uses its
-earlier map-scoped address and full-name identity so templates can still attach.
-This fallback cannot distinguish an object recreated at the same address with
-the same name before a map change; native lifetime capture remains preferred.
+address and full-name identity so templates can still attach. This fallback
+cannot distinguish an object recreated at the same address with the same name;
+native lifetime capture remains preferred.
 Other capture failures leave the affected object unattached. Install under
-`Mods/_ModCore_3_Templates` and enable the mod.
+`Mods/3_ModCore_Templates` and enable the mod.
 Disable the old `_UE4SSTemplatingEngine` installation before starting the game.
 The Lua runtime starts on UE4SS's game thread and consumes only explicit provider
 registrations made before its startup barrier.
@@ -136,10 +136,19 @@ For managed templates, MCT restores declared properties on detach; unmanaged
 templates own their detach behavior. Invalid objects are forgotten without a
 detach callback.
 
+## Logging
+
+ModCore Templates writes to the UE4SS log at levels TRACE, DEBUG, INFO, WARN, ERROR
+and CRITICAL. Only WARN and above are written by default. Template and provider
+failures are ERROR, a failed startup is CRITICAL, and degraded behavior such as a
+config falling back to defaults is WARN. To see more, create
+`Mods/3_ModCore_Templates/log_level.txt` containing one level name, such as `info`,
+and restart the game.
+
 ## Documentation
 
-- [Lifecycle contract](docs/LIFECYCLE-DRAFT.md): current callbacks and registration.
-- [Build guide](docs/BUILD.md): source preparation and tests.
+- [Lifecycle contract](LIFECYCLE-DRAFT.md): current callbacks and registration.
+- [Build guide](BUILD.md): source preparation and tests.
 - [Changelog](CHANGELOG.md): changes by version.
 
-Live selector resolution and UE4SS lifecycle hooks: [Object source](docs/OBJECT-SOURCE.md).
+Live selector resolution and UE4SS lifecycle hooks: [Object source](OBJECT-SOURCE.md).

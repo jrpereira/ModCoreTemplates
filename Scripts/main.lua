@@ -1,4 +1,4 @@
--- _ModCore_3_Templates Lua entry point.
+-- 3_ModCore_Templates Lua entry point.
 local source = debug.getinfo(1, 'S').source:gsub('^@', '')
 local scripts = assert(source:match('^(.*)[/\\][^/\\]+$'), 'cannot locate MCT Scripts')
 local root = assert(scripts:match('^(.*)[/\\]Scripts$'), 'cannot locate MCT module')
@@ -24,7 +24,10 @@ local function listedCategories()
     end
     return files
 end
+-- The level comes from log_level.txt in the mod folder; WARN without it.
+local log = require('mc_log').new({name='ModCoreTemplates', path=root .. '/log_level.txt'})
 local bootstrap = require('mc.lua_startup').start({
+    log = log,
     menuRoot = root,
     categoryFiles = listedCategories(),
     settingsApi = require('mc.settings_api'),

@@ -2,6 +2,7 @@
 -- loading, before game-thread startup.
 local ObjectSelector = require('mc.object_selector')
 local Widget = require('mc.widget')
+local Log = require('mc_log')
 local M = {}
 local function safe(object, method, ...)
     return ObjectSelector.call(object, method, ...)
@@ -16,11 +17,19 @@ local function eventClass(selector)
     local owner = selector.object:match('^%S+%s+(.-):WidgetTree%.[%w_]+$')
     if owner then return owner, '/Script/UMG.' .. class end
 end
-function M.new(categories, api)
+-- Reported stages that degrade gracefully; every other failure is an ERROR, and a failed
+-- startup is CRITICAL.
+local levels={identity='warn',config='warn',['config migration']='warn',
+    ['object-event']='warn',startup='critical'}
+
+-- log: an mc_log logger (or a plain function); reports go to api.MCTOnError instead when set.
+function M.new(categories, api, log)
     api = api or _G
+    log = Log.wrap(log or Log.new({name='ModCoreTemplates'}))
+    -- Map changes need no LoadMap hooks: the old world's objects become invalid and
+    -- the new HUD is announced through object creation and viewport events.
     for _, name in ipairs({'FindAllOf','NotifyOnNewObject','RegisterHook','UnregisterHook',
-        'RegisterLoadMapPreHook','RegisterLoadMapPostHook','IsInGameThread',
-        'ExecuteInGameThread'}) do
+        'IsInGameThread','ExecuteInGameThread'}) do
         assert(type(api[name]) == 'function', 'UE4SS object source requires ' .. name)
     end
     local bridge=api.UE4SSLuaEventBridge
@@ -67,14 +76,13 @@ function M.new(categories, api)
     local built = {}
     local sink, getEpoch, subscribed, active = nil, nil, false, true
     local mutationDepth, wakePending = 0, false
-    local loading, currentWorld, generation = false, nil, 1
     local identityFailureReported=false
     local lifetimeMode=nil
     local hooks = {}
     local function errorReport(stage, message)
         local error = {stage=stage,message=tostring(message)}
         if type(api.MCTOnError)=='function' then pcall(api.MCTOnError,error)
-        else print('[MCT] ' .. error.stage .. ': ' .. error.message) end
+        else log[levels[stage] or 'error'](error.stage, ': ', error.message) end
     end
     source.onError = function(error) errorReport(error.stage or 'object', error.message) end
     local function onGameThread()
@@ -94,17 +102,17 @@ function M.new(categories, api)
         local name = safe(object,'GetFullName')
         if type(name) ~= 'string' then return nil end
         if lifetimeMode=='legacy' then
-            return tostring(generation) .. ':' .. tostring(address) .. ':' .. name
+            return tostring(address) .. ':' .. name
         end
         local captured,lifetime,why=pcall(lifetimes.captureObject,object)
         if captured and type(lifetime)=='string' then
             lifetimeMode='native'
-            return tostring(generation) .. ':' .. lifetime .. ':' .. tostring(address) .. ':' .. name
+            return lifetime .. ':' .. tostring(address) .. ':' .. name
         end
         if lifetimeMode==nil and captured and why=='object lifetime service is unavailable' then
             lifetimeMode='legacy'
-            errorReport('identity', 'native object lifetimes unavailable; using map-scoped address identity')
-            return tostring(generation) .. ':' .. tostring(address) .. ':' .. name
+            errorReport('identity', 'native object lifetimes unavailable; using address identity')
+            return tostring(address) .. ':' .. name
         end
         if not identityFailureReported then
             identityFailureReported=true
@@ -116,12 +124,6 @@ function M.new(categories, api)
     local function world(object)
         local value = safe(object,'GetWorld')
         return ObjectSelector.valid(value) and value or nil
-    end
-    local function sameWorld(object)
-        if not currentWorld then return true end
-        local value = world(object)
-        return value ~= nil and safe(value,'GetAddress') == currentWorld.address
-            and token(value) == currentWorld.token
     end
     local function remember(object)
         known[object] = true
@@ -139,10 +141,10 @@ function M.new(categories, api)
             and not full:find('REINST_',1,true)
     end
     function source.ready(object)
-        if loading or not source.valid(object) then return false end
+        if not source.valid(object) then return false end
         if isa(object,'/Script/UMG.Widget') then
             local owner = isa(object,'/Script/UMG.UserWidget') and object or ObjectSelector.owner(object)
-            if not source.valid(owner) or not sameWorld(owner) then return false end
+            if not source.valid(owner) then return false end
             local ownerToken = token(owner)
             if not ownerToken then return false end
             local parent = source.parent(object)
@@ -161,7 +163,7 @@ function M.new(categories, api)
             -- parent establish readiness for a WidgetTree child.
             return safe(owner,'IsInViewport') == true or parented
         end
-        return world(object) ~= nil and sameWorld(object)
+        return world(object) ~= nil
     end
     function source.matches(object, selector)
         return source.valid(object) and ObjectSelector.matches(object, selector)
@@ -374,28 +376,6 @@ function M.new(categories, api)
                 end)
             end
         end
-        api.RegisterLoadMapPreHook(function()
-            if not active then return end
-            loading, currentWorld, built = true, nil, {}
-            wakeKnown() -- detach while old references are still valid
-            known=setmetatable({}, {__mode='k'})
-            knownAddresses={}
-            pendingRemoval={}
-        end)
-        api.RegisterLoadMapPostHook(function(_, worldParam)
-            if not active then return end
-            generation = generation + 1
-            local current = unwrap(worldParam)
-            local id = token(current)
-            emit('world_invalidated')
-            if not id then
-                errorReport('world', 'map completed without a valid current world')
-                return
-            end
-            currentWorld = {address=safe(current,'GetAddress'),token=id}
-            loading = false
-            emit('world_ready')
-        end)
     end
     local ok, why = pcall(install)
     if not ok then

@@ -24,7 +24,7 @@ client (`mc/menu_contributions.lua`, vendored unchanged) and writes nothing at t
 root. Aggregate and category pages resolve `ConfigFile=Scripts/cache/config.ini` against
 the MCT root. A module-target page instead uses `ConfigFile=config.ini` against that
 template module's root, so
-Fangdango settings are stored in `_ModCore_X_Fangdango/config.ini`. On the first startup
+Fangdango settings are stored in `9_ModCore_Fangdango/config.ini`. On the first startup
 after this change, matching values in the former shared config are copied to the
 module config. Both locations contain user settings and must be preserved.
 
@@ -111,8 +111,41 @@ A numeric-keyed label map such as `{[85]='Small',[100]='Medium'}` produces a pic
 ordered by numeric value. A named internal domain such as `values='percent'`
 expands to the validated 0..100 integer range with a `%` suffix. Pickers use DMM's
 arrow selector by default; set `tab=true` for a picker with up to eight choices.
-MCT infers the field type; templates do not declare `type`,
-parallel `labels`, or field-level visibility metadata.
+MCT infers the field type; templates do not declare `type` or
+parallel `labels`.
+
+A field may declare `conditions` that depend on a picker in the same template:
+
+```lua
+{id='Bars', label='Bars', fields={
+    {id='.A', label='Orientation', values={[7]='Horizontal', [5]='Vertical'}, default=7},
+    {id='.KH', label='Key Indicators', values={[0]='Above', [1]='Below'}, default=0,
+        conditions={visible={field='.A', match={7}}}},
+    {id='.KV', label='Key Indicators', values={[0]='Left', [1]='Right'}, default=0,
+        conditions={visible={field='.A', match={5}},
+            label={field='.A', match={5}, text='Side Key Indicators'}}},
+}},
+```
+
+- `visible` shows the row only while `field` holds one of the `match` values.
+- `label` shows `text` instead of `label` while `field` holds one of the `match`
+  values.
+- `field` resolves like a field ID: `.A` in group `Bars` is `BarsA`. A variation
+  picker is named by its title-cased ID, such as `Style`. A standalone field must
+  use an absolute ID.
+- The source must be a picker declared earlier in the template. `match` lists
+  its values, not its labels.
+- A field in a variation branch must depend on a picker in the same branch. A
+  slot row carries one visibility condition, so it inherits the branch through
+  its source.
+- The template picker and variation conditions still apply. A hidden source
+  hides its dependents.
+- Conditions only affect presentation. Hidden fields keep their saved values and
+  are still delivered in `params.settings`.
+
+Conditions compile to `VisibleWhen`/`VisibleValues` and `mcLabelWhen`/`mcLabels`
+on the generated row. ModCoreSettings does not yet copy `mcLabelWhen`/`mcLabels`
+into slot pages, so `label` applies only to the template's own page.
 
 A field may also appear directly in the `menu` array when it needs no visual group.
 Its ID must be absolute. MCT places it in an unheaded generated section while

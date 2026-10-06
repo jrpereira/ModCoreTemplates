@@ -1,6 +1,6 @@
 package.path='./Scripts/?.lua;'..package.path
 local Registration=require('mc.registration')
-local repoRoot=assert(debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/registration_test%.lua$'))
+local repoRoot=debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/registration_test%.lua$') or assert(os.getenv('PWD'))
 local passed=0
 local function test(name,body)
     local ok,why=pcall(body)
@@ -22,7 +22,7 @@ test('shared client publishes provider template paths',function()
     client.registerTemplate('sample')
     _G.ModRef=previous
     assert(values['MCT.TemplateRegistration.v1.1.count']==1)
-    assert(values['MCT.TemplateRegistration.v1.1.item.1']:match('/tests/mc/mc_sample%.lua$'))
+    assert(values['MCT.TemplateRegistration.v1.1.item.1']:match('tests/mc/mc_sample%.lua$'))
 end)
 
 test('publisher collects once and closes registration',function()

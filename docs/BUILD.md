@@ -25,7 +25,7 @@ so settings keep their IDs. Edit template declarations rather than generated pag
 
 ## Offline tests
 
-The [test runner](../tools/run-tests.py) checks runtime Lua syntax and executes
+The test runner (`tools/run-tests.py`) checks runtime Lua syntax and executes
 the test suites from the repository root:
 
 ```sh

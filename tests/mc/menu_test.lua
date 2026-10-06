@@ -17,6 +17,8 @@ assert((choicesPath == nil) == (presentationPath == nil),
 local Choices = choicesPath and dofile(choicesPath)
 local Presentation = presentationPath and dofile(presentationPath)
 local testRoot = assert(os.getenv('MCT_TEST_DIR'), 'MCT_TEST_DIR required')
+-- Published page paths must be absolute, so resolve a relative scratch directory against the working directory.
+if testRoot:sub(1, 1) ~= '/' then testRoot = assert(os.getenv('PWD'), 'PWD required') .. '/' .. testRoot end
 local passed, skipped = 0, 0
 local function test(name, body)
     local ok, why = pcall(body)
@@ -129,7 +131,7 @@ test('module-target templates do not add controls to the MCT aggregate page', fu
     local moduleOnly=fixture(true,'module','module')
     assert(#moduleOnly.menu.aggregate.rows==0 and #moduleOnly.menu.pages==2)
     assert(moduleOnly.menu.pageByModule.Alpha and moduleOnly.menu.pageByModule.Beta)
-    local pages=Contribution.build(moduleOnly.menu,'/Mods/_ModCore_3_Templates').pages
+    local pages=Contribution.build(moduleOnly.menu,'/Mods/3_ModCore_Templates').pages
     assert(#pages==3 and pages[1].id=='ModCoreTemplates' and pages[1].visible==false
         and pages[1].manifest==nil,'an empty aggregate is hidden')
     for index=2,3 do
@@ -234,14 +236,14 @@ end)
 
 test('menu contribution validates and orders the aggregate before its category pages', function()
     local f=fixture(true)
-    local contribution=Contribution.build(f.menu,'/Mods/_ModCore_3_Templates/')
+    local contribution=Contribution.build(f.menu,'/Mods/3_ModCore_Templates/')
     assert(Contributions.validate('ModCoreTemplates',contribution))
     local pages=contribution.pages
-    assert(pages[1].id=='ModCoreTemplates' and pages[1].attach=='_ModCore_3_Templates'
+    assert(pages[1].id=='ModCoreTemplates' and pages[1].attach=='3_ModCore_Templates'
         and pages[1].visible==true,'category pages show the aggregate in place of the MCT folder entry')
     local category=pages[2]
     assert(category.id==f.menu.pageByCategory['player.quickslots'].id and category.under=='ModCoreTemplates'
-        and category.configDirectory=='/Mods/_ModCore_3_Templates' and category.attach==nil)
+        and category.configDirectory=='/Mods/3_ModCore_Templates' and category.attach==nil)
     local beta=pages[3]
     assert(beta.id=='ModCoreTemplates.module.Beta' and beta.author=='Example Author'
         and beta.group=='module' and beta.attach=='Beta')
@@ -368,14 +370,16 @@ test('disabled template metadata prevents lifecycle calls even when selected', f
     assert(#f.calls==0)
 end)
 
-test('invalid saved config is reported without replacing user values', function()
+test('invalid saved config falls back to its default without blocking startup', function()
     local f=fixture(true)
     local path=testRoot..'/invalid.ini'
-    local contents='[Templates]\n'..f.definitions.Alpha.settings.Size..'=999\n'
-    local out=assert(io.open(path,'w')); out:write(contents); out:close()
-    assert(not pcall(Files.ensureConfig,path,f.menu.rows,f.menu.textSettings))
-    local input=assert(io.open(path)); local actual=input:read('*a'); input:close()
-    assert(actual==contents)
+    local id=f.definitions.Alpha.settings.Size
+    local out=assert(io.open(path,'w')); out:write('[Templates]\n'..id..'=999\n'); out:close()
+    assert(Files.ensureConfig(path,f.menu.rows,f.menu.textSettings))
+    local default
+    for _,row in ipairs(f.menu.rows) do if row.Id==id then default=tonumber(row.Default) end end
+    local values=Files.readConfigValues(path,f.menu.textSettings,f.menu.rows)
+    assert(default and values[id]==default)
 end)
 
 test('generated data goes into Scripts/cache', function()
@@ -508,12 +512,24 @@ test('empty template menus still create a readable config', function()
     assert(next(Files.readConfigValues(paths.config,{},{}))==nil)
 end)
 
-local function slotFixture(locationBase, extraFields)
+local orientation={[7]='Horizontal',[5]='Vertical'}
+local function barsGroup()
+    return {id='Bars',label='Bars',fields={
+        {id='.A',label='Orientation',values=orientation,default=7},
+        {id='.KH',label='Horizontal Keys',values={[0]='Above',[1]='Below'},default=0,
+            conditions={visible={field='.A',match={7}}}},
+        {id='.KV',label='Vertical Keys',values={[0]='Left',[1]='Right'},default=1,
+            conditions={visible={field='.A',match={5}},
+                label={field='.A',match={5},text='Side Keys'}}},
+    }}
+end
+local function slotFixture(locationBase, extraFields, conditional)
     local f=fixture(true,'module','module',locationBase)
     f.category.slot={provider='controls',slot='visuals'}
     f.a.variations={style={values={[0]='Swap',[1]='Stack'},default=0}}
     f.a.menu={{id='Layout',label='Layout',fields={field('Size',20)}},
         {id='Extra',label='Extra',variation={style=1},fields={field('.Gap',5)}}}
+    if conditional then f.a.menu[#f.a.menu+1]=barsGroup() end
     for n=1,extraFields or 0 do
         table.insert(f.b.menu[1].fields,field('F'..n,0))
     end
@@ -566,14 +582,81 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     assert(not page.manifest:find('%[Category%.[^S]'),'source Category rules are not published')
 end)
 
+local function conditionalPage()
+    local f=fixture(true,'module','module')
+    f.a.menu={barsGroup()}
+    local model=Model.build({f.category},{f.a,f.b},f.locations)
+    local menu=Menu.generate(model.registry)
+    local definition
+    for _,candidate in pairs(menu.definitions[f.category.name]) do
+        if candidate.id=='Alpha' then definition=candidate end
+    end
+    return menu.pageByModule.Alpha,definition.settings,menu.selectors['player.quickslots']
+end
+
+test('field conditions become row visibility and label rules', function()
+    local page,ids=conditionalPage()
+    local kh,kv=section(page.manifest,ids.BarsKH),section(page.manifest,ids.BarsKV)
+    assert(kh.VisibleWhen==ids.BarsA and kh.VisibleValues=='7' and kh.mcLabelWhen==nil)
+    assert(kv.VisibleWhen==ids.BarsA and kv.VisibleValues=='5')
+    assert(kv.mcLabelWhen==ids.BarsA and kv.mcLabels=='5:Side Keys' and kv.Label=='Vertical Keys')
+    local a=section(page.manifest,ids.BarsA)
+    assert(a.VisibleWhen==nil and a.mcLabelWhen==nil,'fields without conditions are unchanged')
+    -- The template picker still gates the group through its Category rule.
+    local group=assert((page.manifest..'\n\n'):match('%[Category%.'..kh.Group..'%]\n(.-)\n\n'))
+    assert(group:find('VisibleWhen=',1,true),'the group keeps its template-picker rule')
+end)
+
+compatibility('field conditions hide and relabel rows live in DMM', function()
+    local page,ids,selector=conditionalPage()
+    local choices=Choices.parse(page.manifest)
+    Presentation.parse(page.manifest,choices)
+    local model=Choices.open({id=page.id,choices=choices,testOnly=true})
+    assert(not model.error,model.error)
+    local index={}
+    for i,setting in ipairs(model.items) do index[setting.id]=i end
+    local alpha
+    for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value end end
+    if index[selector.id] then model:set(index[selector.id],alpha) end
+    local visible=model:visibility()
+    assert(visible[index[ids.BarsKH]] and not visible[index[ids.BarsKV]],'Horizontal shows KH')
+    model:set(index[ids.BarsA],5)
+    visible=model:visibility()
+    assert(not visible[index[ids.BarsKH]] and visible[index[ids.BarsKV]],'Vertical shows KV')
+    local rule=model.items[index[ids.BarsKV]].mcLabelRule
+    assert(rule and rule.values[5]=='Side Keys' and rule.values[7]==nil)
+    if index[selector.id] then
+        model:set(index[selector.id],0)
+        visible=model:visibility()
+        assert(not visible[index[ids.BarsA]] and not visible[index[ids.BarsKV]],'None hides the template')
+    end
+end)
+
+test('slot rows take field conditions and hidden values still apply', function()
+    local f=slotFixture(nil,nil,true)
+    local page=f.menu.pageBySlot['player.quickslots']
+    local ids=f.definitions.Alpha.settings
+    local kh,kv=section(page.manifest,ids.BarsKH),section(page.manifest,ids.BarsKV)
+    assert(kh.VisibleWhen==ids.BarsA and kh.VisibleValues=='7')
+    assert(kv.VisibleWhen==ids.BarsA and kv.VisibleValues=='5' and kv.mcLabels=='5:Side Keys')
+    local selector=f.menu.selectors['player.quickslots']
+    assert(section(page.manifest,ids.BarsA).VisibleWhen==selector.id,'the source keeps the template rule')
+    f.controller:apply(event(f,page,1,function(v)
+        f.choose(v,'Alpha',true); v[ids.BarsA]=5; v[ids.BarsKH]=1
+    end))
+    local settings=f.calls[1].settings
+    assert(f.calls[1].operation=='attach' and settings.BarsA==5 and settings.BarsKH==1
+        and settings.BarsKV==1,'hidden fields keep and deliver their values')
+end)
+
 test('slot pages publish hidden with rows addressed to the slot', function()
     local f=slotFixture(nil,40)
-    local contribution=Contribution.build(f.menu,'/Mods/_ModCore_3_Templates')
+    local contribution=Contribution.build(f.menu,'/Mods/3_ModCore_Templates')
     assert(Contributions.validate('ModCoreTemplates',contribution))
     local page=f.menu.pageBySlot['player.quickslots']
     local published
     for _,candidate in ipairs(contribution.pages) do if candidate.id==page.id then published=candidate end end
-    assert(published.visible==false and published.configDirectory=='/Mods/_ModCore_3_Templates')
+    assert(published.visible==false and published.configDirectory=='/Mods/3_ModCore_Templates')
     assert(published.under=='ModCoreTemplates','the fallback page sits under the aggregate')
     assert(#contribution.rows==math.ceil(#page.rows/32) and #contribution.rows>1,'rows are chunked')
     local ids={}
@@ -582,13 +665,13 @@ test('slot pages publish hidden with rows addressed to the slot', function()
         for _,id in ipairs(row.settings) do ids[#ids+1]=id end
     end
     for index,row in ipairs(page.rows) do assert(ids[index]==row.Id) end
-    local plain=Contribution.build(fixture(true).menu,'/Mods/_ModCore_3_Templates')
+    local plain=Contribution.build(fixture(true).menu,'/Mods/3_ModCore_Templates')
     assert(plain.rows==nil,'without slots the contribution keeps contract 1')
 end)
 
 test('modules whose templates moved to a slot keep an entry that opens it', function()
     local f=slotFixture()
-    local contribution=Contribution.build(f.menu,'/Mods/_ModCore_3_Templates')
+    local contribution=Contribution.build(f.menu,'/Mods/3_ModCore_Templates')
     assert(Contributions.validate('ModCoreTemplates',contribution))
     local links={}
     for _,page in ipairs(contribution.pages) do if page.link then links[#links+1]=page end end
@@ -713,7 +796,7 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
         'PresetLabels=Slow|Fast','Default=0','VisibleWhen=MCC_Page','VisibleValues=0',
         'ConfigFile=config.ini','ConfigSection=Main','ConfigKey=Speed',''},'\n')
     files['/mcc/config.ini'],files['/mcc/mod_settings.ini']='[Main]\nSpeed=0\n',host
-    local f=slotFixture()
+    local f=slotFixture(nil,nil,true)
     local page=f.menu.pageBySlot['player.quickslots']
     local config={'[Templates]'}
     for _,row in ipairs(page.rows) do config[#config+1]=row.Id..'='..row.Default end
@@ -750,6 +833,16 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
         and not visible[index[f.definitions.Beta.settings.Size]],'the selection gates its own rows')
     model:set(index[f.definitions.Alpha.settings.Style],1)
     assert(model:visibility()[index[f.definitions.Alpha.settings.ExtraGap]],'variation rows follow the variation')
+    local bars=f.definitions.Alpha.settings
+    visible=model:visibility()
+    assert(visible[index[bars.BarsKH]] and not visible[index[bars.BarsKV]],'slot: Horizontal shows KH')
+    model:set(index[bars.BarsA],5)
+    visible=model:visibility()
+    assert(not visible[index[bars.BarsKH]] and visible[index[bars.BarsKV]],'slot: Vertical shows KV')
+    model:set(index[selector.id],0)
+    assert(not model:visibility()[index[bars.BarsKV]],'slot: the template picker still gates conditioned rows')
+    model:set(index[selector.id],alpha)
+    model:set(index[bars.BarsA],7)
     model:set(index.MCC_Page,0)
     assert(not model:visibility()[alphaSize],'the host page gates the slot')
     model:set(alphaSize,64)

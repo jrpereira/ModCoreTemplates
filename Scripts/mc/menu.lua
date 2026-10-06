@@ -82,7 +82,7 @@ function M.generate(registry, options)
         for _, name in ipairs(names) do lines[#lines + 1] = name .. '=' .. tostring(fields[name]) end
         lines[#lines + 1] = ''
     end
-    emit('Mod', {Id = 'ModCoreTemplates', Name = 'ModCore Templates', Version = '0.0.20',
+    emit('Mod', {Id = 'ModCoreTemplates', Name = 'ModCore Templates', Version = '1.0.1',
         Description = options.description and text(options.description) or nil})
     local function row(fields)
         assert(#rows < 256, 'generated menu exceeds DMM limit of 256 settings')
@@ -296,6 +296,15 @@ function M.generate(registry, options)
                                     metadata.VisibleWhen = sourceId
                                     metadata.VisibleValues = table.concat(field.visibleValues, '|')
                                 end
+                                if field.labelWhen then
+                                    metadata.mcLabelWhen = assert(providerFieldIds[field.labelWhen],
+                                        'provider label source must precede dependent field: ' .. field.id)
+                                    local labels = {}
+                                    for _, value in ipairs(field.labelValues) do
+                                        labels[#labels + 1] = tostring(value) .. ':' .. field.labelText
+                                    end
+                                    metadata.mcLabels = table.concat(labels, ';')
+                                end
                                 if field.type == 'picker' or field.type == 'navigation' then
                                     metadata.PresetValues = table.concat(field.values, '|')
                                     metadata.PresetLabels = table.concat(field.labels, '|')
@@ -349,7 +358,7 @@ function M.generate(registry, options)
             if item.mcHeading == true then headerPickers = headerPickers + 1 end
         end
         assert(headerPickers <= 1, providerName .. ': only one heading picker per page')
-        append(output, 'Mod', {Id=providerId, Name=providerName, Version='0.0.20',
+        append(output, 'Mod', {Id=providerId, Name=providerName, Version='1.0.1',
             Description=options.description and text(options.description) or nil})
         local usedGroups = {}
         for _, item in ipairs(selectedRows) do
@@ -566,7 +575,7 @@ function M.generate(registry, options)
                 if item._category == category and item._slot then selectedRows[#selectedRows + 1] = item end
             end
             local output = {}
-            append(output, 'Mod', {Id=providerId, Name=categoryLabels[category], Version='0.0.20'})
+            append(output, 'Mod', {Id=providerId, Name=categoryLabels[category], Version='1.0.1'})
             append(output, 'Category.Slot', {})
             for _, item in ipairs(selectedRows) do
                 local stored = U.copy(item)

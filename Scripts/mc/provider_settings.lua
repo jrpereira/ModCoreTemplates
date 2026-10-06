@@ -73,6 +73,43 @@ local function resolveId(parent, value, where)
     return value
 end
 
+-- Field conditions name a picker declared earlier in the same template, so every
+-- generated row names a row that precedes it. A slot row carries one visibility
+-- condition, so a field in a variation branch inherits that branch through a
+-- source in the same branch.
+local function conditions(field, source, parent, pickers, branch)
+    if source.conditions == nil then return end
+    local where = 'template field ' .. field.id .. ' conditions'
+    assert(type(source.conditions) == 'table', where .. ' must be a table')
+    allowed(source.conditions, {visible=true,label=true}, where)
+    local function condition(name, extra)
+        local rule = source.conditions[name]
+        if rule == nil then return end
+        assert(type(rule) == 'table', where .. '.' .. name .. ' must be a table')
+        allowed(rule, {field=true,match=true,text=extra}, where .. '.' .. name)
+        if parent == '' then
+            text(rule.field, where .. '.' .. name .. '.field')
+            assert(rule.field:sub(1,1) ~= '.', where .. '.' .. name .. '.field must be absolute')
+        end
+        local id = resolveId(parent, rule.field, where .. '.' .. name .. '.field')
+        assert(pickers[id], where .. '.' .. name .. '.field must name a picker declared earlier')
+        U.array(rule.match, where .. '.' .. name .. '.match')
+        return id, U.copy(rule.match), rule
+    end
+    local id, match = condition('visible')
+    if id then
+        assert(not branch or pickers[id] == branch,
+            where .. '.visible.field must name a picker in the same variation branch')
+        field.visibleWhen, field.visibleValues = id, match
+    end
+    local rule
+    id, match, rule = condition('label', true)
+    if id then
+        field.labelWhen, field.labelValues = id, match
+        field.labelText = text(rule.text, where .. '.label.text')
+    end
+end
+
 -- Compile the concise public template schema into the strict intermediary schema.
 function M.template(menu, variations)
     menu, variations = menu or {}, variations or {}
@@ -113,13 +150,16 @@ function M.template(menu, variations)
         description='Open ModCore Controls to choose and edit the control layout.',
     }
     local groups = {{id='Template',label='Template',heading=false,fields=variationFields}}
-    local groupIds, fieldIds = {Template=true}, {}
-    for _, field in ipairs(variationFields) do fieldIds[field.id] = true end
+    local groupIds, fieldIds, pickers = {Template=true}, {}, {}
+    for _, field in ipairs(variationFields) do
+        fieldIds[field.id] = true
+        if field.type == 'picker' then pickers[field.id] = true end
+    end
     for _, sourceGroup in ipairs(menu) do
         assert(type(sourceGroup) == 'table', 'template menu entry must be a table')
         if sourceGroup.fields == nil then
             allowed(sourceGroup, {id=true,label=true,values=true,default=true,tab=true,level=true,
-                description=true}, 'template field')
+                description=true,conditions=true}, 'template field')
             text(sourceGroup.id, 'template field id')
             assert(sourceGroup.id:sub(1,1) ~= '.', 'standalone template field id must be absolute')
             local id = resolveId('', sourceGroup.id, 'template field id')
@@ -131,6 +171,8 @@ function M.template(menu, variations)
                 labels=domain.labels,min=domain.min,max=domain.max,step=domain.step,
                 suffix=domain.suffix,default=sourceGroup.default,tab=sourceGroup.tab,
                 level=sourceGroup.level,description=sourceGroup.description}
+            conditions(field, sourceGroup, '', pickers)
+            if field.type == 'picker' then pickers[id] = true end
             local groupId = 'Standalone' .. tostring(#groups)
             assert(not groupIds[groupId], 'reserved template menu id collision ' .. groupId)
             groupIds[groupId] = true
@@ -172,7 +214,7 @@ function M.template(menu, variations)
             for _, source in ipairs(sourceGroup.fields) do
                 assert(type(source) == 'table', 'template field must be a table')
                 allowed(source, {id=true,label=true,values=true,default=true,tab=true,level=true,
-                    description=true}, 'template field')
+                    description=true,conditions=true}, 'template field')
                 local id = resolveId(groupId, source.id, 'template field id')
                 assert(not fieldIds[id], 'duplicate template field ' .. id)
                 fieldIds[id] = true
@@ -182,6 +224,9 @@ function M.template(menu, variations)
                     labels=domain.labels,min=domain.min,max=domain.max,step=domain.step,
                     suffix=domain.suffix,default=source.default,tab=source.tab,level=source.level,
                     description=source.description}
+                local branch = variationName and variationName .. '=' .. tostring(variationValue)
+                conditions(field, source, groupId, pickers, branch)
+                if field.type == 'picker' then pickers[id] = branch or true end
                 group.fields[#group.fields + 1] = field
             end
             groups[#groups + 1] = group
@@ -221,8 +266,8 @@ function M.normalize(declaration)
             assert(type(source) == 'table', 'provider field must be a table')
             allowed(source, {id=true,label=true,type=true,order=true,default=true,values=true,
                 labels=true,min=true,max=true,step=true,suffix=true,tab=true,level=true,description=true,
-                after=true,visibleWhen=true,visibleValues=true,tabNavigation=true,
-                linkProvider=true}, 'provider field')
+                after=true,visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
+                labelText=true,tabNavigation=true,linkProvider=true}, 'provider field')
             identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
             level(source.level, source.type == 'picker' or source.type == 'navigation')
             if source.level == 1 then
@@ -245,6 +290,13 @@ function M.normalize(declaration)
             if field.visibleWhen ~= nil then identifier(field.visibleWhen, 'provider visibility source') end
             assert((field.visibleWhen == nil) == (field.visibleValues == nil),
                 'provider visibility requires both visibleWhen and visibleValues')
+            if field.labelWhen ~= nil then
+                identifier(field.labelWhen, 'provider label source')
+                text(field.labelText, 'provider label text')
+            end
+            assert((field.labelWhen == nil) == (field.labelValues == nil)
+                and (field.labelWhen == nil) == (field.labelText == nil),
+                'provider label requires labelWhen, labelValues and labelText')
             assert(field.after == nil, 'field.after is unsupported')
             assert(field.tab == nil or type(field.tab) == 'boolean', 'provider tab must be boolean')
             assert(field.tabNavigation == nil or (field.type == 'navigation'
@@ -295,19 +347,23 @@ function M.normalize(declaration)
             assert(group.variationValues == nil, 'group variation values require a source')
         end
         for _, field in ipairs(group.fields) do
-            if field.visibleWhen then
-                assert(field.visibleWhen ~= field.id, 'provider field cannot hide itself')
-                local source = fields[field.visibleWhen]
-                assert(source and (source.type == 'picker' or source.type == 'navigation'),
-                    'provider visibility source must be a picker in the same template')
-                local count = U.array(field.visibleValues, 'provider visibility values')
-                assert(count > 0, 'provider visibility values must not be empty')
-                local choices, seen = {}, {}
-                for _, value in ipairs(source.values) do choices[value] = true end
-                for _, value in ipairs(field.visibleValues) do
-                    assert(finite(value) and choices[value] and not seen[value],
-                        'provider visibility value must be a distinct source choice')
-                    seen[value] = true
+            for _, rule in ipairs({{field.visibleWhen, field.visibleValues, 'visibility'},
+                {field.labelWhen, field.labelValues, 'label'}}) do
+                local sourceId, matched, kind = rule[1], rule[2], rule[3]
+                if sourceId then
+                    assert(sourceId ~= field.id, 'provider field cannot depend on itself')
+                    local source = fields[sourceId]
+                    assert(source and (source.type == 'picker' or source.type == 'navigation'),
+                        'provider ' .. kind .. ' source must be a picker in the same template')
+                    local count = U.array(matched, 'provider ' .. kind .. ' values')
+                    assert(count > 0, 'provider ' .. kind .. ' values must not be empty')
+                    local choices, seen = {}, {}
+                    for _, value in ipairs(source.values) do choices[value] = true end
+                    for _, value in ipairs(matched) do
+                        assert(finite(value) and choices[value] and not seen[value],
+                            'provider ' .. kind .. ' value must be a distinct source choice')
+                        seen[value] = true
+                    end
                 end
             end
         end

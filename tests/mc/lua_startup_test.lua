@@ -76,7 +76,7 @@ package.loaded['mc.registration']={
     end,
 }
 _G.ModRef={}
-local root=assert(debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/lua_startup_test%.lua$'))
+local root=debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/lua_startup_test%.lua$') or assert(os.getenv('PWD'))
 local active=dofile(root..'/Scripts/main.lua')
 package.loaded['mc.lua_startup']=original
 package.loaded['mc.registration']=originalRegistration

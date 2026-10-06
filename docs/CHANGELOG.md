@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.0.1
+
+- Template fields may declare `conditions`: `visible = {field, match}` shows a row
+  only while a picker in the same template holds a matching value, and
+  `label = {field, match, text}` swaps its label. Rows hide and relabel live,
+  including on slot pages (visibility only). Hidden values are kept and still
+  delivered to templates.
+- Release packages include `enabled.txt`, so the mod is enabled when installed.
+- Log at levels TRACE, DEBUG, INFO, WARN, ERROR and CRITICAL, writing WARN and above
+  by default; `log_level.txt` in the mod folder sets the level. Messages use the
+  `[ModCoreTemplates]` prefix instead of `[MCT]`.
+- Configuration never prevents startup: an invalid saved value, such as a
+  selected template whose provider was removed, is rewritten with its default; a
+  repeated key or section keeps its first value; a config that cannot be prepared
+  or read is reported and its settings run on their defaults.
+- Stop registering LoadMap hooks. On a map change the old world's objects become
+  invalid and are forgotten; the new HUD is found through its creation
+  notification and attaches once shown.
+- Move the README and changelog into `docs/`. Release packages are built from
+  `release-manifest.json` and publish every document from `docs/` at the mod
+  root. `mod.json` reads the version from `VERSION` and declares
+  UE4SSLuaEventBridge and ModCoreSettings. GitHub Actions build, test and
+  publish the release archive and its checksum from a `release/vX.Y.Z` branch.
 - A category may declare `slot = {provider=..., slot=...}` to show its Template
   picker and its templates' settings in another mod's menu slot. `player.quickslots`
   now appears in ModCore Controls' Visuals section (`controls:visuals`), and its
@@ -32,7 +55,7 @@
 - Tear down the current settings detail page before following a provider link, preventing the activating picker from repeatedly reopening its target.
 - Store module-target template settings in that module's `config.ini` instead of ModCoreTemplates, migrating any matching values from the former shared config on first startup.
 - Replace installed-module template scanning with explicit provider registration and support provider entries directly under `Scripts/`.
-- Rename the installed mod folder to `_ModCore_3_Templates`.
+- Rename the installed mod folder to `3_ModCore_Templates`.
 
 ## 0.0.20
 

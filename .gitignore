@@ -4,7 +4,7 @@
 
 # User state and generated installation payloads
 config.ini
-enabled.txt
+log_level.txt
 identity-catalog.lua
 menu-profile.lua
 menu-pages.lua
@@ -15,10 +15,10 @@ mod_settings.ini
 *.dmp
 *.zip
 *.sha256
+/dist/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Generated template state; keep the directory in the installed/source layout
-/Scripts/cache/*
-!/Scripts/cache/.gitkeep
+# Generated template state; created at runtime, never committed or shipped
+/Scripts/cache/

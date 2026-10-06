@@ -159,6 +159,9 @@ function M.new(options)
                 if not published then report('menu',why) end
             end
             self.phase='running'
+            if options.log then
+                require('mc_log').wrap(options.log).info(#templates,' templates from ',#files,' files running')
+            end
         end)
         if not ok then
             self.phase='failed'

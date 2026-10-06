@@ -3,7 +3,25 @@
   "id": "ModCoreTemplates",
   "name": "ModCore Templates",
   "description": "Build modular game-feature and UI customizations as Lua templates. Provides category registration, generated settings menus, target discovery, and attach/render/detach lifecycle management.",
-  "version_source": "Scripts/main.lua",
+  "version_source": "VERSION",
+  "dependencies": [
+    {
+      "id": "UE4SS",
+      "name": "UE4SS compatible with The Blood of Dawnwalker",
+      "url": "https://github.com/UE4SS-RE/RE-UE4SS"
+    },
+    {
+      "id": "UE4SSLuaEventBridge",
+      "name": "UE4SSLuaEventBridge with object lifetimes (API 5 or newer)",
+      "version": "API 5+"
+    },
+    {
+      "id": "ModCoreSettings",
+      "name": "ModCore Settings",
+      "version": "1.0.1+",
+      "url": "https://www.nexusmods.com/thebloodofdawnwalker/mods/590"
+    }
+  ],
   "links": {
     "source": "https://github.com/jrpereira/ModCoreTemplates",
     "nexus": "https://www.nexusmods.com/thebloodofdawnwalker/mods/641"

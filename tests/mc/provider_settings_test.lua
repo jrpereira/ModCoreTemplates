@@ -49,4 +49,56 @@ assert(not pcall(Provider.template,{{id='G',label='G',fields={
     {id='.X',label='X',values='percent',default=101},
 }}},{}))
 
-print('PASS: concise template fields, value domains, variations and relative IDs')
+local orientation={[7]='Horizontal',[5]='Vertical'}
+local _,conditional=Provider.template({
+    {id='Bars',label='Bars',fields={
+        {id='.A',label='Orientation',values=orientation,default=7},
+        {id='.KH',label='Keys',values={[0]='Above',[1]='Below'},default=0,
+            conditions={visible={field='.A',match={7}}}},
+        {id='.KV',label='Keys',values={[0]='Left',[1]='Right'},default=0,
+            conditions={visible={field='BarsA',match={5}},
+                label={field='.A',match={5},text='Vertical Keys'}}},
+    }},
+},{})
+local kh,kv=conditional[2].fields[2],conditional[2].fields[3]
+assert(kh.visibleWhen=='BarsA' and kh.visibleValues[1]==7 and kh.labelWhen==nil)
+assert(kv.visibleWhen=='BarsA' and kv.visibleValues[1]==5)
+assert(kv.labelWhen=='BarsA' and kv.labelValues[1]==5 and kv.labelText=='Vertical Keys')
+local _,plain=Provider.template({{id='Bars',label='Bars',fields={
+    {id='.A',label='Orientation',values=orientation,default=7}}}},{})
+assert(plain[2].fields[1].visibleWhen==nil and plain[2].fields[1].labelWhen==nil)
+
+local function rejects(menu,variations,pattern)
+    local ok,why=pcall(Provider.template,menu,variations or {})
+    assert(not ok and tostring(why):find(pattern,1,true),tostring(why))
+end
+local function bars(dependent,first)
+    local fields={{id='.A',label='Orientation',values=orientation,default=7},dependent}
+    if first then fields={dependent,fields[1]} end
+    return {{id='Bars',label='Bars',fields=fields}}
+end
+local function keys(conditions)
+    return {id='.K',label='Keys',values={[0]='A',[1]='B'},default=0,conditions=conditions}
+end
+rejects(bars(keys({visible={field='.A',match={7}}}),true),nil,'declared earlier')
+rejects(bars(keys({visible={field='.Missing',match={7}}})),nil,'declared earlier')
+rejects(bars(keys({visible={field='.A',match={3}}})),nil,'distinct source choice')
+rejects(bars(keys({visible={field='.A',match={}}})),nil,'must not be empty')
+rejects(bars(keys({visible={field='.A',match={7},text='x'}})),nil,'unsupported property text')
+rejects(bars(keys({hidden={field='.A',match={7}}})),nil,'unsupported property hidden')
+rejects(bars(keys({label={field='.A',match={7}}})),nil,'label.text')
+rejects(bars(keys({label={field='.A',match={7},text='a;b'}})),nil,'unsupported metadata text')
+rejects(bars({id='.S',label='Size',values='percent',default=1,
+    conditions={visible={field='.S',match={1}}}}),nil,'declared earlier')
+-- A field in a variation branch must depend on a picker in that branch.
+rejects({{id='Bars',label='Bars',fields={{id='.A',label='Orientation',values=orientation,default=7}}},
+    {id='Extra',label='Extra',variation={style=1},fields={keys({visible={field='BarsA',match={7}}})}}},
+    {style={values={[0]='A',[1]='B'},default=0}},'same variation branch')
+rejects({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
+    conditions={visible={field='.Style',match={0}}}}},
+    {style={values={[0]='A',[1]='B'},default=0}},'must be absolute')
+local _,variationSource=Provider.template({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
+    conditions={visible={field='Style',match={1}}}}},{style={values={[0]='A',[1]='B'},default=0}})
+assert(variationSource[2].fields[1].visibleWhen=='Style','a shared field may depend on a variation')
+
+print('PASS: concise template fields, value domains, variations, relative IDs and conditions')

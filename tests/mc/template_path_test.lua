@@ -1,6 +1,6 @@
 package.path='./Scripts/?.lua;'..package.path
 local Bootstrap=require('mc.bootstrap')
-local repoRoot=assert(debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/template_path_test%.lua$'))
+local repoRoot=debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/template_path_test%.lua$') or assert(os.getenv('PWD'))
 local folder=repoRoot..'/tests/fixtures/HelperProvider/Scripts'
 local template=folder..'/mc_probe.lua'
 local passed=0

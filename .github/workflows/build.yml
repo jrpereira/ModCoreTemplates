@@ -1,0 +1,45 @@
+name: Build and test
+on:
+  push:
+    branches: ['**', '!release/**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  repository-hygiene:
+    uses: ./.github/workflows/repository-hygiene.yml
+  lua:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Lua 5.4
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Check runtime syntax and run mock tests
+        run: python tools/run-tests.py --lua lua5.4
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test release packaging
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Build archive and checksum
+        run: python tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mod-package
+          path: dist/*
+          if-no-files-found: error
+  lua-and-package:
+    needs: [lua, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm Lua and package checks
+        run: echo "Lua and package checks passed"

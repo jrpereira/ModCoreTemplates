@@ -7,8 +7,8 @@ no installed-module scan.
 startup on UE4SS's game thread.
 
 The source subscribes to UE4SS notifications before the runtime's first
-snapshot. The initial snapshot and new-world snapshots use `FindAllOf` once
-per selector. An unloaded blueprint class may yield no candidates yet. Other
+snapshot. The initial snapshot uses `FindAllOf` once per selector, and an
+owner's creation notification looks up its declared children. An unloaded blueprint class may yield no candidates yet. Other
 changes reevaluate cached candidates.
 
 ## Path matching
@@ -19,9 +19,7 @@ QuickslotsSwitcher selector must have the requested widget class and name,
 its immediate outer must be a live `WidgetTree` instance (`WidgetTree` or
 `WidgetTree_<number>`), and that tree's live owner must have
 exactly the declared HUD blueprint class. Class defaults and objects belonging
-to another blueprint with the same final widget name are excluded. A live
-world token identifies the current map after `LoadMapPost`; an old HUD can
-remain valid without attaching to the new world.
+to another blueprint with the same final widget name are excluded.
 
 ## Readiness and hierarchy
 
@@ -41,8 +39,9 @@ For widget selectors, including `within` groups, hooks on reflected
 callback clears a nested UserWidget's removal marker so it can attach again.
 Non-root widgets require a valid panel parent even when their owner is ready.
 `GetParent` supplies widget ancestry. Other object classes use `GetOuter`.
-Map pre-load makes objects unready and detaches valid attachments; post-load
-invalidates the old set, records the new world and starts one new snapshot.
+MCT registers no LoadMap hooks. On a map change the old world's objects become
+invalid, and their attachments are forgotten at the next lifecycle event; the
+new HUD is found through its creation notification and attaches once shown.
 Lua references check `IsValid` and object identity before callbacks. Identity
 includes the UE4SSLuaEventBridge object lifetime token, which distinguishes a
 reused address and full name through Unreal's object-item serial. The bridge

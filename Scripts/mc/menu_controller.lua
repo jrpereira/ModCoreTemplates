@@ -18,6 +18,7 @@ function M.new(menu, runtime, options)
         if row.mcNavigation ~= 1 then values[row.Id] = tonumber(row.Default) end
     end
     for id, spec in pairs(menu.textSettings) do values[id] = spec.default end
+    local defaults = U.copy(values)
     for id, value in pairs(options.values or {}) do if values[id] ~= nil then values[id] = value end end
     local function commit(nextValues)
         local state = menu.decodeState(nextValues)
@@ -28,7 +29,15 @@ function M.new(menu, runtime, options)
         runtime:commit(changes)
         values, lastState = nextValues, U.copy(state)
     end
-    commit(values)
+    -- Saved settings never prevent startup: a combination that does not validate
+    -- starts on the defaults instead.
+    local started, why = pcall(commit, values)
+    if not started then
+        if options.onError then
+            pcall(options.onError, {stage='config', message='saved settings unusable; using defaults: ' .. tostring(why)})
+        end
+        commit(defaults)
+    end
     function self:values() return U.copy(values) end
     function self:apply(event)
         assert(alive, 'menu controller stopped')

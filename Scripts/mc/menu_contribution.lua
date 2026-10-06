@@ -16,7 +16,7 @@ function M.build(menu, root)
     end
     -- The aggregate takes the place of the menu entry for MCT's own folder.
     local aggregate = {id=M.id, name='ModCore Templates', author='ModCoreTemplates',
-        version='0.0.20', attach=folder(root), visible=showAggregate}
+        version='1.0.1', attach=folder(root), visible=showAggregate}
     if #menu.aggregate.rows > 0 then
         aggregate.manifest, aggregate.configDirectory = menu.aggregate.manifest, root
     end
@@ -24,7 +24,7 @@ function M.build(menu, root)
     for _, page in ipairs(menu.pages) do
         if page.category then
             pages[#pages + 1] = {id=page.id, name=page.name, author='ModCoreTemplates',
-                version='0.0.20', description='Templates and settings for ' .. page.name .. '.',
+                version='1.0.1', description='Templates and settings for ' .. page.name .. '.',
                 manifest=page.manifest, configDirectory=root, under=M.id}
         end
     end
@@ -34,7 +34,7 @@ function M.build(menu, root)
     for _, page in ipairs(menu.pages) do
         if page.slot then
             pages[#pages + 1] = {id=page.id, name=page.name, author='ModCoreTemplates',
-                version='0.0.20', description='Templates and settings for ' .. page.name .. '.',
+                version='1.0.1', description='Templates and settings for ' .. page.name .. '.',
                 manifest=page.manifest, configDirectory=root, visible=false, under=M.id}
             local settings = {}
             for _, row in ipairs(page.rows) do
@@ -50,7 +50,7 @@ function M.build(menu, root)
     for _, page in ipairs(menu.pages) do
         if page.module then
             pages[#pages + 1] = {id=page.id, name=page.name,
-                author=page.author or 'ModCoreTemplates', version=page.version or '0.0.20',
+                author=page.author or 'ModCoreTemplates', version=page.version or '1.0.1',
                 description='Templates and settings for ' .. page.name .. '.',
                 manifest=page.manifest, configDirectory=page.moduleRoot or root,
                 attach=page.moduleRoot and folder(page.moduleRoot) or nil, group='module'}
@@ -60,7 +60,7 @@ function M.build(menu, root)
     for _, page in ipairs(menu.pages) do
         if page.link then
             pages[#pages + 1] = {id=page.id, name=page.name,
-                author=page.author or 'ModCoreTemplates', version=page.version or '0.0.20',
+                author=page.author or 'ModCoreTemplates', version=page.version or '1.0.1',
                 description='Opens the settings for ' .. page.name .. '.',
                 attach=folder(page.moduleRoot), group='module', link=page.link}
         end

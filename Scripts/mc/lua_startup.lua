@@ -17,7 +17,7 @@ function M.start(options, api)
         end
     end
     if not configured.host and not configured.objectSource then
-        configured.objectSource = require('mc.widget_source').new(configured.categories, api)
+        configured.objectSource = require('mc.widget_source').new(configured.categories, api, configured.log)
     end
     if configured.objectSource then
         assert(not configured.host, 'supply either objectSource or host')

@@ -92,7 +92,8 @@ function M.new(options,categories,templates,locations,own)
         local legacy=io.open(paths.config,'rb')
         if legacy then
             legacy:close()
-            legacyValues=MenuFiles.readConfigValues(paths.config,self.menu.textSettings,self.menu.rows)
+            local ok,read=pcall(MenuFiles.readConfigValues,paths.config,self.menu.textSettings,self.menu.rows)
+            if ok then legacyValues=read end
         end
         local centralRows,seen={},{}
         local function include(rows)
@@ -112,30 +113,37 @@ function M.new(options,categories,templates,locations,own)
                     rows=page.rows,textSettings={}}
             end
         end
+        -- Configuration never prevents startup: a config that cannot be prepared or read
+        -- is reported, and its settings run on their defaults.
+        local function attempt(stage,callback)
+            local ok,why=pcall(callback)
+            if not ok then pcall(options.host.onError,{stage=stage,message=tostring(why)}) end
+        end
         for index,source in ipairs(configSources) do
-            MenuFiles.ensureConfig(source.path,source.rows,source.textSettings,
-                index>1 and legacyValues or nil)
+            attempt('config',function()
+                MenuFiles.ensureConfig(source.path,source.rows,source.textSettings,
+                    index>1 and legacyValues or nil)
+            end)
         end
         for _,page in ipairs(self.menu.pages) do
             if page.slot then
-                M.migrateSlot(paths.config,page)
-                M.retireSettings(paths.config,page)
+                attempt('config migration',function()
+                    M.migrateSlot(paths.config,page)
+                    M.retireSettings(paths.config,page)
+                end)
             end
-        end
-        savedValues={}
-        for _,source in ipairs(configSources) do
-            for id,value in pairs(MenuFiles.readConfigValues(
-                source.path,source.textSettings,source.rows)) do savedValues[id]=value end
         end
     end
     local function readValues()
         local values={}
         for _,source in ipairs(configSources) do
-            for id,value in pairs(MenuFiles.readConfigValues(
-                source.path,source.textSettings,source.rows)) do values[id]=value end
+            local ok,read=pcall(MenuFiles.readConfigValues,source.path,source.textSettings,source.rows)
+            if ok then for id,value in pairs(read) do values[id]=value end
+            else pcall(options.host.onError,{stage='config',message=tostring(read)}) end
         end
         return values
     end
+    if options.menuRoot then savedValues=readValues() end
     self.menuController=MenuController.new(self.menu,self.runtime,
         {values=savedValues,readValues=readValues,onError=options.host.onError})
     if options.settingsApi then self.menuController:bind(options.settingsApi,options.queue) end

@@ -99,6 +99,13 @@ local function accepted(row, value)
     return false
 end
 
+local function validText(spec, value)
+    return value ~= nil and (pcall(Provider.validateText, spec.format, value))
+end
+
+-- Configuration never prevents startup. A missing setting is added and an invalid one
+-- is rewritten with its default, such as a selected template whose provider is gone.
+-- A repeated key or Templates section keeps its first value.
 local function ensureConfig(path, rows, textSettings, initialValues)
     recover(path)
     local file = io.open(path, 'rb')
@@ -108,7 +115,7 @@ local function ensureConfig(path, rows, textSettings, initialValues)
     content = content:gsub('\r\n', '\n'):gsub('\r', '\n')
     local lines = {}; for line in (content .. '\n'):gmatch('(.-)\n') do lines[#lines + 1] = line end
     if lines[#lines] == '' then table.remove(lines) end
-    local section, first, finish, sections, present = nil, nil, nil, 0, {}
+    local section, first, finish, present = nil, nil, nil, {}
     -- Keys this config owns. Unknown or legacy keys are ignored, even when repeated.
     local owned = {}
     for _, row in ipairs(rows) do owned[row.Id] = true end
@@ -116,50 +123,56 @@ local function ensureConfig(path, rows, textSettings, initialValues)
     for index, line in ipairs(lines) do
         local heading = line:match('^%s*%[([^%]]+)%]%s*$')
         if heading then
-            if section == 'Templates' and not finish then finish = index end
+            if section == 'Templates' and first and not finish then finish = index end
             section = heading
-            if heading == 'Templates' then sections = sections + 1; first = first or index end
+            if heading == 'Templates' then first = first or index end
         elseif section == 'Templates' then
             local setting = line:match('^%s*([^=;#]+)%s*=')
             if setting then
                 setting = setting:match('^%s*(.-)%s*$')
-                if owned[setting] then
-                    assert(not present[setting], 'duplicate Templates config key: ' .. setting)
-                    present[setting] = index
+                if owned[setting] and not present[setting] then present[setting] = index end
+            end
+        end
+    end
+    if first and not finish then finish = #lines + 1 end
+    local missing, repaired = {}, false
+    local function initial(id, fallback, valid)
+        local value = initialValues and initialValues[id]
+        if value ~= nil and valid(value) then return value end
+        return fallback
+    end
+    for _, row in ipairs(rows) do
+        if row.mcNavigation ~= 1 then
+            local valid = function(value) return accepted(row, value) end
+            local default = initial(row.Id, tonumber(row.Default), valid)
+            assert(valid(default), 'invalid default setting ' .. row.Id)
+            local index = present[row.Id]
+            if not index then
+                missing[#missing + 1] = row.Id .. '=' .. string.format('%.17g', default)
+            else
+                local raw = lines[index]:match('=%s*([^;#]+)')
+                if not valid(raw and tonumber(raw:match('^%s*(.-)%s*$'))) then
+                    lines[index] = row.Id .. '=' .. string.format('%.17g', default); repaired = true
                 end
             end
         end
     end
-    assert(sections <= 1, 'duplicate Templates config section')
-    if section == 'Templates' and not finish then finish = #lines + 1 end
-    local missing = {}
-    for _, row in ipairs(rows) do
-        if row.mcNavigation ~= 1 then
-            local index = present[row.Id]
-            if not index then
-                local default = initialValues and initialValues[row.Id] or tonumber(row.Default)
-                assert(accepted(row, default), 'invalid initial setting ' .. row.Id)
-                missing[#missing + 1] = row.Id .. '=' .. string.format('%.17g', default)
-            else
-                local raw = lines[index]:match('=%s*([^;#]+)')
-                local value = raw and tonumber(raw:match('^%s*(.-)%s*$'))
-                assert(accepted(row, value), 'invalid saved setting ' .. row.Id)
-            end
-        end
-    end
     for settingId, spec in pairs(textSettings or {}) do
+        local valid = function(value) return validText(spec, value) end
+        local default = initial(settingId, spec.default, valid)
+        Provider.validateText(spec.format, default)
         local index = present[settingId]
         if not index then
-            local default = initialValues and initialValues[settingId] or spec.default
-            Provider.validateText(spec.format, default)
             missing[#missing + 1] = settingId .. '=' .. default
         else
             local raw = lines[index]:match('=%s*([^;#]*)')
-            Provider.validateText(spec.format, raw and raw:match('^%s*(.-)%s*$'))
+            if not valid(raw and raw:match('^%s*(.-)%s*$')) then
+                lines[index] = settingId .. '=' .. default; repaired = true
+            end
         end
     end
     table.sort(missing)
-    if #missing == 0 and existed then return false end
+    if #missing == 0 and existed and not repaired then return false end
     if not first then
         if #lines > 0 and lines[#lines] ~= '' then lines[#lines + 1] = '' end
         lines[#lines + 1] = '[Templates]'
@@ -174,9 +187,10 @@ local function readConfigValues(path, textSettings, rows)
     recover(path)
     local file = assert(io.open(path, 'rb'), 'missing installed config: ' .. path)
     local content = file:read('*a'); file:close()
-    local values, section = {}, nil
+    -- Invalid values are left out so their defaults apply; a repeated key keeps its first value.
+    local values, section, seen = {}, nil, {}
     local known = {}
-    for _, row in ipairs(rows) do known[row.Id] = true end
+    for _, row in ipairs(rows) do known[row.Id] = row end
     for key in pairs(textSettings or {}) do known[key] = true end
     for line in (content:gsub('\r\n', '\n'):gsub('\r', '\n') .. '\n'):gmatch('(.-)\n') do
         local heading = line:match('^%s*%[([^%]]+)%]%s*$')
@@ -184,14 +198,18 @@ local function readConfigValues(path, textSettings, rows)
         elseif section == 'Templates' then
             local key, value = line:match('^%s*([^=;#]+)%s*=%s*([^;#]*)')
             if key then key = key:match('^%s*(.-)%s*$') end
-            if key and known[key] then
+            if key and known[key] and not seen[key] then
+                seen[key] = true
                 value = value:match('^%s*(.-)%s*$')
                 if textSettings and textSettings[key] then
-                    values[key] = Provider.validateText(textSettings[key].format, value)
+                    local ok, text = pcall(Provider.validateText, textSettings[key].format, value)
+                    if ok then values[key] = text end
                 else
                     value = tonumber(value)
-                    assert(value ~= nil, 'invalid numeric Templates setting: ' .. key)
-                    values[key] = value
+                    local row = known[key]
+                    if value ~= nil and (row == true or row.mcNavigation == 1 or accepted(row, value)) then
+                        values[key] = value
+                    end
                 end
             end
         end
