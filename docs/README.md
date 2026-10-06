@@ -70,7 +70,7 @@ Logs appear in `UE4SS.log`. The default level is WARN. For more detail, put
 
 ## Documentation
 
-- [Nexus description](https://github.com/jrpereira/ModCoreTemplates/blob/main/docs/NEXUS.md): condensed, paste-ready module description in BBCode.
+- [Nexus description](https://github.com/jrpereira/ModCoreTemplates/blob/main/docs/NEXUS.bb): condensed, paste-ready module description in BBCode.
 - [Developer guide](DEVELOPERS.md): first template and managed callbacks.
 - [Template menus](MENUS.md): fields, variations, placement and storage.
 - [Lifecycle reference](LIFECYCLE-DRAFT.md): registration, callbacks and host contracts.

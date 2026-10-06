@@ -38,12 +38,11 @@ class PackageTests(unittest.TestCase):
                                  or '/tools/' in n.lower() for n in names))
             # Every package ships enabled by default.
             self.assertIn(pack.MODULE + '/enabled.txt', names)
-            # Documents in docs/ are published at the module root, except the
-            # repository-only Nexus description.
+            # Markdown documents in docs/ are published at the module root; the
+            # BBCode Nexus description stays in the repository.
             for doc in (ROOT / 'docs').glob('*.md'):
-                if doc.name != 'NEXUS.md':
-                    self.assertIn(pack.MODULE + '/' + doc.name, names)
-            self.assertNotIn(pack.MODULE + '/NEXUS.md', names)
+                self.assertIn(pack.MODULE + '/' + doc.name, names)
+            self.assertNotIn(pack.MODULE + '/NEXUS.bb', names)
             self.assertFalse(any('/docs/' in n for n in names))
             self.assertEqual(names, {pack.MODULE + '/' + dest for dest in spec['files']}
                              | {pack.MODULE + '/manifest.json'})
