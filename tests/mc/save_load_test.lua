@@ -2,7 +2,7 @@
 -- knows its objects. UE4SS IsValid reads the object, so any call on a kept
 -- wrapper reads freed memory. Here a freed object raises on every access and
 -- counts it; the native lifetime is read without touching the object.
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Lifetimes=dofile('tests/support/lifetimes.lua')
 local Source=require('mc.widget_source')
 local References=require('mc.lua_references')

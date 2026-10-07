@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Events=require('mc_events')
 local values,handlers={},{}
 local api={

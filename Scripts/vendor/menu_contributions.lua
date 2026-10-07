@@ -1,15 +1,17 @@
--- Public client for contributing menu pages through ModCoreSettings.
--- Consumers may vendor this file unchanged. It only writes data files and one shared
+-- Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
+-- Public client for contributing menu pages through ModCoreSettings. Consumers copy this
+-- file unchanged into their Scripts/vendor folder. It only writes data files and one shared
 -- variable per contributor; ModCoreSettings reads them while building the menu.
--- Descriptors use contract 1, or contract 2 when they carry slot rows or slot links.
-local M={version=2,contract=1,rowsContract=2}
+-- Descriptors use contract 1, contract 2 when they carry slot rows or slot links, or
+-- contract 3 when a page names a hooks file.
+local M={version=3,contract=1,rowsContract=2,hooksContract=3}
 local PREFIX='MCS_MenuContrib_v1_'
 M.prefix,M.index=PREFIX,PREFIX..'index'
 local MAX_PAGES,MAX_ROWS,MAX_ROW_SETTINGS,MAX_MANIFEST=256,64,32,262144
 local PAGE_KEYS={id=true,name=true,author=true,version=true,description=true,manifest=true,
-    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true}
+    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true,hooks=true}
 local DESCRIPTOR_KEYS={id=true,name=true,author=true,version=true,description=true,manifestFile=true,
-    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true}
+    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true,hooks=true}
 local ROW_KEYS={page=true,slot=true,settings=true}
 
 -- A slot address is '<provider>:<slot>'. A ModCore<Name> provider may be written as its
@@ -69,9 +71,15 @@ local function check(contributor,contribution)
             and not page.description:find('%z')),'invalid '..where..' description')
         assert(page.visible==nil or type(page.visible)=='boolean','invalid '..where..' visible')
         assert(page.group==nil or page.group=='module','invalid '..where..' group')
-        if page.manifest~=nil then
-            assert(type(page.manifest)=='string' and #page.manifest<=MAX_MANIFEST
-                and not page.manifest:find('%z'),'invalid '..where..' manifest')
+        -- A hooks page generates its manifest in ModCoreSettings each time the menu is built.
+        if page.hooks~=nil then
+            line(page.hooks,1024,where..' hooks')
+            assert(absolute(page.hooks) and page.hooks:match('%.lua$'),where..': hooks must be an absolute .lua path')
+            assert(page.manifest==nil and page.link==nil,where..': a hooks page cannot have a manifest or link')
+        end
+        if page.manifest~=nil or page.hooks~=nil then
+            assert(page.manifest==nil or (type(page.manifest)=='string' and #page.manifest<=MAX_MANIFEST
+                and not page.manifest:find('%z')),'invalid '..where..' manifest')
             line(page.configDirectory,1024,where..' configDirectory')
             assert(absolute(page.configDirectory),where..': configDirectory must be absolute')
         else
@@ -110,7 +118,8 @@ local function check(contributor,contribution)
         assert(type(row)=='table',where..' must be a table')
         for key in pairs(row) do assert(ROW_KEYS[key],where..': unknown field '..tostring(key)) end
         line(row.page,128,where..' page')
-        assert(seen[row.page] and seen[row.page].manifest,where..': page must name a page with a manifest')
+        assert(seen[row.page] and (seen[row.page].manifest or seen[row.page].hooks),
+            where..': page must name a page with a manifest')
         local target=M.address(row.slot)
         assert(target,'invalid '..where..' slot address')
         for id in pairs(seen) do
@@ -146,7 +155,12 @@ local function unescape(value)
     end))
 end
 
--- Slot rows and links need a ModCoreSettings build that understands slots.
+-- Hooks need a ModCoreSettings build that loads them; slot rows and links need one that
+-- understands slots.
+function M.contractFor(contribution)
+    for _,page in ipairs(contribution.pages) do if page.hooks then return M.hooksContract end end
+    return M.needsRows(contribution) and M.rowsContract or M.contract
+end
 function M.needsRows(contribution)
     if contribution.rows and #contribution.rows>0 then return true end
     for _,page in ipairs(contribution.pages) do if page.link then return true end end
@@ -160,12 +174,12 @@ function M.manifestName(generation,n) return 'mcs_menu.'..generation..'.'..n..'.
 function M.encode(contributor,generation,contribution)
     check(contributor,contribution)
     local rows=contribution.rows or {}
-    local contract=M.needsRows(contribution) and M.rowsContract or M.contract
+    local contract=M.contractFor(contribution)
     local out={'[Contribution]','contract='..contract,'id='..contributor,'generation='..generation}
     local files={}
     for n,page in ipairs(contribution.pages) do
         out[#out+1]='[Page.'..n..']'
-        for _,key in ipairs({'id','name','author','version','description','configDirectory','under','attach','group','link'}) do
+        for _,key in ipairs({'id','name','author','version','description','configDirectory','under','attach','group','link','hooks'}) do
             if page[key]~=nil then out[#out+1]=key..'='..escape(page[key]) end
         end
         if page.visible~=nil then out[#out+1]='visible='..(page.visible and '1' or '0') end
@@ -214,7 +228,7 @@ function M.decode(text,read)
             end
         end
     end
-    assert(tonumber(header.contract)==(M.needsRows({pages=pages,rows=rows}) and M.rowsContract or M.contract),
+    assert(tonumber(header.contract)==M.contractFor({pages=pages,rows=rows}),
         'unsupported contract '..tostring(header.contract))
     local generation=tonumber(header.generation)
     assert(math.type(generation)=='integer' and generation>=1,'invalid generation')

@@ -1,11 +1,11 @@
-package.path = './Scripts/?.lua;' .. package.path
+package.path = './Scripts/?.lua;./Scripts/vendor/?.lua;' .. package.path
 local Model = require('mc.menu_model')
 local Menu = require('mc.menu')
 local Runtime = require('mc.runtime')
 local Controller = require('mc.menu_controller')
 local Files = require('mc.menu_files')
 local Contribution = require('mc.menu_contribution')
-local Contributions = require('mc.menu_contributions')
+local Contributions = require('menu_contributions')
 local Bootstrap = require('mc.bootstrap')
 local Layout = require('mc.layout')
 local U = require('mc.util')

@@ -3,7 +3,9 @@ local source = debug.getinfo(1, 'S').source:gsub('^@', '')
 local scripts = assert(source:match('^(.*)[/\\][^/\\]+$'), 'cannot locate MCT Scripts')
 local root = assert(scripts:match('^(.*)[/\\]Scripts$'), 'cannot locate MCT module')
 local mods = assert(root:match('^(.*)[/\\][^/\\]+$'), 'cannot locate UE4SS Mods')
-package.path = scripts .. '/?.lua;' .. package.path
+-- Files shared with other modules, unchanged, keep their own module names. Searched first,
+-- so a copy left in Scripts by an earlier release is never loaded instead.
+package.path = scripts .. '/vendor/?.lua;' .. scripts .. '/?.lua;' .. package.path
 local Registration=require('mc.registration')
 Registration.install(scripts..'/mc_client.lua',mods..'/shared/mc.lua')
 local registrations=Registration.publisher(assert(ModRef,'ModRef unavailable'),mods)
@@ -30,7 +32,7 @@ local bootstrap = require('mc.lua_startup').start({
     log = log,
     menuRoot = root,
     categoryFiles = listedCategories(),
-    settingsApi = require('mc.settings_api'),
+    settingsApi = require('settings_api'),
     collectTemplates = function() return registrations:collect() end,
 })
 MC._setTemplateRegistrar(function(path)

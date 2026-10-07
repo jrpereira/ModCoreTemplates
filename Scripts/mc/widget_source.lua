@@ -59,11 +59,16 @@ function M.new(categories, api, log)
             and current.object_lifetimes_reason
         return tostring(why)..(reason and ' (object lifetimes unavailable: '..tostring(reason)..')' or '')
     end
-    local source = {}
+    local source = {log=log}
     local selectors, notifyClasses, ownerClasses, hasWithin, hasWidgets = {}, {}, {}, false, false
     local function analyze(used)
         for _, category in ipairs(used) do
+            -- Roots read by scoped targets; their members may not exist at creation.
+            local scopedRoots = {}
             for _, selector in pairs(category.objects or {}) do
+                if selector.from then scopedRoots[selector.from] = true end
+            end
+            for name, selector in pairs(category.objects or {}) do
                 if selector.source == 'create' then
                     -- Construction belongs to the selected managed template.
                 elseif selector.from then
@@ -80,7 +85,10 @@ function M.new(categories, api, log)
                     -- and the owner revisits, not by watching its widget class.
                     local first, second = eventClass(selector)
                     if first then notifyClasses[first] = true end
-                    if second and first then ownerClasses[first] = true end
+                    -- A root with scoped targets is revisited too: a nested HUD is
+                    -- announced before its WidgetTree is filled and never enters the
+                    -- viewport, so nothing else would reconcile it again.
+                    if first and (second or scopedRoots[name]) then ownerClasses[first] = true end
                 end
             end
         end
@@ -177,7 +185,18 @@ function M.new(categories, api, log)
         return type(full) == 'string' and not full:find('Default__',1,true)
             and not full:find('REINST_',1,true)
     end
-    function source.ready(object)
+    -- A UserWidget that CommonUI hosts for another one (the game HUD inside
+    -- WBP_UIFrontend) has no panel parent and is not in the viewport itself; it
+    -- is ready while the UserWidget whose WidgetTree owns it is ready.
+    local function hosted(owner, depth)
+        local tree = safe(owner, 'GetOuter')
+        if not source.valid(tree) or not isa(tree, '/Script/UMG.WidgetTree') then return false end
+        local host = safe(tree, 'GetOuter')
+        if not source.valid(host) or not isa(host, '/Script/UMG.UserWidget') then return false end
+        return depth > 0 and source.ready(host, depth - 1)
+    end
+    function source.ready(object, depth)
+        depth = depth or 4
         if not source.valid(object) then return false end
         if isa(object,'/Script/UMG.Widget') then
             local owner = isa(object,'/Script/UMG.UserWidget') and object or ObjectSelector.owner(object)
@@ -198,7 +217,7 @@ function M.new(categories, api, log)
             -- Nested game HUDs are children of another UserWidget. IsInViewport
             -- is unavailable for them in Dawnwalker; a live world and panel
             -- parent establish readiness for a WidgetTree child.
-            return safe(owner,'IsInViewport') == true or parented
+            return safe(owner,'IsInViewport') == true or parented or hosted(owner, depth)
         end
         return world(object) ~= nil
     end

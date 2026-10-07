@@ -1,7 +1,7 @@
 -- A category's attachDelay attaches a new root once no reconcile has reached it for
 -- the delay; each reconcile restarts the timer. A settled root attaches at once. While
 -- it waits the root is hidden, and it is revealed when it attaches or MCT stops.
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Runtime=require('mc.runtime')
 

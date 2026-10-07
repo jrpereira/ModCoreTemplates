@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Provider=require('mc.provider_settings')
 
 local declaration,groups=Provider.template({

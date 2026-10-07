@@ -53,6 +53,18 @@ end
 function M.new(host, definitions, templates, state, options)
     options = options or {}
     local defer = options.defer
+    -- Lifecycle decisions at TRACE; each subject logs only when its message changes.
+    local log = host.log and require('mc_log').wrap(host.log) or nil
+    local traced = {}
+    local function trace(subject, ...)
+        if not log or not log.enabled('TRACE') then return end
+        local parts = {}
+        for index = 1, select('#', ...) do parts[index] = tostring((select(index, ...))) end
+        local message = table.concat(parts)
+        if traced[subject] == message then return end
+        traced[subject] = message
+        log.trace(subject, ': ', message)
+    end
     assert(defer == nil or type(defer) == 'function', 'defer must be a function')
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
         assert(type(host[name]) == 'function', 'host requires ' .. name)
@@ -371,7 +383,14 @@ function M.new(host, definitions, templates, state, options)
                         end
                     end
                     resolved[id]={objects=objects,bundles=bundles}
+                    local found=0
+                    for _ in pairs(objects) do found=found+1 end
+                    local known=0
+                    for _ in pairs(candidates) do known=known+1 end
+                    trace(id,'enabled, ',found,' root(s) resolved from ',known,' candidate(s)')
                     for token,object in pairs(objects) do allObjects[token]=object end
+                else
+                    trace(id,'not enabled')
                 end
             end
             category.objects = allObjects
@@ -492,6 +511,19 @@ function M.new(host, definitions, templates, state, options)
                             end
                         end
                         local old = record.attached[token]
+                        if log and not old then
+                            local why={}
+                            if blocked then why[#why+1]='blocked by another template' end
+                            if record.pending[token] then why[#why+1]='detach pending' end
+                            if not host.valid(object) then why[#why+1]='root invalid'
+                            elseif not host.ready(object) then why[#why+1]='root not ready' end
+                            if shared and not shared.attached[token] then why[#why+1]='shared objects not attached' end
+                            if not retainsTargets(record.waiting[token],bundles[token],host) then
+                                why[#why+1]='waiting for targets'
+                            end
+                            if failedInTurn[record] and failedInTurn[record][token] then why[#why+1]='failed this turn' end
+                            trace(id..' '..tostring(token),#why>0 and table.concat(why,', ') or 'attaching')
+                        end
                         if not blocked and not record.pending[token]
                             and host.valid(object) and host.ready(object)
                             and (not shared or shared.attached[token])
@@ -534,6 +566,7 @@ function M.new(host, definitions, templates, state, options)
             desired[id], count = copy(settings), count + 1
         end
         assert(not category.single or count <= 1, 'single category accepts at most one template')
+        if log then log.debug(categoryName, ': ', count, ' template(s) selected') end
         serialize(function()
             for id, record in pairs(category.templates) do
                 record.enabled = desired[id] ~= nil

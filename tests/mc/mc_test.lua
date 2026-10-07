@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local MC=require('mc')
 local Objects=require('mc.objects')
 local Widget=require('mc.widget')

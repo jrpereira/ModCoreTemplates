@@ -7,7 +7,7 @@ function M.new(source)
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
         assert(type(source[name]) == 'function', 'object source requires ' .. name)
     end
-    local host = {onError=source.onError}
+    local host = {onError=source.onError,log=source.log}
     local records = setmetatable({}, {__mode='k'})
     -- Keyed by wrappers from the current call; a hit is checked through its handle.
     local wrappers = setmetatable({}, {__mode='k'})

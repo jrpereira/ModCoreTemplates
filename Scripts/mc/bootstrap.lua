@@ -34,7 +34,7 @@ function M.new(options)
         local SafeFile=require('mc.safe_file')
         -- The vendored client stays unchanged; MCT supplies crash-safe file access.
         -- Removing a retired generation file also removes its kept backup.
-        menuPublisher=menuPublisher or require('mc.menu_contributions').publisher(options.menuShared,
+        menuPublisher=menuPublisher or require('menu_contributions').publisher(options.menuShared,
             {id=Contribution.id,directory=require('mc.layout').paths(options.menuRoot).cache,
                 read=SafeFile.read,write=SafeFile.write,
                 remove=function(path) os.remove(path..'.old'); return os.remove(path) end})

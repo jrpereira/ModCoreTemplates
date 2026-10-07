@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Source=require('mc.widget_source')
 local References=require('mc.lua_references')
 local Runtime=require('mc.runtime')
@@ -337,5 +337,52 @@ do
     pending[2]()
     assert(#observed==1 and observed[1].kind=='changed' and observed[1].object==lateRoot)
     delayed.stop()
+end
+do
+    -- A root whose scoped targets are read through members is revisited after
+    -- creation: a nested HUD never enters the viewport, so no other event would
+    -- reconcile it once its WidgetTree is filled.
+    local hudOwner=obj(70,'WBP_GameHUD_C /Engine/Transient.GameEngine_0.WBP_GameHUD_C_4',
+        {[classPath]=true,['/Script/UMG.WBP_GameHUD_C']=true,['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
+    hudOwner.class=ownerClass; hudOwner.world=nextWorld
+    local pending={}
+    function api.ExecuteInGameThread(callback) pending[#pending+1]=callback end
+    local notifications={name='notifications',objects={
+        hud={source='lookup',class=classPath,required=true},
+        hud_root={source='reference',from='hud',member='WidgetTree.RootWidget',required=true}}}
+    local scoped=Source.new({notifications},api)
+    scoped.watch({notifications.objects.hud})
+    while #pending>0 do table.remove(pending,1)() end
+    local observed={}
+    scoped.subscribe(function(event) observed[#observed+1]=event end,function() return 1 end)
+    created[classPath](hudOwner)
+    assert(#observed==1 and observed[1].object==hudOwner,'creation announces the HUD')
+    -- Run the queued game-thread work: the hook refresh and the owner revisits.
+    for _=1,10 do
+        if #pending==0 then break end
+        table.remove(pending,1)()
+    end
+    local again=0
+    for index=2,#observed do
+        if observed[index].object==hudOwner then again=again+1 end
+    end
+    assert(again>0,'a root with scoped targets is revisited after creation')
+    -- CommonUI hosts the HUD in the frontend's WidgetTree with no panel parent; it
+    -- and its root are ready while the frontend is in the viewport.
+    local frontend=obj(71,'WBP_UIFrontend_C /Engine/Transient.GameEngine_0.WBP_UIFrontend_C_1',
+        {['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
+    frontend.world=nextWorld; frontend.inViewport=true
+    local frontTree=obj(72,'WidgetTree /Engine/Transient.GameEngine_0.WBP_UIFrontend_C_1.WidgetTree',
+        {['/Script/UMG.WidgetTree']=true},frontend)
+    hudOwner.outer=frontTree
+    local hudTree=obj(73,'WidgetTree '..hudOwner.full:match('^%S+ (.+)$')..'.WidgetTree',
+        {['/Script/UMG.WidgetTree']=true},hudOwner)
+    local hudRoot=obj(74,'Overlay '..hudOwner.full:match('^%S+ (.+)$')..'.WidgetTree.Overlay_45',
+        {['/Script/UMG.Widget']=true,['/Script/UMG.Overlay']=true},hudTree)
+    hudRoot.world=nextWorld; hudOwner.WidgetTree=hudTree; hudTree.RootWidget=hudRoot
+    assert(scoped.ready(hudOwner) and scoped.ready(hudRoot),'a hosted HUD is ready with its host')
+    frontend.inViewport=false
+    assert(not scoped.ready(hudOwner) and not scoped.ready(hudRoot),'a hosted HUD follows its host')
+    scoped.stop()
 end
 print('PASS: widget construction, group parenting, valid detach and hook cleanup')

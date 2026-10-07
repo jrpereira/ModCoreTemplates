@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 
 local sessions,events,closed={},{},0
 package.loaded['mc.startup_session']={
@@ -67,7 +67,7 @@ assert(sessions[1].stops==1 and hookLive==0 and closed==1)
 print('PASS: malformed providers and throwing loaded hooks are isolated with owned cleanup')
 
 local withdrawals,cleanupAttempts,hostAttempts=0,0,0
-package.loaded['mc.menu_contributions']={publisher=function()
+package.loaded['menu_contributions']={publisher=function()
     return {publish=function() end,withdraw=function() withdrawals=withdrawals+1 end}
 end}
 _G.failConstruction=true
@@ -102,7 +102,7 @@ print('PASS: startup error survives independent cleanup failures and unresolved 
 
 package.loaded['mc.startup_session']=nil
 package.loaded['mc.module_metadata']=nil
-package.loaded['mc.menu_contributions']=nil
+package.loaded['menu_contributions']=nil
 local Controller=require('mc.menu_controller')
 local attempts=0
 local menu={rows={},textSettings={},providers={A={rows={},decode=function() end}},

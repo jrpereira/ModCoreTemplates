@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 -- Configuration never prevents startup: invalid saved values fall back to their defaults.
 local MenuFiles=require('mc.menu_files')
 local dir=(os.getenv('TMPDIR') or '.'):gsub('/+$','')

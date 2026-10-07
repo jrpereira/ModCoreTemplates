@@ -1,5 +1,6 @@
--- Leveled logging shared by the ModCore modules. ModCoreSettings holds the source; other
--- mods vendor this file unchanged into their own Scripts folder.
+-- Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
+-- Leveled logging shared by the ModCore modules. Mods copy this file unchanged into their
+-- own Scripts/vendor folder.
 --
 --   local log=require('mc_log').new({name='ModCoreControls',path=root..'/log_level.txt'})
 --   log.debug('mapped ',count,' keys')   -- written only at DEBUG or TRACE

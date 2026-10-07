@@ -1,3 +1,10 @@
 {
-  "allowed_paths": []
+  "allowed_paths": [],
+  "vendored": {
+    "Scripts/vendor/mc_events.lua": "ModCoreControls",
+    "Scripts/vendor/mc_log.lua": "ModCoreSettings",
+    "Scripts/vendor/menu_contributions.lua": "ModCoreSettings",
+    "Scripts/vendor/settings_api.lua": "ModCoreSettings",
+    "tests/support/lifetimes.lua": "UE4SSLuaEventBridge"
+  }
 }

@@ -1,5 +1,6 @@
+-- Vendored from ModCoreControls (owner). Do not edit copies; change the source and re-vendor.
 -- Cross-Lua ModCore event transport. Add event codecs here, independent of categories.
--- ModCoreControls holds the source; other mods vendor this file unchanged.
+-- Mods copy this file unchanged into their Scripts/vendor folder.
 --
 -- Failures are written through api.log, the caller's mc_log logger (or a plain
 -- function(message)), so they follow its log_level.txt. Without one, a WARN-level

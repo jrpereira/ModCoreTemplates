@@ -23,7 +23,7 @@ YourProvider/
 
 Generated catalogs, published pages, and aggregate/category settings go into
 `Scripts/cache`. MCT publishes its pages through ModCoreSettings' menu-contribution
-client (`mc/menu_contributions.lua`, vendored unchanged) and writes nothing at the mod
+client (`vendor/menu_contributions.lua`, copied unchanged from ModCoreSettings) and writes nothing at the mod
 root. Aggregate and category pages resolve `ConfigFile=Scripts/cache/config.ini` against
 the MCT root. A module-target page instead uses `ConfigFile=config.ini` against that
 template module's root, so
@@ -190,7 +190,7 @@ options, provide:
 |---|---|
 | `menuRoot` | Mod root (absolute); generated state and published pages go into `Scripts/cache` |
 | `menuShared` | `ModRef` shared-variable interface for publishing pages to ModCoreSettings; Lua startup supplies it |
-| `settingsApi` | Durable Apply subscriber; the copied client is `require('mc.settings_api')` |
+| `settingsApi` | Durable Apply subscriber; the copied client is `require('settings_api')`, from `Scripts/vendor` |
 | `queue` | Game-thread dispatcher for settings callbacks |
 | `menu` | Generator options, such as `description` or an in-memory identity catalog |
 | `menuValues` | Initial committed setting-ID values for an in-memory host without `menuRoot` |
@@ -231,7 +231,7 @@ committed config on Apply. Subscription teardown ignores already-queued events;
 `bootstrap:stop()` closes both menu subscriptions and the object runtime.
 
 MCT also subscribes to category-independent ModCore events through
-`Scripts/mc_events.lua`. The latest `controls.group.focus` transition is owned by
+`Scripts/vendor/mc_events.lua`, copied unchanged from ModCoreControls. The latest `controls.group.focus` transition is owned by
 MCT as `bootstrap.state.controls.group = {from=<number>,to=<number>}`; it is empty
 (`{}`) until ModCore Controls reports a focus. Template
 callbacks receive a copied snapshot at `params.state`. A transition never calls

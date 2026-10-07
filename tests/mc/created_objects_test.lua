@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Selectors=require('mc.selectors')
 local State=require('mc.target_state')

@@ -1,4 +1,4 @@
-package.path='./Scripts/?.lua;'..package.path
+package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Registration=require('mc.registration')
 local repoRoot=debug.getinfo(1,'S').source:match('^@(.+)/tests/mc/registration_test%.lua$') or assert(os.getenv('PWD'))
 local passed=0

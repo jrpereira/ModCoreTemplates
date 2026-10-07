@@ -1,5 +1,6 @@
--- Public, game-agnostic client for durable DMM Apply notifications.
--- Consumers may vendor this file unchanged; the transport is private to DMM.
+-- Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
+-- Public, game-agnostic client for durable DMM Apply notifications. Consumers copy this
+-- file unchanged into their Scripts/vendor folder; the transport is private to DMM.
 local M={version=1}
 local subscriptions={}
 local owner=tostring({}):gsub('%W','')
