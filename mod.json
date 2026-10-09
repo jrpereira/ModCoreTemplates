@@ -4,6 +4,12 @@
   "name": "ModCore Templates",
   "group": "ModCore",
   "category": "ModCore,foundations",
+  "browser": {
+    "preferred": "ModCore",
+    "categories": [
+      "frameworks"
+    ]
+  },
   "description": "Build modular game-feature and UI customizations as Lua templates. Provides category registration, generated settings menus, target discovery, and attach/render/detach lifecycle management.",
   "version_source": "VERSION",
   "dependencies": [
