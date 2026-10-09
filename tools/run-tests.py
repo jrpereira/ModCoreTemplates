@@ -23,8 +23,8 @@ files = (sorted(ROOT.glob('Scripts/mc/*.lua')) + sorted(ROOT.glob('Scripts/categ
          + sorted(ROOT.glob('Scripts/vendor/*.lua'))
          + [ROOT / 'Scripts/mc.lua']
          + [ROOT / 'Scripts/mc_client.lua']
-         + [ROOT / 'Scripts/main.lua',
-            ROOT / 'Scripts/categories/mc.lua'])
+         + [ROOT / 'Scripts/mct_templates_page.lua']
+         + [ROOT / 'Scripts/main.lua'])
 for path in files:
     # '-' makes Lua read a script from stdin; supply an empty one.
     subprocess.run([args.lua, '-e', 'assert(loadfile(arg[1]))', '-', str(path)], cwd=ROOT, check=True,

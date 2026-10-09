@@ -3,6 +3,10 @@ local U = require('mc.util')
 local Provider = require('mc.provider_settings')
 local M = {}
 
+-- Pages are described as ModCoreSettings menu data (see its menu_data.lua): groups and
+-- fields with choices or a range, visibility and label rules, and storage. ModCoreSettings
+-- turns them into menu pages.
+
 local function text(value)
     U.text(value, 'menu text')
     assert(not value:find('[%c|;%[%]]') and not value:match('^%s') and not value:match('%s$'),
@@ -21,9 +25,34 @@ local function title(value)
     return value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end)
 end
 
--- The returned catalog must be persisted alongside the manifest before startup.
+-- A visibility rule on a picker: shown while field holds one of values.
+local function rule(field, values)
+    if field == nil then return nil end
+    return {field=field, values=U.copy(values)}
+end
+
+-- A group's heading flag: false hides the heading, otherwise it shows.
+local function hidden(heading)
+    if heading == false then return false end
+end
+
+local function choices(values, labels)
+    local out = {}
+    for index, value in ipairs(values) do out[index] = {value=value, label=labels[index]} end
+    return out
+end
+
+-- The module a template belongs to is the mod folder holding its provider file.
+local function moduleRoot(location)
+    local normalized = location:gsub('\\', '/'):gsub('%[%d+%]$', '')
+    return normalized:match('^(.*)/Scripts/templates/[^/]+%.lua$')
+        or normalized:match('^(.*)/Scripts/[^/]+%.lua$')
+end
+M.moduleRoot = moduleRoot
+
+-- The returned catalog must be persisted alongside the published pages before startup.
 -- Removed mappings remain reserved, preventing saved numeric choices from changing meaning.
--- options.version is the release from VERSION; manifests omit Version without it.
+-- options.version is the release from VERSION; pages omit their version without it.
 function M.generate(registry, options)
     options = options or {}
     assert(options.version == nil or type(options.version) == 'string' and options.version:match('^%d+%.%d+%.%d+$'),
@@ -72,65 +101,46 @@ function M.generate(registry, options)
         assert(result ~= '', 'public menu name is empty')
         return result
     end
-    local lines, rows, groups, selectors, multiSelectors = {}, {}, {}, {}, {}
+    local rows, groups, selectors, multiSelectors = {}, {}, {}, {}
     local groupSections, groupOrder = {}, {}
     local aggregateGroups, aggregateGroupOrder = {}, {}
     local aggregateRows, pageRows, categoryLabels, currentCategory, currentOwner = {}, {}, {}, nil, nil
-    local function emit(section, fields)
-        lines[#lines + 1] = '[' .. section .. ']'
-        local names = {}; for name, value in pairs(fields) do
-            if value ~= nil and name:sub(1, 1) ~= '_' then names[#names + 1] = name end
-        end
-        table.sort(names)
-        for _, name in ipairs(names) do lines[#lines + 1] = name .. '=' .. tostring(fields[name]) end
-        lines[#lines + 1] = ''
-    end
-    emit('Mod', {Id = 'ModCoreTemplates', Name = 'ModCore Templates', Version = options.version,
-        Description = options.description and text(options.description) or nil})
     local function row(fields)
-        assert(#rows < 256, 'generated menu exceeds DMM limit of 256 settings')
-        if fields.mcNavigation ~= 1 then
-            fields.ConfigFile, fields.ConfigSection, fields.ConfigKey = Layout.configFile, 'Templates', fields.Id
-        end
+        assert(#rows < 256, 'generated menu exceeds 256 settings')
         rows[#rows + 1] = fields
         fields._category = currentCategory
         fields._owner = currentOwner
         pageRows[currentCategory] = pageRows[currentCategory] or {}
         pageRows[currentCategory][#pageRows[currentCategory] + 1] = fields
-        emit('Setting.' .. fields.Id, fields)
-        return fields.Id
+        return fields.id
     end
-    -- notes are value:text pairs ModCoreSettings shows on a choice's second line.
-    local function picker(settingId, label, group, values, labels, source, visible, level, default, notes)
-        return row({Id = settingId, Label = text(label), Group = group, Type = 'picker',
-            PresetValues = table.concat(values, '|'), PresetLabels = table.concat(labels, '|'),
-            Default = default == nil and values[1] or default,
-            VisibleWhen = source, VisibleValues = visible,
-            mcHeading = level == 1 and true or nil,
-            mcLevel = level ~= 1 and level or nil,
-            mcChoiceNotes = notes and #notes > 0 and table.concat(notes, ';') or nil})
+    local function picker(settingId, label, group, list, visible, level, default)
+        return row({id = settingId, label = text(label), group = group, choices = list,
+            default = default == nil and list[1].value or default, visible = visible, level = level})
     end
-    local function group(identity, label, selector, selected, source, visible, level, heading, publicId,
-        labelValues)
+    -- A generated group is headed by its label and shown only by its visibility rule.
+    local function group(identity, label, visible, level, heading, publicId)
         local groupId = publicId and namedId(publicId, {'group', identity}) or id({'group', identity})
         if not groups[groupId] then
             groups[groupId] = true
-            local labels = {}
-            if labelValues then
-                for index = 2, #labelValues do
-                    labels[#labels + 1] = tostring(labelValues[index]) .. ':' .. text(label)
-                end
-            else
-                labels[1] = tostring(selected) .. ':' .. text(label)
-            end
-            local fields = {VisibleWhen = source, VisibleValues = visible,
-                mcLevel = level, mcHeading = heading, mcLabelWhen = selector,
-                mcLabels = table.concat(labels, ';')}
-            groupSections[groupId] = fields
+            groupSections[groupId] = {id = groupId, label = text(label), visible = visible, level = level,
+                heading = heading}
             groupOrder[#groupOrder + 1] = groupId
-            emit('Category.' .. groupId, fields)
         end
         return groupId
+    end
+    local function field(settingId, source, groupId)
+        local item = {id = settingId, label = source.label, group = groupId, default = source.default,
+            description = source.description, level = source.level}
+        if source.type == 'picker' or source.type == 'navigation' then
+            item.choices = choices(source.values, source.labels)
+            item.tabs = source.tab or nil
+            item.action = source.type == 'navigation' or nil
+            item.link = source.linkProvider
+        else
+            item.range = {min = source.min, max = source.max, step = source.step, suffix = source.suffix}
+        end
+        return item
     end
     local entries = {}; for _, entry in ipairs(registry.templates) do entries[#entries + 1] = entry end
     table.sort(entries, function(a, b) return a.id < b.id end)
@@ -140,29 +150,26 @@ function M.generate(registry, options)
         perCategory[category] = perCategory[category] or {}
         table.insert(perCategory[category], entry)
     end
-    local function storageIdentity(entry) return entry.id end
     local decoded = {}
     local categorySettings = {}
     local textSettings = {}
     for _, category in ipairs(registry.categories:list()) do
-        local categoryLabel = (options.categoryLabels or {})[category]
-            or title(category:gsub('%.', ' '))
-        categoryLabels[category] = categoryLabel
+        categoryLabels[category] = title(category:gsub('%.', ' '))
         local available = perCategory[category]
         -- Categories without templates are reserved for future providers and get no
-        -- page: DMM cannot render a None-only picker.
+        -- page: a None-only picker has nothing to choose.
         if available then
             currentCategory = category
             local categorySingle = available[1].single == true
             -- A slot category is shown only in its slot, through its own hidden page.
             local slot = registry.categories:getCategory(category).slot
             local slotIds = {}
-            local function slotRow(when, values, source)
+            local function slotRow(visible)
                 local item = rows[#rows]
-                if item.mcNavigation == 1 then return end
-                assert(not source or slotIds[source],
-                    category .. ': slot row ' .. item.Id .. ' depends on a row outside the slot')
-                item._slot, slotIds[item.Id] = {when=when, values=values}, true
+                if item.action then return end
+                assert(not visible or slotIds[visible.field],
+                    category .. ': slot row ' .. item.id .. ' depends on a row outside the slot')
+                item._slot, slotIds[item.id] = {visible = visible}, true
             end
             local aggregateCategory = not slot
             for _, entry in ipairs(available) do
@@ -172,32 +179,27 @@ function M.generate(registry, options)
             end
             assert(#available <= 63, category .. ': more than 63 templates exceeds picker capacity including None')
             local selector
-            local values, labels, notes, byValue = {0}, {'None'}, {}, {}
+            local values, list, byValue = {0}, {{value = 0, label = 'None'}}, {}
             for _, entry in ipairs(available) do
-                local value = allocate({'template', storageIdentity(entry)})
-                values[#values + 1], labels[#labels + 1] = value, text(entry.template.name)
+                local value = allocate({'template', entry.id})
+                values[#values + 1] = value
+                -- Each template choice notes its module, which ModCoreSettings names.
+                list[#list + 1] = {value = value, label = text(entry.template.name),
+                    module = entry.template.module}
                 byValue[value] = entry.id
-                -- Each template choice names its module on a second line.
-                local module = entry.template.module
-                if module ~= nil then
-                    assert(#text(module) <= 64, 'module name longer than 64 characters: ' .. module)
-                    notes[#notes + 1] = value .. ':' .. module
-                end
             end
             local prefix, suffix = assert(category:match('^([^.]+)%.([^.]+)$'))
             local aggregateGroup = title(prefix)
             if not aggregateGroups[aggregateGroup] then
                 aggregateGroups[aggregateGroup] = true
                 aggregateGroupOrder[#aggregateGroupOrder + 1] = aggregateGroup
-                emit('Category.' .. aggregateGroup, {})
             end
             if categorySingle then
                 local selectorName = category == 'player.quickslots' and 'Template'
                     or publicName(category) .. 'Template'
                 selector = namedId(selectorName, {'selector', category})
                 local isQuickslots = category == 'player.quickslots'
-                picker(selector, title(suffix), aggregateGroup, values, labels, nil, nil,
-                    isQuickslots and 1 or nil, nil, notes)
+                picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots and 1 or nil)
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                 if slot then slotRow() end
@@ -210,45 +212,30 @@ function M.generate(registry, options)
                 registry.categories:getCategory(category).menu)
             local sharedFields, textIds = {}, {}
             categorySettings[category] = {fields=sharedFields, static=staticSettings, textIds=textIds}
-            for field, default in pairs(staticSettings) do
-                local settingId = namedId(publicName(category) .. publicName(field),
-                    {'category_text', category, field})
-                textIds[field] = settingId
-                textSettings[settingId] = {default=default, format=staticFormats[field]}
+            for name, default in pairs(staticSettings) do
+                local settingId = namedId(publicName(category) .. publicName(name),
+                    {'category_text', category, name})
+                textIds[name] = settingId
+                textSettings[settingId] = {default=default, format=staticFormats[name]}
             end
-            local visibleValues = categorySingle and table.concat(values, '|', 2) or nil
+            -- Shared category fields show while any template is selected.
+            local selected = categorySingle and rule(selector, {table.unpack(values, 2)}) or nil
             for _, providerGroup in ipairs(categoryGroups) do
                 local groupId = group(key({category, 'category_provider', providerGroup.id}),
-                    providerGroup.label, selector, values[2], selector, visibleValues,
-                    providerGroup.level, providerGroup.heading == false and 0 or nil,
-                    publicName(category) .. publicName(providerGroup.id), categorySingle and values or nil)
-                for _, field in ipairs(providerGroup.fields) do
-                    local settingId = namedId(publicName(category) .. publicName(field.id),
-                        {'category_provider', category, field.id})
-                    local metadata = {Id=settingId, Label=field.label, Group=groupId,
-                        Type=field.type == 'navigation' and 'picker' or field.type,
-                        Default=field.default, Description=field.description,
-                        mcHeading=field.level==1 and true or nil,
-                        mcLevel=field.level~=1 and field.level or nil}
-                    if field.type == 'picker' or field.type == 'navigation' then
-                        metadata.PresetValues = table.concat(field.values, '|')
-                        metadata.PresetLabels = table.concat(field.labels, '|')
-                        metadata.mcType = field.tab and 'tab' or nil
-                        metadata.mcNavigation = field.type == 'navigation' and 1 or nil
-                        metadata.tabNavigation = field.tabNavigation
-                    else
-                        metadata.Minimum, metadata.Maximum, metadata.Step = field.min, field.max, field.step
-                        metadata.Suffix = field.suffix
-                    end
-                    row(metadata)
+                    providerGroup.label, selected, providerGroup.level, hidden(providerGroup.heading),
+                    publicName(category) .. publicName(providerGroup.id))
+                for _, source in ipairs(providerGroup.fields) do
+                    local settingId = namedId(publicName(category) .. publicName(source.id),
+                        {'category_provider', category, source.id})
+                    row(field(settingId, source, groupId))
                     rows[#rows]._control = true
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
-                    if slot then slotRow(selector, visibleValues, selector) end
-                    if field.type ~= 'navigation' then sharedFields[field.id] = settingId end
+                    if slot then slotRow(selected) end
+                    if source.type ~= 'navigation' then sharedFields[source.id] = settingId end
                 end
             end
             for _, entry in ipairs(available) do
-                local template, identity = entry.template, storageIdentity(entry)
+                local template, identity = entry.template, entry.id
                 currentOwner = identity
                 local value = allocate({'template', identity})
                 local templateScope
@@ -261,82 +248,55 @@ function M.generate(registry, options)
                 decoded[category][value] = definition
                 local ownerSelector, ownerValue = selector, value
                 if not categorySingle then
-                    ownerSelector = namedId('CategorySeparator_' .. templateScope,
-                        {'template_toggle', identity})
+                    ownerSelector = namedId(templateScope .. '_Enabled', {'template_enabled', identity})
                     ownerValue = 1
-                    picker(ownerSelector, template.name, aggregateGroup, {0, 1}, {'No', 'Yes'},
-                        nil, nil, nil, 0)
+                    -- The heading names the template whether or not it is enabled.
+                    local headingId = group(key({identity, 'template_heading'}), template.name,
+                        nil, nil, nil, templateScope)
+                    picker(ownerSelector, 'Enabled', headingId, choices({0, 1}, {'No', 'Yes'}), nil, nil, 0)
                     rows[#rows]._control = true
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
                         id=ownerSelector, value=value, definition=definition}
                 end
+                local owned = rule(ownerSelector, {ownerValue})
                 for _, providerGroup in ipairs(providerGroups) do
                     local groupId
-                    for _, field in ipairs(providerGroup.fields) do
-                        local groupSource, groupValues = ownerSelector, ownerValue
+                    for _, source in ipairs(providerGroup.fields) do
+                        local groupVisible = owned
                         if providerGroup.variationSource then
-                            groupSource = assert(providerFieldIds[providerGroup.variationSource],
-                                'group variation source must precede its group')
-                            groupValues = table.concat(providerGroup.variationValues, '|')
+                            groupVisible = rule(assert(providerFieldIds[providerGroup.variationSource],
+                                'group variation source must precede its group'), providerGroup.variationValues)
                         end
                         groupId = groupId or group(key({identity, 'provider', providerGroup.id}),
-                            providerGroup.label, ownerSelector, ownerValue, groupSource, groupValues,
-                            providerGroup.level, providerGroup.heading == false and 0 or nil,
+                            providerGroup.label, groupVisible, providerGroup.level,
+                            hidden(providerGroup.heading),
                             scopePrefix .. publicName(providerGroup.id))
-                        local settingId = namedId(scopePrefix .. publicName(field.id),
-                            {'provider', identity, field.id})
-                        local metadata = {Id=settingId, Label=field.label, Group=groupId,
-                            Type=field.type == 'navigation' and 'picker' or field.type,
-                            Default=field.default, Description=field.description,
-                            mcHeading=field.level==1 and true or nil,
-                            mcLevel=field.level~=1 and field.level or nil,
-                            mcLinkPage=field.linkProvider}
-                        if providerGroup.variationSource then
-                            metadata.VisibleWhen = ownerSelector
-                            metadata.VisibleValues = ownerValue
-                        end
-                        if field.visibleWhen then
-                            local sourceId = providerFieldIds[field.visibleWhen]
+                        local settingId = namedId(scopePrefix .. publicName(source.id),
+                            {'provider', identity, source.id})
+                        local item = field(settingId, source, groupId)
+                        if providerGroup.variationSource then item.visible = owned end
+                        if source.visibleWhen then
+                            local sourceId = providerFieldIds[source.visibleWhen]
                             assert(sourceId, 'provider visibility source must precede dependent field: '
-                                .. field.id)
-                            metadata.VisibleWhen = sourceId
-                            metadata.VisibleValues = table.concat(field.visibleValues, '|')
+                                .. source.id)
+                            item.visible = rule(sourceId, source.visibleValues)
                         end
-                        if field.labelWhen then
-                            metadata.mcLabelWhen = assert(providerFieldIds[field.labelWhen],
-                                'provider label source must precede dependent field: ' .. field.id)
+                        if source.labelWhen then
                             local labels = {}
-                            for _, value in ipairs(field.labelValues) do
-                                labels[#labels + 1] = tostring(value) .. ':' .. field.labelText
-                            end
-                            metadata.mcLabels = table.concat(labels, ';')
+                            for _, choice in ipairs(source.labelValues) do labels[choice] = source.labelText end
+                            item.relabel = {field = assert(providerFieldIds[source.labelWhen],
+                                'provider label source must precede dependent field: ' .. source.id), values = labels}
                         end
-                        if field.type == 'picker' or field.type == 'navigation' then
-                            metadata.PresetValues = table.concat(field.values, '|')
-                            metadata.PresetLabels = table.concat(field.labels, '|')
-                            metadata.mcType = field.tab and 'tab' or nil
-                            metadata.mcNavigation = field.type == 'navigation' and 1 or nil
-                            metadata.tabNavigation = field.tabNavigation
+                        row(item)
+                        -- Slot rows carry no group rules, so each takes the rule its group or
+                        -- field would apply.
+                        if slot then slotRow(source.visibleWhen and item.visible or groupVisible) end
+                        providerFieldIds[source.id] = settingId
+                        if source.type == 'navigation' then
+                            definition.navigation[source.id] = settingId
                         else
-                            metadata.Minimum, metadata.Maximum, metadata.Step = field.min, field.max, field.step
-                            metadata.Suffix = field.suffix
-                        end
-                        row(metadata)
-                        -- Slot rows carry no Category rules, so each takes the
-                        -- condition its group or field would apply.
-                        if slot then
-                            if field.visibleWhen then
-                                slotRow(metadata.VisibleWhen, metadata.VisibleValues, metadata.VisibleWhen)
-                            else
-                                slotRow(groupSource, groupValues, groupSource)
-                            end
-                        end
-                        providerFieldIds[field.id] = settingId
-                        if field.type == 'navigation' then
-                            definition.navigation[field.id] = settingId
-                        else
-                            definition.settings[field.id] = settingId
+                            definition.settings[source.id] = settingId
                         end
                     end
                 end
@@ -345,73 +305,57 @@ function M.generate(registry, options)
         end
     end
     currentCategory = nil
-    local function append(target, section, fields)
-        target[#target + 1] = '[' .. section .. ']'
-        local names = {}
-        for name, value in pairs(fields) do
-            if value ~= nil and name:sub(1, 1) ~= '_' then names[#names + 1] = name end
+    local function plain(item)
+        local out = {}
+        for name, value in pairs(item) do
+            if name:sub(1, 1) ~= '_' then out[name] = U.copy(value) end
         end
-        table.sort(names)
-        for _, name in ipairs(names) do target[#target + 1] = name .. '=' .. tostring(fields[name]) end
-        target[#target + 1] = ''
+        return out
     end
-    local function providerManifest(providerId, providerName, selectedRows, aggregatePage, configFile)
-        local output = {}
-        local headerPickers = 0
+    -- A page's menu data. Values are stored in configFile (the central config by default),
+    -- relative to the page's config directory.
+    local function providerMenu(providerName, selectedRows, aggregatePage, configFile)
+        local titles = 0
         for _, item in ipairs(selectedRows) do
-            if item.mcHeading == true then headerPickers = headerPickers + 1 end
+            if item.level == 1 then titles = titles + 1 end
         end
-        assert(headerPickers <= 1, providerName .. ': only one heading picker per page')
-        append(output, 'Mod', {Id=providerId, Name=providerName, Version=options.version,
-            Description=options.description and text(options.description) or nil})
-        local usedGroups = {}
-        for _, item in ipairs(selectedRows) do
-            usedGroups[item.Group] = true
-        end
+        assert(titles <= 1, providerName .. ': only one heading picker per page')
+        local used = {}
+        for _, item in ipairs(selectedRows) do used[item.group] = true end
+        local menu = {storage = {file = configFile or Layout.configFile, section = 'Templates'},
+            groups = {}, fields = {}}
+        -- Category groups head the aggregate's sections; other pages have one category.
         for _, groupId in ipairs(aggregateGroupOrder) do
-            if usedGroups[groupId] then
-                append(output, 'Category.' .. groupId, aggregatePage and {} or {mcHeading=0})
+            if used[groupId] then
+                local heading
+                if not aggregatePage then heading = false end
+                menu.groups[#menu.groups + 1] = {id = groupId, heading = heading}
             end
         end
         for _, groupId in ipairs(groupOrder) do
-            if usedGroups[groupId] then
-                local fields = groupSections[groupId]
-                append(output, 'Category.' .. groupId, fields)
-            end
+            if used[groupId] then menu.groups[#menu.groups + 1] = U.copy(groupSections[groupId]) end
         end
         for _, item in ipairs(selectedRows) do
-            if configFile and item.mcNavigation ~= 1 then
-                local stored = U.copy(item)
-                stored.ConfigFile = configFile
-                append(output, 'Setting.' .. item.Id, stored)
-            else
-                append(output, 'Setting.' .. item.Id, item)
-            end
+            local stored = plain(item)
+            -- The aggregate lists several categories, so none takes the title row.
+            if aggregatePage and stored.level == 1 then stored.level = 2 end
+            menu.fields[#menu.fields + 1] = stored
         end
-        local manifest = table.concat(output, '\n')
-        assert(#manifest <= 256 * 1024, 'generated manifest exceeds 256 KiB')
-        return manifest
+        return menu
     end
     local schema = {}
-    for _, r in ipairs(rows) do schema[r.Id] = r end
+    for _, r in ipairs(rows) do schema[r.id] = r end
     local function makeDecoder(requiredRows, includedCategories, owned)
       return function(values)
         assert(type(values) == 'table', 'Apply values must be a table')
         local effective = {}
-        for settingId, r in pairs(schema) do effective[settingId] = tonumber(r.Default) end
+        for settingId, r in pairs(schema) do effective[settingId] = r.default end
         for _, r in ipairs(requiredRows) do
-            local settingId = r.Id
+            local settingId = r.id
             local value = values[settingId]
-            if value == nil and r.mcNavigation == 1 then value = tonumber(r.Default) end
+            if value == nil and r.action then value = r.default end
             assert(type(value) == 'number' and value == value, 'missing/invalid setting ' .. settingId)
-            if r.Type == 'integer' then
-                assert(value >= r.Minimum and value <= r.Maximum and value % 1 == 0,
-                    (r.mcType == 'keybind' and 'invalid key ' or 'invalid integer ') .. settingId)
-            else
-                local found = false
-                for candidate in r.PresetValues:gmatch('[^|]+') do if value == tonumber(candidate) then found = true end end
-                assert(found, 'invalid choice ' .. settingId)
-            end
+            assert(M.accepts(r, value), (r.range and 'invalid integer ' or 'invalid choice ') .. settingId)
             effective[settingId] = value
         end
         local result = {}
@@ -422,18 +366,18 @@ function M.generate(registry, options)
             local config = selection.settings
             local shared = categorySettings[category]
             if shared then
-                for field, default in pairs(shared.static) do
-                    local supplied = values[shared.textIds[field]]
-                    config[field] = supplied == nil and default or supplied
+                for name, default in pairs(shared.static) do
+                    local supplied = values[shared.textIds[name]]
+                    config[name] = supplied == nil and default or supplied
                 end
-                for field, settingId in pairs(shared.fields) do
-                    config[field] = effective[settingId]
+                for name, settingId in pairs(shared.fields) do
+                    config[name] = effective[settingId]
                 end
                 Provider.validateCategory(registry.categories:getCategory(category).menu, config)
             end
             if definition.settings then
-                for field, settingId in pairs(definition.settings) do
-                    config[field] = effective[settingId]
+                for name, settingId in pairs(definition.settings) do
+                    config[name] = effective[settingId]
                 end
             end
             return selection
@@ -465,10 +409,10 @@ function M.generate(registry, options)
       end
     end
     local aggregateId = 'ModCoreTemplates'
-    local aggregateManifest = providerManifest(aggregateId, 'ModCore Templates', aggregateRows, true)
+    local aggregateMenu = providerMenu('ModCore Templates', aggregateRows, true)
     local allCategories = {}; for category in pairs(selectors) do allCategories[category] = true end
     for category in pairs(multiSelectors) do allCategories[category] = true end
-    local aggregate = {id=aggregateId, name='ModCore Templates', manifest=aggregateManifest, rows=aggregateRows,
+    local aggregate = {id=aggregateId, name='ModCore Templates', menu=aggregateMenu, rows=aggregateRows,
         decode=makeDecoder(aggregateRows, allCategories)}
     local pages, pageByCategory, pageByModule, providers = {}, {}, {}, {[aggregateId]=aggregate}
     local function routedRows(categories, owned)
@@ -479,10 +423,9 @@ function M.generate(registry, options)
         for _, item in ipairs(rows) do
             if categories[item._category] then
                 if item._control or (item._owner and owned[item._owner]) then
-                    if item.Id == headerSelector then
+                    if item.id == headerSelector then
                         local header = U.copy(item)
-                        header.mcHeading = true
-                        header.mcLevel = nil
+                        header.level = 1
                         selected[#selected + 1] = header
                     else
                         selected[#selected + 1] = item
@@ -495,41 +438,33 @@ function M.generate(registry, options)
             and selectors['player.quickslots'].id
         local otherHeader = false
         for _, item in ipairs(selected) do
-            if item.mcHeading == true and item.Id ~= quickslotsSelector then
+            if item.level == 1 and item.id ~= quickslotsSelector then
                 otherHeader = true
                 break
             end
         end
         if otherHeader then
             for index, item in ipairs(selected) do
-                if item.Id == quickslotsSelector then
+                if item.id == quickslotsSelector then
                     local selectorRow = U.copy(item)
-                    selectorRow.mcHeading = nil
+                    selectorRow.level = nil
                     selected[index] = selectorRow
                 end
             end
         end
         return selected
     end
-    local categoryOwned, moduleOwned, moduleCategories, moduleAuthors, moduleVersions, moduleRoots =
-        {}, {}, {}, {}, {}, {}
-    -- Module configs that held a slot category's values before it moved to its slot,
-    -- and modules whose templates all moved, which keep an entry that opens the slot.
-    local slotSources, slotModules = {}, {}
+    local categoryOwned, moduleOwned, moduleCategories, moduleRoots = {}, {}, {}, {}
+    -- Modules whose templates all moved to a slot keep an entry that opens the slot.
+    local slotModules = {}
     for _, entry in ipairs(entries) do
         local template = entry.template
-        local normalized = entry.location:gsub('\\', '/'):gsub('%[%d+%]$', '')
-        local parent = normalized:match('^(.*)/Scripts/templates/[^/]+%.lua$')
-            or normalized:match('^(.*)/Scripts/[^/]+%.lua$')
+        local parent = moduleRoot(entry.location)
         local slot = registry.categories:getCategory(template.category).slot
         if slot then
             if template.menu.target ~= 'templates' and parent then
-                local sources = slotSources[template.category] or {}
-                slotSources[template.category], sources[parent] = sources, true
-                local module = (template.module or parent:match('([^/]+)$')):gsub('^_', '')
-                slotModules[module] = slotModules[module] or {root=parent, slot=slot,
-                    author=template.author and text(template.author),
-                    version=template.version and text(template.version), owned={}, categories={}}
+                local module = parent:match('([^/]+)$')
+                slotModules[module] = slotModules[module] or {root=parent, slot=slot, owned={}, categories={}}
                 slotModules[module].owned[entry.id] = true
                 slotModules[module].categories[template.category] = true
             end
@@ -537,27 +472,12 @@ function M.generate(registry, options)
             categoryOwned[template.category] = categoryOwned[template.category] or {}
             categoryOwned[template.category][entry.id] = true
         else
-            local module = template.module or (parent and parent:match('([^/]+)$'))
+            local module = parent and parent:match('([^/]+)$') or template.module
             assert(module and module ~= '', entry.location
                 .. ': target=module requires a <Module>/Scripts/<file>.lua registration path')
-            module = module:gsub('^_', '')
             moduleOwned[module], moduleCategories[module] = moduleOwned[module] or {}, moduleCategories[module] or {}
-            if parent then
-                assert(not moduleRoots[module] or moduleRoots[module] == parent,
-                    module .. ': templates resolve to different module roots')
-                moduleRoots[module] = parent
-            end
+            moduleRoots[module] = parent
             moduleOwned[module][entry.id], moduleCategories[module][template.category] = true, true
-            if template.author then
-                assert(not moduleAuthors[module] or moduleAuthors[module] == template.author,
-                    module .. ': templates disagree on author')
-                moduleAuthors[module] = text(template.author)
-            end
-            if template.version then
-                assert(not moduleVersions[module] or moduleVersions[module] == template.version,
-                    module .. ': templates disagree on version')
-                moduleVersions[module] = text(template.version)
-            end
         end
     end
     for _, category in ipairs(registry.categories:list()) do
@@ -566,7 +486,7 @@ function M.generate(registry, options)
             local included = {[category]=true}
             local selectedRows = routedRows(included, categoryOwned[category])
             local page = {id=providerId, name=categoryLabels[category], category=category,
-                rows=selectedRows, manifest=providerManifest(providerId, categoryLabels[category], selectedRows, false)}
+                rows=selectedRows, menu=providerMenu(categoryLabels[category], selectedRows, false)}
             page.decode = makeDecoder(page.rows, included)
             pages[#pages + 1], pageByCategory[category], providers[providerId] = page, page, page
         end
@@ -580,26 +500,16 @@ function M.generate(registry, options)
             for _, item in ipairs(rows) do
                 if item._category == category and item._slot then selectedRows[#selectedRows + 1] = item end
             end
-            local output = {}
-            append(output, 'Mod', {Id=providerId, Name=categoryLabels[category], Version=options.version})
-            append(output, 'Category.Slot', {})
+            local menu = {storage = {file = Layout.configFile, section = 'Templates'},
+                groups = {{id = 'Slot'}}, fields = {}}
             for _, item in ipairs(selectedRows) do
-                local stored = U.copy(item)
-                stored.Group, stored.mcHeading, stored.mcLevel = 'Slot', nil, nil
-                stored.VisibleWhen, stored.VisibleValues = item._slot.when, item._slot.values
-                append(output, 'Setting.' .. item.Id, stored)
+                local stored = plain(item)
+                stored.group, stored.level = 'Slot', nil
+                stored.visible = U.copy(item._slot.visible)
+                menu.fields[#menu.fields + 1] = stored
             end
-            local migrate = {}
-            for parent in pairs(slotSources[category] or {}) do migrate[#migrate + 1] = parent .. '/config.ini' end
-            table.sort(migrate)
-            local retired = registry.categories:getCategory(category).retired or {}
-            for _, id in ipairs(retired) do
-                for _, item in ipairs(rows) do
-                    assert(item.Id ~= id, category .. ': retired setting ' .. id .. ' is still generated')
-                end
-            end
-            local page = {id=providerId, name=categoryLabels[category], slot=slot, slotCategory=category,
-                rows=selectedRows, manifest=table.concat(output, '\n'), migrate=migrate, retired=retired}
+            local page = {id=providerId, name=categoryLabels[category], slot=slot,
+                rows=selectedRows, menu=menu}
             page.decode = makeDecoder(page.rows, {[category]=true})
             pages[#pages + 1], pageBySlot[category], providers[providerId] = page, page, page
         end
@@ -609,12 +519,11 @@ function M.generate(registry, options)
     for _, module in ipairs(moduleNames) do
         local providerId = aggregateId .. '.module.' .. publicName(module)
         local selectedRows = routedRows(moduleCategories[module], moduleOwned[module])
-        local moduleRoot = moduleRoots[module]
-        local page = {id=providerId, name=module, module=module, moduleRoot=moduleRoot,
-            configPath=moduleRoot and moduleRoot .. '/config.ini' or nil,
-            author=moduleAuthors[module],version=moduleVersions[module],rows=selectedRows,
-            manifest=providerManifest(providerId, module, selectedRows, false,
-                moduleRoot and 'config.ini' or nil)}
+        -- A module outside a mod folder keeps its settings in the central config.
+        local root = moduleRoots[module]
+        local page = {id=providerId, name=module, module=module, moduleRoot=root,
+            configPath=root and root .. '/config.ini' or nil, rows=selectedRows,
+            menu=providerMenu(module, selectedRows, false, root and 'config.ini' or nil)}
         page.decode = makeDecoder(page.rows, moduleCategories[module], moduleOwned[module])
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end
@@ -632,20 +541,18 @@ function M.generate(registry, options)
         -- The template picker sits below the notice as in the slot, not in the title row.
         local selectedRows = {}
         for _, item in ipairs(routedRows(entry.categories, entry.owned)) do
-            if item.mcHeading == true then
+            if item.level == 1 then
                 item = U.copy(item)
-                item.mcHeading, item.mcLevel = nil, nil
+                item.level = nil
             end
-            if item.mcNavigation ~= 1 then selectedRows[#selectedRows + 1] = item end
+            if not item.action then selectedRows[#selectedRows + 1] = item end
         end
         local host = title(entry.slot:match('^[^:]+'))
-        table.insert(selectedRows, 1, {Id='MCT_MergedNotice', Group=selectedRows[1].Group,
-            Label='These settings have been merged into ' .. host .. ' and can also be edited there',
-            Type='picker', PresetValues='0|1', PresetLabels=host .. '|' .. host, Default=0,
-            mcNavigation=1, mcType='tab', mcLinkPage=entry.slot, mcLevel=5})
-        local page = {id=providerId, name=module, merged=entry.slot, moduleRoot=entry.root,
-            author=entry.author, version=entry.version, rows=selectedRows,
-            manifest=providerManifest(providerId, module, selectedRows, false)}
+        table.insert(selectedRows, 1, {id='MCT_MergedNotice', group=selectedRows[1].group,
+            label='These settings have been merged into ' .. host .. ' and can also be edited there',
+            choices={{value=0, label=host}}, default=0, action=true, tabs=true, link=entry.slot, level=5})
+        local page = {id=providerId, name=module, merged=entry.slot, moduleRoot=entry.root, rows=selectedRows,
+            menu=providerMenu(module, selectedRows, false)}
         page.decode = makeDecoder(page.rows, entry.categories, entry.owned)
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end
@@ -656,14 +563,14 @@ function M.generate(registry, options)
         for category in pairs(allCategories) do
             local shared = categorySettings[category]
             local categoryValues = {}
-            for field, default in pairs(shared.static) do
-                local supplied = values[shared.textIds[field]]
-                categoryValues[field] = supplied == nil and default or supplied
+            for name, default in pairs(shared.static) do
+                local supplied = values[shared.textIds[name]]
+                categoryValues[name] = supplied == nil and default or supplied
             end
-            for field, settingId in pairs(shared.fields) do categoryValues[field] = values[settingId] end
+            for name, settingId in pairs(shared.fields) do categoryValues[name] = values[settingId] end
             Provider.validateCategory(registry.categories:getCategory(category).menu, categoryValues)
             local effectiveCategory = U.copy(registry.categories:getCategory(category).runtimeSettings or {})
-            for field, value in pairs(categoryValues) do effectiveCategory[field] = value end
+            for name, value in pairs(categoryValues) do effectiveCategory[name] = value end
             local selections = {}
             local function selected(selection)
                 if not selection.id then return end
@@ -673,7 +580,7 @@ function M.generate(registry, options)
                 end
                 if not definition.enabled then return end
                 local own = {}
-                for field, settingId in pairs(definition.settings) do own[field] = values[settingId] end
+                for name, settingId in pairs(definition.settings) do own[name] = values[settingId] end
                 selections[selection.id] = own
             end
             local selectionsForCategory = decodedSelections[category]
@@ -683,11 +590,19 @@ function M.generate(registry, options)
         end
         return state
     end
-    return {manifest = aggregateManifest, fullManifest = table.concat(lines, '\n'), catalog = catalog,
+    return {menu = aggregateMenu, catalog = catalog,
         rows = rows, selectors = selectors, multiSelectors=multiSelectors, definitions = decoded,
         textSettings = textSettings, decodeState=decodeState, categorySettings=categorySettings,
-        decode = makeDecoder(rows, allCategories), aggregate=aggregate, pages=pages,
+        decode = decodeAll, aggregate=aggregate, pages=pages,
         pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}
+end
+
+-- Whether a row accepts a value: one of its choices, or a whole number in its range.
+function M.accepts(r, value)
+    if type(value) ~= 'number' or value ~= value then return false end
+    if r.range then return value >= r.range.min and value <= r.range.max and value % 1 == 0 end
+    for _, choice in ipairs(r.choices) do if choice.value == value then return true end end
+    return false
 end
 
 return M

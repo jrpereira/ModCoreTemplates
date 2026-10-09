@@ -18,50 +18,6 @@ function M.validate(options,categories,templates,locations)
     Runtime.new(options.host,model.categories,model.templates,options.state)
 end
 
--- A slot category's values formerly lived in each template module's config, where the
--- last module read won. Copy them to the central config once, then mark the copy done;
--- an interrupted copy repeats with the same values. Module copies stay so an earlier
--- MCT still finds them after a rollback. While a module config is missing the copy is
--- not marked, so a config restored later is still copied.
-function M.migrateSlot(central,page)
-    local marker='slot.'..page.slotCategory
-    if MenuFiles.readSection(central,'Migrations')[marker] then return end
-    local rows,moved,complete={},{},true
-    for _,row in ipairs(page.rows) do rows[row.Id]=row end
-    for _,path in ipairs(page.migrate) do
-        local file=io.open(path,'rb')
-        complete=complete and file~=nil
-        if file then
-            file:close()
-            local ok,values=pcall(MenuFiles.readConfigValues,path,{},page.rows)
-            if ok then
-                for id,value in pairs(values) do
-                    if MenuFiles.accepted(rows[id],value) then moved[id]=value end
-                end
-            end
-        end
-    end
-    if next(moved) then MenuFiles.editValues(central,moved) end
-    if complete then MenuFiles.editValues(central,{[marker]=1},'Migrations') end
-end
-
--- Remove each retired setting once from the module configs a slot migrated from. Only the
--- listed Templates keys go, and absent keys are fine. The marker is written only after
--- every module config was present and cleaned.
-function M.retireSettings(central,page)
-    local done=MenuFiles.readSection(central,'Migrations')
-    local changes,markers={},{}
-    for _,id in ipairs(page.retired) do
-        if not done['retired.'..id] then changes[id],markers['retired.'..id]=false,1 end
-    end
-    if not next(changes) then return end
-    local complete=true
-    for _,path in ipairs(page.migrate) do
-        complete=MenuFiles.editValues(path,changes)~=nil and complete
-    end
-    if complete then MenuFiles.editValues(central,markers,'Migrations') end
-end
-
 function M.new(options,categories,templates,locations,own)
     assert(not options.settingsApi or (not options.categorySettings and not options.selections),
         'use menuValues/config for menu-controlled startup selections')
@@ -95,17 +51,10 @@ function M.new(options,categories,templates,locations,own)
     if options.menuRoot then
         local paths=Layout.paths(options.menuRoot)
         MenuFiles.publish(options.menuRoot,self.menu)
-        local legacyValues={}
-        local legacy=io.open(paths.config,'rb')
-        if legacy then
-            legacy:close()
-            local ok,read=pcall(MenuFiles.readConfigValues,paths.config,self.menu.textSettings,self.menu.rows)
-            if ok then legacyValues=read end
-        end
         local centralRows,seen={},{}
         local function include(rows)
             for _,row in ipairs(rows) do
-                if not seen[row.Id] then seen[row.Id]=true;centralRows[#centralRows+1]=row end
+                if not seen[row.id] then seen[row.id]=true;centralRows[#centralRows+1]=row end
             end
         end
         include(self.menu.aggregate.rows)
@@ -122,23 +71,9 @@ function M.new(options,categories,templates,locations,own)
         end
         -- Configuration never prevents startup: a config that cannot be prepared or read
         -- is reported, and its settings run on their defaults.
-        local function attempt(stage,callback)
-            local ok,why=pcall(callback)
-            if not ok then pcall(options.host.onError,{stage=stage,message=tostring(why)}) end
-        end
-        for index,source in ipairs(configSources) do
-            attempt('config',function()
-                MenuFiles.ensureConfig(source.path,source.rows,source.textSettings,
-                    index>1 and legacyValues or nil)
-            end)
-        end
-        for _,page in ipairs(self.menu.pages) do
-            if page.slot then
-                attempt('config migration',function()
-                    M.migrateSlot(paths.config,page)
-                    M.retireSettings(paths.config,page)
-                end)
-            end
+        for _,source in ipairs(configSources) do
+            local ok,why=pcall(MenuFiles.ensureConfig,source.path,source.rows,source.textSettings)
+            if not ok then pcall(options.host.onError,{stage='config',message=tostring(why)}) end
         end
     end
     local function readValues()
@@ -151,8 +86,17 @@ function M.new(options,categories,templates,locations,own)
         return values
     end
     if options.menuRoot then savedValues=readValues() end
+    -- The Templates page lists every loaded template and marks the active ones.
+    local onState
+    if options.menuRoot then
+        local path,slot=Layout.paths(options.menuRoot).templates,nil
+        for _,page in ipairs(self.menu.pages) do slot=slot or page.slot end
+        onState=function(state)
+            require('mc.safe_file').write(path,require('mc.templates_list').encode(model.registry.templates,state,slot))
+        end
+    end
     self.menuController=MenuController.new(self.menu,self.runtime,
-        {values=savedValues,readValues=readValues,onError=options.host.onError})
+        {values=savedValues,readValues=readValues,onError=options.host.onError,onState=onState})
     if options.settingsApi then self.menuController:bind(options.settingsApi,options.queue) end
     for category,settings in pairs(options.categorySettings or {}) do
         self.runtime:setCategorySettings(category,settings)

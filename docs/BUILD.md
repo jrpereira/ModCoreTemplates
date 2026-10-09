@@ -14,7 +14,7 @@ The runner checks runtime syntax and executes every suite in `tests/mc/`:
 python3 tools/run-tests.py --lua lua5.4
 ```
 
-To also parse generated manifests with the installed DMM parser and MCS presentation:
+To also build the published menu data with MCS and parse it with the installed DMM parser and MCS presentation:
 
 ```sh
 python3 tools/run-tests.py --lua lua5.4 \
@@ -22,7 +22,8 @@ python3 tools/run-tests.py --lua lua5.4 \
   --presentation "/path/to/ModCoreSettings/Scripts/presentation.lua"
 ```
 
-Supply both optional paths together. The equivalent environment variables are
+Supply both optional paths together; `menu_data.lua` must sit beside
+`presentation.lua`, as it does in ModCoreSettings. The equivalent environment variables are
 `MCT_DMM_CHOICES` and `MCT_PRESENTATION`. Tests write generated data to a temporary
 directory. Edit template declarations, not generated menu files.
 

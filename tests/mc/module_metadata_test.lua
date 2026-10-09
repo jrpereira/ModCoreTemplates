@@ -1,42 +1,16 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Metadata=require('mc.module_metadata')
-local Layout=require('mc.layout')
-local root=assert(os.getenv('MCT_TEST_DIR'),'MCT_TEST_DIR required')..'/MetadataProvider'
-Layout.prepare(root)
-local function manifest(content)
-    local output=assert(io.open(root..'/mod.json','wb'))
-    assert(output:write(content));assert(output:close())
-end
-manifest([[{
-  "manifest_version": 1,
-  "id": "MetadataProvider",
-  "name": "Metadata Provider",
-  "author": "A \"Quoted\" Author",
-  "version": "2.3.4"
-}]])
-local template={name='Template',category='player.quickslots'}
-Metadata.apply(template,root..'/Scripts/mc_template.lua')
-assert(template.module=='MetadataProvider' and template.author=='A "Quoted" Author'
-    and template.version=='2.3.4')
-assert(not pcall(Metadata.apply,{module='Other'},root..'/Scripts/mc_template.lua'))
-manifest([[{"dependencies":[{"id":"Nested","version":"0.0.1"}],
-    "author":"A \uD83D\uDE00 Author","version":"2.3.4","id":"MetadataProvider"}]])
-local nested=assert(Metadata.read(root..'/Scripts/mc_template.lua'))
-assert(nested.module=='MetadataProvider' and nested.version=='2.3.4'
-    and nested.author=='A '..utf8.char(0x1F600)..' Author')
-manifest([[{"dependencies":[{"id":"Nested"}],"id":"MetadataProvider",
-    "version_source":"Scripts/main.lua"}]])
-local minimal=assert(Metadata.read(root..'/Scripts/mc_template.lua'))
-assert(minimal.module=='MetadataProvider' and minimal.author==nil and minimal.version==nil)
-for _,content in ipairs({
-    [[{"dependencies":[{"id":"Nested"}],"author":"A"}]],
-    [[{"id":"One","id":"Two","author":"A","version":"1"}]],
-    [[{"id":"One","author":"A","version":"1","name":"\uD83D"}]],
-    [[{"id":"One","author":"A","version":"1","name":"\uDE00"}]],
-    [[{"id":"One","author":"A","version":"1",}]],
-    [[{"id":"One","author":"A","version":"1"} trailing]],
-}) do
-    manifest(content)
-    assert(not pcall(Metadata.read,root..'/Scripts/mc_template.lua'))
-end
-print('PASS: module metadata is discovered from the provider manifest')
+local root=assert(os.getenv('MCT_TEST_DIR'),'MCT_TEST_DIR required')..'/9_ModCore_Provider'
+
+-- A template's module is its mod folder; MCT never reads the folder's mod.json, which
+-- ModCoreSettings reads for the module's name, author, version and icon.
+local template=Metadata.apply({name='Template',category='player.quickslots'},root..'/Scripts/mc_template.lua')
+assert(template.module=='9_ModCore_Provider' and template.author==nil and template.version==nil
+    and template.icon==nil)
+assert(Metadata.apply({},root..'\\Scripts\\templates\\nested.lua').module=='9_ModCore_Provider',
+    'templates under Scripts/templates and Windows paths resolve to the same folder')
+-- The folder wins over a declared module; outside a mod folder the declared one is kept.
+assert(Metadata.apply({module='Other'},root..'/Scripts/mc_template.lua').module=='9_ModCore_Provider')
+assert(Metadata.apply({module='Declared'},'template').module=='Declared')
+assert(Metadata.apply({},'template').module==nil)
+print('PASS: a template\'s module is the mod folder holding its provider file')

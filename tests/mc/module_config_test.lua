@@ -23,11 +23,11 @@ for _,definition in pairs(preview.definitions[category.name]) do
     if definition.id=='Wheels' then sizeId=definition.settings.Size end
 end
 assert(sizeId and preview.pageByModule.Fangdango.configPath==moduleRoot..'/config.ini')
-assert(preview.pageByModule.Fangdango.manifest:find('ConfigFile=config.ini',1,true))
+assert(preview.pageByModule.Fangdango.menu.storage.file=='config.ini')
 
-local legacyPath=Layout.prepare(menuRoot).config
-local legacy=assert(io.open(legacyPath,'wb'))
-legacy:write('[Templates]\n'..sizeId..'=73\n');legacy:close()
+local centralPath=Layout.prepare(menuRoot).config
+local saved=assert(io.open(moduleRoot..'/config.ini','wb'))
+saved:write('[Templates]\n'..sizeId..'=73\n');saved:close()
 local startupError
 local host={valid=function() return true end,identity=function(value) return value end,
     ready=function() return true end,parent=function() end,screen=function()
@@ -44,10 +44,11 @@ boot:registerTemplate(location)
 barrier();assert(boot.phase=='running',startupError)
 local moduleConfig=assert(io.open(moduleRoot..'/config.ini','rb'))
 local moduleContent=moduleConfig:read('*a');moduleConfig:close()
-assert(moduleContent:find(sizeId..'=73',1,true),'legacy value was not migrated')
-local central=assert(io.open(legacyPath,'rb'))
-local centralContent=central:read('*a');central:close()
-assert(centralContent:find(sizeId..'=73',1,true),'legacy config should be preserved')
+assert(moduleContent:find(sizeId..'=73',1,true),'saved module value was rewritten')
+local central=io.open(centralPath,'rb')
+local centralContent=central and central:read('*a') or ''
+if central then central:close() end
+assert(not centralContent:find(sizeId,1,true),'module settings stay out of the central config')
 assert(boot.menuController:values()[sizeId]==73,'runtime did not load module config')
 boot:stop()
-print('PASS: module-target settings use and migrate to the module config')
+print('PASS: module-target settings use the module config')

@@ -18,7 +18,9 @@ WheelNudge/
     └── mc_nudge.lua
 ```
 
-`mod.json` supplies the module ID, author and version. In `Scripts/main.lua`:
+The folder is your module. ModCoreSettings reads its `mod.json` for the name, author,
+version and icon shown with your settings page, and lists it as a ModCore module when
+`group` is `ModCore`. In `Scripts/main.lua`:
 
 ```lua
 local MC = require('mc')

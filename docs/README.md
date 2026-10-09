@@ -58,7 +58,7 @@ settings; selecting None restores the original state.
 
 Keep `Scripts/cache/config.ini`, `Scripts/cache/identity-catalog.lua`, and provider
 `config.ini` files when updating. Generated menu files can be rebuilt; edit Lua
-menu declarations, not generated manifests.
+menu declarations, not generated pages.
 
 If the bridge reports its native lifetime service unavailable, MCT keeps no
 objects and attaches no templates; it logs the bridge's reason once. There is no

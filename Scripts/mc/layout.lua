@@ -7,8 +7,7 @@ function M.paths(root)
     return {root=root, categories=root .. '/Scripts/categories',
         cache=root .. '/Scripts/cache', config=root .. '/' .. M.configFile,
         catalog=root .. '/Scripts/cache/identity-catalog.lua', version=root .. '/VERSION',
-        -- Files from the former DMM handoff, removed when MCT publishes.
-        retired={root .. '/mod_settings.ini', root .. '/Scripts/cache/menu-pages.lua'}}
+        templates=root .. '/Scripts/cache/templates.lua'}
 end
 -- The release version from VERSION at the mod root, or nil when absent or invalid.
 function M.version(root)

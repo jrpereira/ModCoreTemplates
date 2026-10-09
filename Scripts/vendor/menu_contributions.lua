@@ -2,16 +2,17 @@
 -- Public client for contributing menu pages through ModCoreSettings. Consumers copy this
 -- file unchanged into their Scripts/vendor folder. It only writes data files and one shared
 -- variable per contributor; ModCoreSettings reads them while building the menu.
--- Descriptors use contract 1, contract 2 when they carry slot rows or slot links, or
--- contract 3 when a page names a hooks file.
-local M={version=3,contract=1,rowsContract=2,hooksContract=3}
+-- Descriptors use contract 1, contract 2 when they carry slot rows or slot links,
+-- contract 3 when a page names a hooks file, or contract 4 when a page carries menu data.
+local M={version=6,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
 local PREFIX='MCS_MenuContrib_v1_'
 M.prefix,M.index=PREFIX,PREFIX..'index'
 local MAX_PAGES,MAX_ROWS,MAX_ROW_SETTINGS,MAX_MANIFEST=256,64,32,262144
-local PAGE_KEYS={id=true,name=true,author=true,version=true,description=true,manifest=true,
-    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true,hooks=true}
+local PAGE_KEYS={id=true,name=true,author=true,version=true,description=true,manifest=true,menu=true,
+    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true,hooks=true,icon=true}
 local DESCRIPTOR_KEYS={id=true,name=true,author=true,version=true,description=true,manifestFile=true,
-    configDirectory=true,visible=true,under=true,attach=true,group=true,link=true,hooks=true}
+    menuFile=true,configDirectory=true,visible=true,under=true,attach=true,group=true,link=true,hooks=true,
+    icon=true}
 local ROW_KEYS={page=true,slot=true,settings=true}
 
 -- A slot address is '<provider>:<slot>'. A ModCore<Name> provider may be written as its
@@ -67,17 +68,28 @@ local function check(contributor,contribution)
         line(page.name,200,where..' name')
         optional(page.author,120,where..' author')
         optional(page.version,64,where..' version')
+        -- icon: a short glyph shown before the page's name in the ModCore browser group.
+        optional(page.icon,16,where..' icon')
         assert(page.description==nil or (type(page.description)=='string' and #page.description<=4096
             and not page.description:find('%z')),'invalid '..where..' description')
         assert(page.visible==nil or type(page.visible)=='boolean','invalid '..where..' visible')
-        assert(page.group==nil or page.group=='module','invalid '..where..' group')
+        -- module: listed in the ModCore browser group. tool: listed only under the ModCore
+        -- page's Developer Tools tab.
+        assert(page.group==nil or page.group=='module' or page.group=='tool','invalid '..where..' group')
         -- A hooks page generates its manifest in ModCoreSettings each time the menu is built.
         if page.hooks~=nil then
             line(page.hooks,1024,where..' hooks')
             assert(absolute(page.hooks) and page.hooks:match('%.lua$'),where..': hooks must be an absolute .lua path')
             assert(page.manifest==nil and page.link==nil,where..': a hooks page cannot have a manifest or link')
         end
-        if page.manifest~=nil or page.hooks~=nil then
+        -- Menu data describes the page's settings; ModCoreSettings turns it into the page.
+        -- Its contents are checked when the menu is built.
+        if page.menu~=nil then
+            assert(type(page.menu)=='table',where..': menu must be a table')
+            assert(page.manifest==nil and page.hooks==nil and page.link==nil,
+                where..': a menu page cannot have a manifest, hooks or link')
+        end
+        if page.manifest~=nil or page.hooks~=nil or page.menu~=nil then
             assert(page.manifest==nil or (type(page.manifest)=='string' and #page.manifest<=MAX_MANIFEST
                 and not page.manifest:find('%z')),'invalid '..where..' manifest')
             line(page.configDirectory,1024,where..' configDirectory')
@@ -118,8 +130,8 @@ local function check(contributor,contribution)
         assert(type(row)=='table',where..' must be a table')
         for key in pairs(row) do assert(ROW_KEYS[key],where..': unknown field '..tostring(key)) end
         line(row.page,128,where..' page')
-        assert(seen[row.page] and (seen[row.page].manifest or seen[row.page].hooks),
-            where..': page must name a page with a manifest')
+        assert(seen[row.page] and (seen[row.page].manifest or seen[row.page].hooks or seen[row.page].menu),
+            where..': page must name a page with settings')
         local target=M.address(row.slot)
         assert(target,'invalid '..where..' slot address')
         for id in pairs(seen) do
@@ -146,6 +158,31 @@ function M.validate(contributor,contribution)
     return ok,not ok and tostring(err) or nil
 end
 
+-- An mcTable row's entries, decoded as ModCoreSettings decodes them, so a contributor can
+-- check its manifest values offline. value is '<code>:<text>|<code>:<text>|...': the code
+-- ends at the first ':', and neither part may contain '|'. Both are trimmed, non-empty and
+-- at most 8 characters. columns is mcColumns, 1 through 6 (1 when nil). Returns the
+-- entries as {code=,text=} and the column count; raises on malformed input.
+M.MAX_TABLE_ENTRIES,M.MAX_TABLE_COLUMNS=256,6
+function M.textTable(value,columns)
+    assert(type(value)=='string' and #value<=8192 and utf8.len(value) and not value:find('%c'),
+        'invalid table text')
+    local entries={}
+    for entry in (value..'|'):gmatch('(.-)|') do
+        local n=#entries+1
+        assert(n<=M.MAX_TABLE_ENTRIES,'table exceeds '..M.MAX_TABLE_ENTRIES..' entries')
+        local code,text=entry:match('^%s*([^:]-)%s*:%s*(.-)%s*$')
+        assert(code and code~='' and text~='','table entry '..n..' needs <code>:<text>')
+        assert(utf8.len(code)<=8 and utf8.len(text)<=8,'table entry '..n..' exceeds 8 characters')
+        entries[n]={code=code,text=text}
+    end
+    local count=columns==nil and 1 or math.tointeger(tonumber(columns))
+    assert(count and count>=1 and count<=M.MAX_TABLE_COLUMNS
+        and (type(columns)~='string' or columns:match('^%d$')),
+        'mcColumns must be an integer from 1 through '..M.MAX_TABLE_COLUMNS)
+    return entries,count
+end
+
 local function escape(value)
     return (value:gsub('\\','\\\\'):gsub('\n','\\n'):gsub('\r','\\r'))
 end
@@ -155,11 +192,55 @@ local function unescape(value)
     end))
 end
 
--- Hooks need a ModCoreSettings build that loads them; slot rows and links need one that
--- understands slots.
+-- Menu data needs a ModCoreSettings build that compiles it; hooks one that loads them;
+-- slot rows and links one that understands slots.
 function M.contractFor(contribution)
+    for _,page in ipairs(contribution.pages) do if page.menu then return M.menuContract end end
     for _,page in ipairs(contribution.pages) do if page.hooks then return M.hooksContract end end
     return M.needsRows(contribution) and M.rowsContract or M.contract
+end
+
+-- Menu data travels as a Lua table constructor holding only strings, finite numbers,
+-- booleans and tables; ModCoreSettings loads it without access to any globals.
+local function serialize(value,depth)
+    assert(depth<=16,'menu nests too deeply')
+    local kind=type(value)
+    if kind=='string' then return string.format('%q',value) end
+    if kind=='boolean' then return tostring(value) end
+    if kind=='number' then
+        assert(value==value and value~=math.huge and value~=-math.huge,'menu numbers must be finite')
+        return math.type(value)=='integer' and tostring(value) or string.format('%.17g',value)
+    end
+    assert(kind=='table','menu holds only strings, numbers, booleans and tables')
+    local parts,keys={}, {}
+    for n=1,#value do parts[n]=serialize(value[n],depth+1) end
+    for key in pairs(value) do
+        if not (math.type(key)=='integer' and key>=1 and key<=#value) then
+            assert(type(key)=='string' or math.type(key)=='integer','menu keys are strings or integers')
+            keys[#keys+1]=key
+        end
+    end
+    table.sort(keys,function(a,b)
+        if type(a)~=type(b) then return type(a)=='number' end
+        return a<b
+    end)
+    for _,key in ipairs(keys) do
+        local name=type(key)=='string' and key:match('^[%a_][%w_]*$') and key or '['..serialize(key,depth+1)..']'
+        parts[#parts+1]=name..'='..serialize(value[key],depth+1)
+    end
+    return '{'..table.concat(parts,',')..'}'
+end
+function M.serialize(menu)
+    local text=serialize(menu,0)
+    assert(#text<=MAX_MANIFEST,'menu exceeds '..MAX_MANIFEST..' bytes')
+    return text
+end
+function M.deserialize(text)
+    assert(type(text)=='string' and #text<=MAX_MANIFEST and text:sub(1,1)=='{','invalid menu data')
+    local chunk=assert(load('return '..text,'=menu','t',{}))
+    local menu=chunk()
+    assert(type(menu)=='table','invalid menu data')
+    return menu
 end
 function M.needsRows(contribution)
     if contribution.rows and #contribution.rows>0 then return true end
@@ -169,6 +250,7 @@ end
 
 function M.descriptorName(generation) return 'mcs_menu.'..generation..'.ini' end
 function M.manifestName(generation,n) return 'mcs_menu.'..generation..'.'..n..'.ini' end
+function M.menuName(generation,n) return 'mcs_menu.'..generation..'.'..n..'.lua' end
 
 -- Returns descriptor text and the manifest files it names.
 function M.encode(contributor,generation,contribution)
@@ -179,7 +261,7 @@ function M.encode(contributor,generation,contribution)
     local files={}
     for n,page in ipairs(contribution.pages) do
         out[#out+1]='[Page.'..n..']'
-        for _,key in ipairs({'id','name','author','version','description','configDirectory','under','attach','group','link','hooks'}) do
+        for _,key in ipairs({'id','name','author','version','description','configDirectory','under','attach','group','link','hooks','icon'}) do
             if page[key]~=nil then out[#out+1]=key..'='..escape(page[key]) end
         end
         if page.visible~=nil then out[#out+1]='visible='..(page.visible and '1' or '0') end
@@ -187,6 +269,10 @@ function M.encode(contributor,generation,contribution)
             local name=M.manifestName(generation,#files+1)
             files[#files+1]={name=name,content=page.manifest}
             out[#out+1]='manifestFile='..name
+        elseif page.menu then
+            local name=M.menuName(generation,#files+1)
+            files[#files+1]={name=name,content=M.serialize(page.menu)}
+            out[#out+1]='menuFile='..name
         end
     end
     for n,row in ipairs(rows) do
@@ -228,10 +314,18 @@ function M.decode(text,read)
             end
         end
     end
-    assert(tonumber(header.contract)==M.contractFor({pages=pages,rows=rows}),
-        'unsupported contract '..tostring(header.contract))
     local generation=tonumber(header.generation)
     assert(math.type(generation)=='integer' and generation>=1,'invalid generation')
+    for _,page in ipairs(pages) do
+        if page.menuFile then
+            assert(page.manifestFile==nil and page.menuFile==M.menuName(generation,page.menuFile:match('%.(%d+)%.lua$') or 0),
+                'invalid menu file')
+            page.menu=M.deserialize(read(page.menuFile))
+            page.menuFile=nil
+        end
+    end
+    assert(tonumber(header.contract)==M.contractFor({pages=pages,rows=rows}),
+        'unsupported contract '..tostring(header.contract))
     for _,page in ipairs(pages) do
         if page.visible~=nil then
             assert(page.visible=='0' or page.visible=='1','invalid visible')
@@ -301,8 +395,9 @@ function M.publisher(shared,options)
     local function cleanup(generation)
         if generation<1 then return end
         remove(join(M.descriptorName(generation)))
+        -- Manifest and menu files share one numbering; the first gap ends it.
         local n=1
-        while remove(join(M.manifestName(generation,n))) do n=n+1 end
+        while remove(join(M.manifestName(generation,n))) or remove(join(M.menuName(generation,n))) do n=n+1 end
     end
     local function register()
         local index=shared:GetSharedVariable(M.index)

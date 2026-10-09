@@ -13,7 +13,7 @@ below focus on menu declarations; callbacks must still declare their targets.
     └── cache/
         ├── config.ini        Central saved settings
         ├── identity-catalog.lua
-        └── mcs_menu.<generation>*.ini   Generated pages
+        └── mcs_menu.<generation>*       Published pages
 YourProvider/
 ├── config.ini               Module-target settings, when generated
 └── Scripts/
@@ -22,14 +22,14 @@ YourProvider/
 ```
 
 Generated catalogs, published pages, and aggregate/category settings go into
-`Scripts/cache`. MCT publishes its pages through ModCoreSettings' menu-contribution
-client (`vendor/menu_contributions.lua`, copied unchanged from ModCoreSettings) and writes nothing at the mod
-root. Aggregate and category pages resolve `ConfigFile=Scripts/cache/config.ini` against
-the MCT root. A module-target page instead uses `ConfigFile=config.ini` against that
-template module's root, so
-Fangdango settings are stored in `9_ModCore_Fangdango/config.ini`. On the first startup
-after this change, matching values in the former shared config are copied to the
-module config. Both locations contain user settings and must be preserved.
+`Scripts/cache`. MCT describes its pages as menu data and publishes them through
+ModCoreSettings' menu-contribution client (`vendor/menu_contributions.lua`, copied
+unchanged from ModCoreSettings); ModCoreSettings builds the pages. MCT writes nothing
+at the mod root and never writes DMM manifests. Aggregate and category pages store
+their values in `Scripts/cache/config.ini` under the MCT root. A module-target page
+instead stores them in `config.ini` at that template module's root, so for instance,
+Fangdango settings are stored in `9_ModCore_Fangdango/config.ini`. Both locations
+contain user settings and must be preserved.
 
 MCT replaces every file it writes (configs, the catalog and published pages) by
 writing `<file>.new`, moving the current file to `<file>.old` and then renaming
@@ -44,9 +44,13 @@ its `.old`.
   It takes the place of the menu entry for MCT's own folder and is hidden when empty.
 - **Category page:** fields for templates explicitly targeting `templates`, listed under
   ModCore Templates.
-- **Module page:** the default location for template fields, in the ModCore group. It
-  takes the place of the module's own entry when that entry has no settings. The module
-  name comes from the registered `<Module>/Scripts/<file>.lua` path.
+- **Module page:** the default location for template fields. The module is the mod
+  folder of the registered `<Module>/Scripts/<file>.lua` path, and the page attaches to
+  it. ModCoreSettings shows the page as that module: it takes the place of the module's
+  own entry when that entry has no settings, with the name, author, version and icon
+  from the module's `mod.json`, and lists it as a ModCore module when its `mod.json`
+  group is `ModCore`. A module with settings of its own keeps its entry, and the page
+  follows it. MCT never reads `mod.json`.
 
 Set `menuTarget='templates'` on a template only when its fields belong on the
 category page rather than its module page.
@@ -64,22 +68,19 @@ category page rather than its module page.
   aggregate, category or module rows. Slot rows carry no Category rules, so each row is
   gated by its own rule: the Template picker always shows; other rows show while their
   template is selected, or while their variation value is selected. Navigation links
-  are left out. Values are stored in the central config. The first start after a
-  category gains a slot copies its saved values from the template modules' configs
-  (the last module wins, as before) and records `slot.<category>=1` under
-  `[Migrations]`; module configs are left unchanged. A module whose templates all
+  are left out. Values are stored in the central config. A module whose templates all
   moved to slots keeps its page in the module group. The page edits the same rows,
   limited to its own templates, in the central config. It starts with a small notice,
   "These settings have been merged into Controls and can also be edited there", whose
-  button (`mcLinkPage=<slot address>`) opens the slot. That notice is the page's only
+  button opens the slot. That notice is the page's only
   link; navigation rows are left out, as in the slot. When the
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
 Single categories get a template picker with `None`. Each template choice notes its
-module, the `id` from the module's `mod.json`, through `mcChoiceNotes`; ModCoreSettings
-shows it on a second line under the template name. `None` and templates without a module
-have no note. Other categories get a toggle per template. A template with `enabled = false` remains represented in the
+module folder; ModCoreSettings shows the module's name on a second line under the
+template name. `None` and templates without a module have no note. Other categories get an `Enabled` toggle per template, saved as
+`MCT_<Template>_Enabled` under a heading that names the template. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
 
@@ -160,9 +161,9 @@ A field may declare `conditions` that depend on a picker in the same template:
 - Conditions only affect presentation. Hidden fields keep their saved values and
   are still delivered in `params.settings`.
 
-Conditions compile to `VisibleWhen`/`VisibleValues` and `mcLabelWhen`/`mcLabels`
-on the generated row. Both apply on slot pages too; `label` there needs the
-ModCoreSettings release that copies slot label rules.
+Conditions become the row's `visible` and `relabel` rules in the published menu
+data. Both apply on slot pages too; `label` there needs the ModCoreSettings release
+that copies slot label rules.
 
 A field may also appear directly in the `menu` array when it needs no visual group.
 Its ID must be absolute. MCT places it in an unheaded generated section while
@@ -192,7 +193,7 @@ options, provide:
 | `menuShared` | `ModRef` shared-variable interface for publishing pages to ModCoreSettings; Lua startup supplies it |
 | `settingsApi` | Durable Apply subscriber; the copied client is `require('settings_api')`, from `Scripts/vendor` |
 | `queue` | Game-thread dispatcher for settings callbacks |
-| `menu` | Generator options, such as `description` or an in-memory identity catalog |
+| `menu` | Generator options, such as an in-memory identity catalog |
 | `menuValues` | Initial committed setting-ID values for an in-memory host without `menuRoot` |
 
 When `menuRoot` is supplied, saved central and module configurations take precedence
@@ -206,14 +207,12 @@ generation and Apply routing work in memory and do not write any files.
 
 With `menuShared`, MCT publishes its pages once the barrier has completed and withdraws
 them on stop. A failed publish is reported and the templates keep running on their saved
-settings. Startup also removes `mod_settings.ini` and `Scripts/cache/menu-pages.lua` left by
-the former DMM handoff: a leftover `mod_settings.ini` would claim the `ModCoreTemplates` page
-id and make ModCoreSettings skip every MCT page.
+settings.
 
 Saved setting IDs use `MCT_`. Keep the identity catalog:
 choice numbers and named setting reservations survive subsequent regeneration,
 including adding a template before an existing one. The catalog is persisted before
-manifests using its IDs are written.
+pages using its IDs are published.
 
 ## Apply behavior
 
@@ -275,6 +274,7 @@ python3 tools/run-tests.py --lua lua5.4
 The runner uses temporary output directories. It validates the published contribution
 with the vendored ModCoreSettings client and exercises Apply routing,
 merged settings, persistence, revisions, subscriptions and lifecycle transitions.
-Passing `--dmm-choices` and `--presentation` also parses generated pages with the actual
-DMM parser and ModCoreSettings presentation code. These offline checks do not establish
-in-game rendering or startup timing.
+Passing `--dmm-choices` and `--presentation` also builds the published menu data with
+ModCoreSettings' `menu_data.lua` (beside `presentation.lua`) and parses the pages with
+the actual DMM parser and ModCoreSettings presentation code. These offline checks do
+not establish in-game rendering or startup timing.

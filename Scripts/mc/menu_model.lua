@@ -50,20 +50,8 @@ function M.build(definitions, templates, locations)
             assert(definition.single == true, definition.name .. ': a slot requires a single category')
             slot = slot.provider .. ':' .. slot.slot
         end
-        -- Setting ids this category no longer declares, removed once from the module
-        -- configs its slot migrated from.
-        local retired = definition.retired
-        if retired ~= nil then
-            assert(slot, definition.name .. '.retired requires a slot')
-            U.array(retired, definition.name .. '.retired')
-            for _, id in ipairs(retired) do
-                assert(type(id) == 'string' and #id <= 128 and id:match('^MCT_[%w_]+$'),
-                    definition.name .. '.retired: invalid setting id ' .. tostring(id))
-            end
-            retired = U.copy(retired)
-        end
         categories[definition.name] = {name=definition.name, menu=declaration, runtimeSettings=values,
-            single=definition.single == true, slot=slot, retired=retired}
+            single=definition.single == true, slot=slot}
         names[#names + 1] = definition.name
     end
     table.sort(names)
@@ -89,8 +77,7 @@ function M.build(definitions, templates, locations)
         -- Preserve template identity: callbacks may close over this table.
         template.settings = values
         local metadata = {name=template.name, category=template.category,
-            module=template.module, author=template.author, version=template.version,
-            menu=declaration}
+            module=template.module, menu=declaration}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             single=category.single, location=assert(locations[index], 'template source path required')}
     end

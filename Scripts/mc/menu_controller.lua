@@ -15,7 +15,7 @@ function M.new(menu, runtime, options)
     local alive, bound = true, false
     local self = {}
     for _, row in ipairs(menu.rows) do
-        if row.mcNavigation ~= 1 then values[row.Id] = tonumber(row.Default) end
+        if not row.action then values[row.id] = row.default end
     end
     for id, spec in pairs(menu.textSettings) do values[id] = spec.default end
     local defaults = U.copy(values)
@@ -28,6 +28,11 @@ function M.new(menu, runtime, options)
         end
         runtime:commit(changes)
         values, lastState = nextValues, U.copy(state)
+        -- onState(state) (optional) learns each committed state; its failure is only reported.
+        if options.onState then
+            local ok, why = pcall(options.onState, state)
+            if not ok and options.onError then pcall(options.onError, {stage='state', message=tostring(why)}) end
+        end
     end
     -- Saved settings never prevent startup: a combination that does not validate
     -- starts on the defaults instead.
@@ -53,7 +58,7 @@ function M.new(menu, runtime, options)
         provider.decode(supplied)
         local nextValues = U.copy(values)
         for _, row in ipairs(provider.rows) do
-            if row.mcNavigation ~= 1 then nextValues[row.Id] = supplied[row.Id] end
+            if not row.action then nextValues[row.id] = supplied[row.id] end
         end
         for id in pairs(menu.textSettings) do nextValues[id] = supplied[id] end
         commit(nextValues)

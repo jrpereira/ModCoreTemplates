@@ -267,7 +267,7 @@ function M.normalize(declaration)
             allowed(source, {id=true,label=true,type=true,order=true,default=true,values=true,
                 labels=true,min=true,max=true,step=true,suffix=true,tab=true,level=true,description=true,
                 visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
-                labelText=true,tabNavigation=true,linkProvider=true}, 'provider field')
+                labelText=true,linkProvider=true}, 'provider field')
             identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
             level(source.level, source.type == 'picker' or source.type == 'navigation')
             if source.level == 1 then
@@ -298,9 +298,6 @@ function M.normalize(declaration)
                 and (field.labelWhen == nil) == (field.labelText == nil),
                 'provider label requires labelWhen, labelValues and labelText')
             assert(field.tab == nil or type(field.tab) == 'boolean', 'provider tab must be boolean')
-            assert(field.tabNavigation == nil or (field.type == 'navigation'
-                and field.tab == true and field.tabNavigation == 1),
-                'tabNavigation=1 requires a navigation tab')
             if field.type == 'integer' then
                 assert(field.values == nil and field.labels == nil and not field.tab,
                     'integer cannot declare choices/tabs')
@@ -375,35 +372,8 @@ function M.normalize(declaration)
     return groups
 end
 
-function M.validate(declaration, committed)
-    local expected = {}
-    for _, group in ipairs(M.normalize(declaration)) do
-        for _, field in ipairs(group.fields) do
-            if field.type ~= 'navigation' then
-                expected[field.id] = true
-                local value = committed[field.id]
-                assert(finite(value), 'missing/invalid provider setting ' .. field.id)
-                if field.type == 'integer' then
-                    assert(value % 1 == 0 and value >= field.min and value <= field.max,
-                        'provider setting outside range ' .. field.id)
-                else
-                    local found = false
-                    for _, candidate in ipairs(field.values) do if value == candidate then found = true end end
-                    assert(found, 'invalid provider choice ' .. field.id)
-                end
-            end
-        end
-    end
-    if next(expected)==nil and committed==nil then return nil end
-    assert(type(committed) == 'table', 'committed settings are required')
-    for name in pairs(committed) do
-        assert(expected[name], 'unknown provider setting ' .. tostring(name))
-    end
-    return committed
-end
-
--- Category settings are shared by every template in that category. DMM can
--- edit numeric fields; text values can be edited in config.ini.
+-- Category settings are shared by every template in that category. The menu
+-- edits numeric fields; text values can be edited in config.ini.
 function M.normalizeCategory(declaration)
     if declaration == nil then return {}, {}, {} end
     assert(type(declaration) == 'table', 'category settings must be a table')

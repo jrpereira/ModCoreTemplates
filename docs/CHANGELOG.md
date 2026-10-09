@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- In categories that allow several templates, such as Player Notifications, each
+  template's toggle now reads `Enabled` under a heading that names the template,
+  and is saved as `MCT_<Template>_Enabled`. The former
+  `MCT_CategorySeparator_<Template>` key is no longer read; set the toggle again.
+- Removed migrations from before the first release: slot values are no longer copied
+  from module configs, retired slot settings are no longer cleaned, the central config
+  no longer seeds new module configs, and leftover `mod_settings.ini`,
+  `Scripts/cache/menu-pages.lua`, `.mc.bak` and `.mc.tmp` files are no longer
+  removed or recovered.
+- MCT publishes its pages as ModCoreSettings menu data instead of DMM manifests;
+  ModCoreSettings builds them. The Templates page hooks return menu data too.
+  Requires the ModCoreSettings build with menu data (contract 4).
+- A template's module is the mod folder holding its provider file. MCT no longer
+  reads `mod.json`: ModCoreSettings names the module and gives its page the
+  module's author, version and icon, and lists it as a ModCore module from its
+  `mod.json` group. Template choice notes and Templates page groups show the name
+  ModCoreSettings gives the folder.
+- The aggregate page no longer puts a template picker in its title row.
+- Template fields no longer accept `tabNavigation`, which had no effect.
+
 ## v1.0.2
 
 - Fix a crash when loading a save from a running game. MCT kept UE4SS object
