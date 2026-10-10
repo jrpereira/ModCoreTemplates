@@ -22,3 +22,4 @@ __pycache__/
 
 # Generated template state; created at runtime, never committed or shipped
 /Scripts/cache/
+/cache/
