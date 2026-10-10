@@ -1,8 +1,8 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Runtime=require('mc.runtime')
-local category=dofile('Scripts/categories/player_notifications.lua')
-assert(category.name=='player.notifications' and category.single==nil,
+local category=dofile('Scripts/categories/npc_attacks.lua')
+assert(category.name=='npc.attacks' and category.single==nil,
     'notification templates chain instead of replacing each other')
 local objects={}
 local function object(id,class)
@@ -107,6 +107,8 @@ local runtime=Runtime.new(host,{category},{template('a'),template('b')})
 runtime:select(category.name,{a={},b={}})
 runtime:start()
 assert(#runtime.errors==0,runtime.errors[1] and runtime.errors[1].message)
+assert(next(cues.a)==nil and next(cues.b)==nil,'cues wait until the player is ready')
+runtime:signal('MCTPlayerReady')
 local a,b=cues.a.hud,cues.b.hud
 assert(a and b and a~=b,'each notification template receives its own cue')
 assert(hudRoot:GetChildrenCount()==3 and hudRoot:GetChildAt(0).id=='hudNative',

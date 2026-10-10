@@ -10,7 +10,6 @@ return {
     'other_unknown.lua',
     'player_charges.lua',
     'player_compass.lua',
-    'player_notifications.lua',
     'player_quickslots.lua',
     'player_self.lua',
     'player_stats.lua',

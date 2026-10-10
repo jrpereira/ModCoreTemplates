@@ -10,10 +10,10 @@ assert(paths.templates==root..'/Scripts/cache/templates.lua')
 local templates={
     {id='a',template={name='Wheels',category='player.quickslots',module='Fangdango'}},
     {id='b',template={name='Double Sidebar',category='player.quickslots',module='Fangdango'}},
-    {id='c',template={name='Preymonition',category='player.notifications',module='Preymonition'}},
+    {id='c',template={name='Preymonition',category='npc.attacks',module='Preymonition'}},
     {id='d',template={name='Built In "Quoted"',category='player.quickslots'}},
 }
-local state={['player.quickslots']={settings={},selections={b={}}},['player.notifications']={settings={},selections={}}}
+local state={['player.quickslots']={settings={},selections={b={}}},['npc.attacks']={settings={},selections={}}}
 local text=List.encode(templates,state,'controls:visuals')
 local file=assert(io.open(paths.templates,'wb'));file:write(text);file:close()
 local list=assert(load(text,'list','t',{}))()
@@ -43,7 +43,7 @@ assert(#rows==4 and rows[1].label=='Built In "Quoted"' and rows[2].label=='Preym
     'templates are grouped by module, MCT\'s own first, then by the module\'s name')
 assert(row('Double Sidebar').choices[1].label=='✔  Active' and row('Wheels').choices[1].label=='—'
     and row('Preymonition').choices[1].label=='—','only the selected template shows as active')
-assert(row('Wheels').choices[1].note=='Player Quickslots' and row('Preymonition').choices[1].note=='Player Notifications',
+assert(row('Wheels').choices[1].note=='Player Quickslots' and row('Preymonition').choices[1].note=='Npc Attacks',
     'each template shows its category, faint, under its value')
 -- Without names the folders are shown as they are.
 local unnamed=hooks.menu({page='ModCoreTemplates',directory=root})

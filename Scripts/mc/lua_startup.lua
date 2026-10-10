@@ -50,21 +50,39 @@ function M.start(options, api)
     end
     if configured.menuRoot then configured.menuShared = assert(api.ModRef, 'ModRef unavailable') end
     local bootstrap
-    -- The loading screen's fade-out ends every pending attachDelay: nothing waits
-    -- once the game is visible. The hook reads neither context nor parameters.
+    -- Game functions that fire MCT's signals. A hook reads neither context nor
+    -- parameters and only queues the signal, which runs outside the hooked call.
+    -- The loading screen's fade-out also ends every pending attachDelay at once:
+    -- nothing waits once the game is visible.
     if type(api.RegisterHook) == 'function' then
-        local path = '/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished'
-        local ok, pre, post = pcall(api.RegisterHook, path, function()
-            if bootstrap and bootstrap.runtime then bootstrap.runtime:settle() end
-        end)
-        if ok and type(pre) == 'number' and type(post) == 'number' then
+        local sources = {
+            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished', 'MCTPlayerReady', settle=true},
+            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted', 'MCTCombatStart'},
+            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded', 'MCTCombatEnd'},
+        }
+        local registered = {}
+        for _, source in ipairs(sources) do
+            local path, signal = source[1], source[2]
+            local ok, pre, post = pcall(api.RegisterHook, path, function()
+                local runtime = bootstrap and bootstrap.runtime
+                if not runtime then return end
+                if source.settle then runtime:settle() end
+                api.ExecuteInGameThread(function()
+                    if bootstrap and bootstrap.runtime then bootstrap.runtime:signal(signal) end
+                end)
+            end)
+            if ok and type(pre) == 'number' and type(post) == 'number' then
+                registered[#registered + 1] = {path, pre, post}
+            elseif configured.log then
+                require('mc_log').wrap(configured.log).warn(signal, ' hook unavailable: ', path, ' ', tostring(pre))
+            end
+        end
+        if #registered > 0 then
             local closeHost = configured.closeHost
             configured.closeHost = function(...)
-                pcall(api.UnregisterHook, path, pre, post)
+                for _, hook in ipairs(registered) do pcall(api.UnregisterHook, hook[1], hook[2], hook[3]) end
                 if closeHost then return closeHost(...) end
             end
-        elseif configured.log then
-            require('mc_log').wrap(configured.log).debug('loading screen hook unavailable: ', tostring(pre))
         end
     end
     -- No group has focus until ModCore Controls reports its Default wheel.

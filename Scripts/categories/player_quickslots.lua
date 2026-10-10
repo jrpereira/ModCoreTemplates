@@ -18,6 +18,8 @@ local category = {
     -- later, while the loading screen still covers it. Attach once the HUD has
     -- been quiet for two seconds.
     attachDelay = 2000,
+    -- Templates receive control events once the player is in the game.
+    hooks = { wake = "MCTPlayerReady" },
     -- The Template picker and the selected template's settings appear in
     -- ModCore Controls' Visuals section instead of an MCT or module page.
     slot = { provider = 'controls', slot = 'visuals' },

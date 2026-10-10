@@ -2,6 +2,7 @@
 local Session=require('mc.startup_session')
 local ModuleMetadata=require('mc.module_metadata')
 local U=require('mc.util')
+local Runtime=require('mc.runtime')
 local M={}
 
 -- Providers keep helpers beside their templates. Their folders are appended so a
@@ -13,6 +14,16 @@ function M.executeTemplate(path)
         package.path=package.path..';'..entry
     end
     return assert(loadfile(path))()
+end
+
+-- The event hub sees only ModCore events; wake and sleep come from the runtime.
+local function hubEvents(template)
+    if type(template.events)~='table' then return template end
+    local events={}
+    for name,callback in pairs(template.events) do
+        if not Runtime.TEMPLATE_EVENTS[name] then events[name]=callback end
+    end
+    return {events=next(events) and events or nil}
 end
 
 function M.new(options)
@@ -174,7 +185,7 @@ function M.new(options)
             for _,file in ipairs(accepted) do
                 local registered,registerError=pcall(function()
                     if not options.events then return end
-                    for _,template in ipairs(file.entries) do own(file,options.events:register(template)) end
+                    for _,template in ipairs(file.entries) do own(file,options.events:register(hubEvents(template))) end
                 end)
                 if registered then
                     running[#running+1]=file

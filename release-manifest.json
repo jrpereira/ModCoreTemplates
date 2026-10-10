@@ -17,7 +17,6 @@
     "Scripts/categories/other_unknown.lua": "Scripts/categories/other_unknown.lua",
     "Scripts/categories/player_charges.lua": "Scripts/categories/player_charges.lua",
     "Scripts/categories/player_compass.lua": "Scripts/categories/player_compass.lua",
-    "Scripts/categories/player_notifications.lua": "Scripts/categories/player_notifications.lua",
     "Scripts/categories/player_quickslots.lua": "Scripts/categories/player_quickslots.lua",
     "Scripts/categories/player_radial.lua": "Scripts/categories/player_radial.lua",
     "Scripts/categories/player_self.lua": "Scripts/categories/player_self.lua",

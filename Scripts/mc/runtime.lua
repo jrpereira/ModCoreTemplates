@@ -6,6 +6,33 @@ local Objects = require('mc.objects')
 local array = require('mc.util').array
 local copy = require('mc.util').copy
 local M = {}
+-- MCT's signals, each with the one that ends it, or false. A signal holds from
+-- when it fires until its opposite fires; none holds before it first fires, and
+-- one without an opposite holds for good once it has.
+M.SIGNALS = {
+    MCTPlayerReady=false,
+    MCTCombatStart='MCTCombatEnd', MCTCombatEnd='MCTCombatStart',
+}
+-- Template events delivered by the runtime itself, once per template rather than
+-- per attachment: wake starts the template's event intake, sleep ends it.
+M.TEMPLATE_EVENTS = {wake=true, sleep=true}
+-- category.hooks names the signals that time its templates:
+--   attach   new attachments wait until it holds
+--   wake     templates are awake, receiving events, while it holds; defaults to attach
+--   sleep    puts them to sleep when it fires; defaults to wake's opposite, if any
+local function compileHooks(definition)
+    local name, hooks = definition.name, definition.hooks
+    assert(type(hooks) == 'table', name .. '.hooks must be a table')
+    for key, signal in pairs(hooks) do
+        assert(key == 'attach' or key == 'wake' or key == 'sleep',
+            name .. '.hooks: unknown hook ' .. tostring(key))
+        assert(M.SIGNALS[signal] ~= nil, name .. '.hooks.' .. key .. ': unknown signal ' .. tostring(signal))
+    end
+    local wake = hooks.wake or hooks.attach
+    assert(hooks.sleep == nil or wake, name .. '.hooks.sleep requires wake or attach')
+    assert(hooks.sleep == nil or hooks.sleep ~= wake, name .. '.hooks: sleep must differ from wake')
+    return {attach=hooks.attach, wake=wake, sleep=hooks.sleep}
+end
 -- Overlay complete setting values by key; nested values are copied, not merged.
 local function overlay(base, overrides)
     local result = copy(base)
@@ -78,6 +105,25 @@ function M.new(host, definitions, templates, state, options)
     local activeRoots, searchSignature = {}, nil
     local busy, unsubscribe = false, nil
     local failedInTurn = nil
+    -- When each signal last fired, as an ordinal; the signal being handled, if any.
+    local fired, firings, currentSignal = {}, 0, nil
+    local function holds(signal)
+        local at = fired[signal]
+        local opposite = M.SIGNALS[signal]
+        local ended = opposite and fired[opposite] or nil
+        return at ~= nil and (ended == nil or at > ended)
+    end
+    local function attachOpen(category)
+        local hooks = category.hooks
+        return not (hooks and hooks.attach) or holds(hooks.attach)
+    end
+    local function wakeOpen(category)
+        local hooks = category.hooks
+        if not (hooks and hooks.wake) then return true end
+        if not holds(hooks.wake) then return false end
+        local slept = hooks.sleep and fired[hooks.sleep]
+        return slept == nil or slept < fired[hooks.wake]
+    end
     local function managedRecord(definition, graph, targets, externallyCreated)
         local specs=TemplateTargets.compile(graph,targets)
         local created={}
@@ -129,6 +175,7 @@ function M.new(host, definitions, templates, state, options)
                 definition.name..'.attachDelay must be a positive number of milliseconds')
             category.attachDelay = {ms=definition.attachDelay, roots={}}
         end
+        if definition.hooks ~= nil then category.hooks = compileHooks(definition) end
         categories[definition.name] = category
     end
     for _, template in ipairs(templates) do
@@ -153,11 +200,20 @@ function M.new(host, definitions, templates, state, options)
             assert(type(template.attach) == 'function' and type(template.update) == 'function'
                 and type(template.detach) == 'function', 'template requires attach, update and detach')
         end
+        assert(template.events == nil or type(template.events) == 'table',
+            'template.events must be a table: '..template.id)
+        for name in pairs(M.TEMPLATE_EVENTS) do
+            local callback = template.events and template.events[name]
+            assert(callback == nil or type(callback) == 'function',
+                'template event callback must be a function: '..template.id..' '..name)
+        end
         local sharedTargets={}
         for _,name in ipairs(targetNames) do
             if category.sharedNames and category.sharedNames[name] then sharedTargets[#sharedTargets+1]=name end
         end
-        local record = {definition=template, enabled=false, defaults=copy(template.settings or {}),
+        -- enabled: selected in the menu. awake: receiving events (see syncAwake).
+        local record = {definition=template, enabled=false, awake=false,
+            defaults=copy(template.settings or {}),
             overrides={}, settings={}, revision=0, attached={}, pending={}, waiting={},
             manager=manager, graph=graph,
             targetTree=targetTree,sharedTargets=sharedTargets}
@@ -228,6 +284,30 @@ function M.new(host, definitions, templates, state, options)
             report(operation, record.definition.id, ok and (why or 'callback returned false') or value)
         end
         return false
+    end
+    -- A selected template is awake while its category's wake hook holds. Waking
+    -- and sleeping reach it as its wake and sleep events, called as
+    -- callback(params, event) with no attachment objects. A failing callback is
+    -- reported and still changes the state, so a later sleep can undo a partial wake.
+    local function syncAwake(category)
+        local open = self.phase == 'running' and wakeOpen(category)
+        for _, id in ipairs(keys(category.templates)) do
+            local record = category.templates[id]
+            local wanted = record.enabled and open
+            if wanted ~= record.awake then
+                record.awake = wanted
+                local name = wanted and 'wake' or 'sleep'
+                trace(id, name, currentSignal and ' on '..currentSignal or '')
+                local callback = record.definition.events and record.definition.events[name]
+                if callback then
+                    local ok, why = pcall(function() return mutate(function()
+                        return callback({settings=copy(record.settings), state=copy(state)},
+                            {name=name, signal=currentSignal})
+                    end) end)
+                    if not ok then report(name, id, why) end
+                end
+            end
+        end
     end
     local reconcile
     -- Restores a root hidden while its attachDelay ran; a dead root is not touched.
@@ -479,7 +559,7 @@ function M.new(host, definitions, templates, state, options)
                     for _,token in ipairs(keys(sharedObjects)) do
                         local object=sharedObjects[token]
                         if not shared.attached[token] and host.valid(object) and host.ready(object)
-                            and settledFor(token,object) then
+                            and attachOpen(category) and settledFor(token,object) then
                             local targets=sharedBundles[token]
                             local applied,screen,exposed=invoke(shared,'attach',object,nil,targets)
                             if applied and host.valid(object) then
@@ -498,6 +578,9 @@ function M.new(host, definitions, templates, state, options)
                     end
                 end
             end
+            -- Outgoing templates sleep after they detach; incoming ones wake
+            -- before they attach.
+            syncAwake(category)
             for _, id in ipairs(keys(category.templates)) do
                 local record = category.templates[id]
                 if record.enabled then
@@ -517,6 +600,9 @@ function M.new(host, definitions, templates, state, options)
                             local why={}
                             if blocked then why[#why+1]='blocked by another template' end
                             if record.pending[token] then why[#why+1]='detach pending' end
+                            if not attachOpen(category) then
+                                why[#why+1]='waiting for '..category.hooks.attach
+                            end
                             if not host.valid(object) then why[#why+1]='root invalid'
                             elseif not host.ready(object) then why[#why+1]='root not ready' end
                             if shared and not shared.attached[token] then why[#why+1]='shared objects not attached' end
@@ -532,7 +618,7 @@ function M.new(host, definitions, templates, state, options)
                             and retainsTargets(record.waiting[token],bundles[token],host)
                             and (not old or old.revision ~= record.revision)
                             and not (failedInTurn[record] and failedInTurn[record][token])
-                            and (old or settledFor(token,object)) then
+                            and (old or (attachOpen(category) and settledFor(token,object))) then
                             local operation = old and 'update' or 'attach'
                             local targets = bundles[token]
                             local applied,screen=invoke(record, operation, object, nil, targets)
@@ -604,7 +690,8 @@ function M.new(host, definitions, templates, state, options)
         serialize(function()
             for _,id in ipairs(keys(byId)) do
                 local record=byId[id]
-                local callback=record.enabled and event and record.definition.events
+                local callback=record.awake and event and not M.TEMPLATE_EVENTS[event.name]
+                    and record.definition.events
                     and record.definition.events[event.name]
                 if callback then
                     for _,token in ipairs(keys(record.attached)) do
@@ -622,6 +709,21 @@ function M.new(host, definitions, templates, state, options)
                     end
                 end
             end
+        end)
+    end
+    -- Records an MCT signal (M.SIGNALS) and reconciles, so categories whose hooks
+    -- name it attach, wake or sleep their templates.
+    function self:signal(name)
+        assert(M.SIGNALS[name] ~= nil, 'unknown signal: '..tostring(name))
+        serialize(function()
+            firings = firings + 1
+            fired[name] = firings
+            if log then log.debug('signal ', name) end
+            if self.phase ~= 'running' then return end
+            currentSignal = name
+            local ok, why = pcall(reconcile)
+            currentSignal = nil
+            if not ok then error(why, 0) end
         end)
     end
     -- Ends every pending attachDelay at once, e.g. when the loading screen has lifted.
@@ -745,6 +847,9 @@ function M.new(host, definitions, templates, state, options)
         end)
         if #failures>0 then return false,table.concat(failures,'; ') end
         return true
+    end
+    function self:awake(id)
+        return assert(byId[id], 'unknown template').awake
     end
     function self:attachments(id)
         local result = {}
