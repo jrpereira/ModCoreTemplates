@@ -75,7 +75,7 @@ local declaration={buttons={row={'first','second'},properties={'parent','order',
 local tree=require('mc.template_targets').compile(graph,declaration)
 local nested=require('mc.template_targets').arrange(tree,{first=first,second=second})
 assert(nested.buttons.row[1]==first and nested.buttons.row[2]==second)
-local nestedSaved=State.capture(nested,State.specs(graph,declaration))
+local nestedSaved=State.capture(nested,tree)
 -- Saved parents are weak handles, read back only while the parent lives.
 local Objects=require('mc.objects')
 assert(Objects.get(nestedSaved.buttons.row[1].parent)==switcher

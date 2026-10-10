@@ -1,13 +1,7 @@
 -- Reversible property capture for category targets, including target lists.
 local Objects = require('mc.objects')
 local Widget = require('mc.widget')
-local TemplateTargets = require('mc.template_targets')
 local M = {}
-
-function M.specs(graph,extensions)
-    local tree=TemplateTargets.compile(graph,extensions)
-    return tree
-end
 
 local function fields(spec)
     local result={}

@@ -6,6 +6,10 @@
   template's toggle now reads `Enabled` under a heading that names the template,
   and is saved as `MCT_<Template>_Enabled`. The former
   `MCT_CategorySeparator_<Template>` key is no longer read; set the toggle again.
+- Faster startup with many template providers: all provider files are validated
+  together once, instead of rebuilding the full menu after each file. A file that
+  conflicts with an earlier one is still rejected on its own.
+- Lifecycle trace details are no longer computed when the log level is above TRACE.
 - Removed migrations from before the first release: slot values are no longer copied
   from module configs, retired slot settings are no longer cleaned, the central config
   no longer seeds new module configs, and leftover `mod_settings.ini`,

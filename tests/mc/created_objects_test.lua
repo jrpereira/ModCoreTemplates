@@ -1,7 +1,7 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Selectors=require('mc.selectors')
-local State=require('mc.target_state')
+local Targets=require('mc.template_targets')
 local Manager=require('mc.managed_template')
 
 local declarations={
@@ -75,7 +75,7 @@ local template={objects={root={},actions={}},attach=function(objects,_,original)
     if fail then error('injected attach failure') end
     return original
 end}
-local manager=Manager.new(template,State.specs(graph,template.objects),graph.order,
+local manager=Manager.new(template,(Targets.compile(graph,template.objects)),graph.order,
     {{name='actions',class='/Script/UMG.CanvasPanel',from='root',parent='root'}})
 local function named() return {root=root} end
 assert(manager:attach(root,named(),{settings={}}))
@@ -121,7 +121,7 @@ local layoutTemplate={objects={'out','bait'},attach=function(values,_,original)
         'source must prepare the reparented canvas child before attach')
     return original
 end}
-local layoutManager=Manager.new(layoutTemplate,State.specs(layoutGraph,layoutTemplate.objects),
+local layoutManager=Manager.new(layoutTemplate,(Targets.compile(layoutGraph,layoutTemplate.objects)),
     layoutGraph.order,{
         {name='out',class='/Script/UMG.CanvasPanel',from='root',parent='root',
             layout='fill',prepass=true},

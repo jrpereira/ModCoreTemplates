@@ -78,6 +78,4 @@ function M.matches(object, selector)
     return type(full) == 'string' and not full:find('Default__', 1, true)
         and not selector.object:find(':WidgetTree%.') and full == selector.object
 end
-function M.valid(object) return valid(object) end
-function M.call(object, method, ...) return call(object, method, ...) end
 return M

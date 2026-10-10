@@ -90,6 +90,57 @@ function M.new(options)
         for _,why in ipairs(errors) do report('cleanup',why) end
         return #errors==0
     end
+    local function own(file,callback)
+        assert(type(callback)=='function',file.path..': cleanup callback must be a function')
+        file.cleanups[#file.cleanups+1]=callback
+    end
+    -- Runs a provider file and its loaded hooks; file.cleanups collects what to undo.
+    local function loadProvider(file)
+        local path=file.path
+        local loaded=execute(path)
+        assert(type(loaded)=='table',path..': expected template definition')
+        local entries={}
+        if loaded.category then entries[1]=loaded
+        else
+            local count=U.array(loaded,path..': template list')
+            assert(count>0,path..': empty template list')
+            for index=1,count do entries[index]=loaded[index] end
+        end
+        for _,template in ipairs(entries) do
+            assert(type(template)=='table' and template.category,
+                path..': invalid template definition')
+            assert(template.loaded==nil or type(template.loaded)=='function',
+                path..': template.loaded must be a function')
+            ModuleMetadata.apply(template,path)
+        end
+        local function onCleanup(callback) own(file,callback) end
+        for _,template in ipairs(entries) do
+            if template.loaded then
+                local cleanup=template.loaded(onCleanup)
+                if type(cleanup)=='function' then onCleanup(cleanup) end
+            end
+        end
+        file.entries=entries
+    end
+    -- A file that will not run releases what it owns; cleanups that fail stay owned.
+    local function reject(file,why)
+        report('provider',why,file.path)
+        local cleanupErrors=releaseCleanups(file.cleanups)
+        for _,cleanup in ipairs(file.cleanups) do providerCleanups[#providerCleanups+1]=cleanup end
+        for _,error in ipairs(cleanupErrors) do report('cleanup',file.path..': '..error,file.path) end
+    end
+    local function combined(list)
+        local templates,locations={},{}
+        for _,file in ipairs(list) do
+            for _,template in ipairs(file.entries) do
+                templates[#templates+1],locations[#locations+1]=template,file.path
+            end
+        end
+        return templates,locations
+    end
+    local function validates(list)
+        return pcall(Session.validate,options,options.categories,combined(list))
+    end
     function self:finishLoading()
         if self.phase~='registering' then return false end
         local ok,why=pcall(function()
@@ -100,59 +151,37 @@ function M.new(options)
             end
             self.phase='loading'
             if stopBarrier then stopBarrier();stopBarrier=nil end
-            local templates,locations={},{}
             Session.validate(options,options.categories,{}, {})
+            local loaded={}
             for _,path in ipairs(files) do
-                local cleanups={}
-                local loadedOK,loadedError=pcall(function()
-                    local loaded=execute(path)
-                    assert(type(loaded)=='table',path..': expected template definition')
-                    local entries={}
-                    if loaded.category then entries[1]=loaded
-                    else
-                        local count=U.array(loaded,path..': template list')
-                        assert(count>0,path..': empty template list')
-                        for index=1,count do entries[index]=loaded[index] end
-                    end
-                    for _,template in ipairs(entries) do
-                        assert(type(template)=='table' and template.category,
-                            path..': invalid template definition')
-                        assert(template.loaded==nil or type(template.loaded)=='function',
-                            path..': template.loaded must be a function')
-                        ModuleMetadata.apply(template,path)
-                    end
-                    local function onCleanup(callback)
-                        assert(type(callback)=='function',path..': cleanup callback must be a function')
-                        cleanups[#cleanups+1]=callback
-                    end
-                    for _,template in ipairs(entries) do
-                        if template.loaded then
-                            local cleanup=template.loaded(onCleanup)
-                            if type(cleanup)=='function' then onCleanup(cleanup) end
-                        end
-                    end
-                    local proposed,proposedLocations={},{}
-                    for index,template in ipairs(templates) do
-                        proposed[index],proposedLocations[index]=template,locations[index]
-                    end
-                    for _,template in ipairs(entries) do
-                        proposed[#proposed+1],proposedLocations[#proposedLocations+1]=template,path
-                    end
-                    Session.validate(options,options.categories,proposed,proposedLocations)
-                    if options.events then
-                        for _,template in ipairs(entries) do onCleanup(options.events:register(template)) end
-                    end
-                    templates,locations=proposed,proposedLocations
-                end)
-                if loadedOK then
-                    for _,cleanup in ipairs(cleanups) do providerCleanups[#providerCleanups+1]=cleanup end
-                else
-                    report('provider',loadedError,path)
-                    local cleanupErrors=releaseCleanups(cleanups)
-                    for _,cleanup in ipairs(cleanups) do providerCleanups[#providerCleanups+1]=cleanup end
-                    for _,error in ipairs(cleanupErrors) do report('cleanup',path..': '..error,path) end
+                local file={path=path,cleanups={}}
+                local loadedOK,loadedError=pcall(loadProvider,file)
+                if loadedOK then loaded[#loaded+1]=file else reject(file,loadedError) end
+            end
+            -- One validation covers every file. Only when it fails are files added one at
+            -- a time, so a file that conflicts with earlier ones is rejected on its own.
+            local accepted=loaded
+            if not validates(loaded) then
+                accepted={}
+                for _,file in ipairs(loaded) do
+                    local proposed={table.unpack(accepted)}
+                    proposed[#proposed+1]=file
+                    local valid,invalid=validates(proposed)
+                    if valid then accepted=proposed else reject(file,invalid) end
                 end
             end
+            local running={}
+            for _,file in ipairs(accepted) do
+                local registered,registerError=pcall(function()
+                    if not options.events then return end
+                    for _,template in ipairs(file.entries) do own(file,options.events:register(template)) end
+                end)
+                if registered then
+                    running[#running+1]=file
+                    for _,cleanup in ipairs(file.cleanups) do providerCleanups[#providerCleanups+1]=cleanup end
+                else reject(file,registerError) end
+            end
+            local templates,locations=combined(running)
             session=Session.new(options,options.categories,templates,locations,function(partial)
                 session=partial
             end)

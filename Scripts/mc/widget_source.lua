@@ -6,9 +6,7 @@ local Objects = require('mc.objects')
 local Widget = require('mc.widget')
 local Log = require('mc_log')
 local M = {}
-local function safe(object, method, ...)
-    return ObjectSelector.call(object, method, ...)
-end
+local safe = Objects.call
 local unwrap = Widget.unwrap
 local function isa(object, class)
     return safe(object, 'IsA', class) == true or safe(object, 'IsA', 'Class ' .. class) == true
@@ -21,8 +19,7 @@ local function eventClass(selector)
 end
 -- Reported stages that degrade gracefully; every other failure is an ERROR, and a failed
 -- startup is CRITICAL.
-local levels={identity='warn',config='warn',['config migration']='warn',
-    ['object-event']='warn',startup='critical'}
+local levels={identity='warn',config='warn',['object-event']='warn',startup='critical'}
 
 -- log: an mc_log logger (or a plain function); reports go to api.MCTOnError instead when set.
 function M.new(categories, api, log)
@@ -140,7 +137,7 @@ function M.new(categories, api, log)
         refreshHooks()
     end
     local function token(object)
-        if not ObjectSelector.valid(object) then return nil end
+        if not Objects.valid(object) then return nil end
         local address = safe(object,'GetAddress')
         if type(address) ~= 'number' then return nil end
         local name = safe(object,'GetFullName')
@@ -158,7 +155,7 @@ function M.new(categories, api, log)
     source.identity = token
     local function world(object)
         local value = safe(object,'GetWorld')
-        return ObjectSelector.valid(value) and value or nil
+        return Objects.valid(value) and value or nil
     end
     local function remember(object)
         local handle,why=Objects.hold(object)
@@ -180,7 +177,7 @@ function M.new(categories, api, log)
         refreshHooks()
     end
     function source.valid(object)
-        if not ObjectSelector.valid(object) then return false end
+        if not Objects.valid(object) then return false end
         local full = safe(object,'GetFullName')
         return type(full) == 'string' and not full:find('Default__',1,true)
             and not full:find('REINST_',1,true)
@@ -274,7 +271,7 @@ function M.new(categories, api, log)
         assert(onGameThread(), 'viewport discovery requires the game thread')
         if not source.valid(object) or type(api.StaticFindObject) ~= 'function' then return nil end
         local layout = api.StaticFindObject('/Script/UMG.Default__WidgetLayoutLibrary')
-        if not ObjectSelector.valid(layout) then return nil end
+        if not Objects.valid(layout) then return nil end
         local hud=ObjectSelector.owner(object) or object
         local size = safe(layout, 'GetViewportSize', hud)
         local scale=tonumber(safe(layout,'GetViewportScale',hud))
@@ -335,7 +332,7 @@ function M.new(categories, api, log)
         return first, second, third
     end
     local function knownObject(object)
-        if not ObjectSelector.valid(object) then return false end
+        if not Objects.valid(object) then return false end
         local address = safe(object, 'GetAddress')
         local name = address and knownAddresses[address]
         return name ~= nil and safe(object, 'GetFullName') == name
@@ -349,7 +346,7 @@ function M.new(categories, api, log)
     local function related(object)
         local seen={}
         for _=1,32 do
-            if not ObjectSelector.valid(object) then return false end
+            if not Objects.valid(object) then return false end
             local address=safe(object,'GetAddress')
             if not address or seen[address] then return false end
             seen[address]=true
@@ -383,7 +380,7 @@ function M.new(categories, api, log)
                     local address = safe(value, 'GetAddress')
                     if type(address) == 'number' then knownAddresses[address] = safe(value, 'GetFullName') end
                     local parent = safe(value, 'GetParent')
-                    local address = ObjectSelector.valid(parent) and safe(parent, 'GetAddress')
+                    local address = Objects.valid(parent) and safe(parent, 'GetAddress')
                     if type(address) == 'number' then panelAddresses[address] = true end
                 end
             end

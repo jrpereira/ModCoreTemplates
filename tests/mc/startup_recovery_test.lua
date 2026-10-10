@@ -1,10 +1,14 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 
-local sessions,events,closed={},{},0
+local sessions,events,closed,validations={},{},0,0
 package.loaded['mc.startup_session']={
     validate=function(_,_,templates)
+        validations=validations+1
+        local ids={}
         for _,template in ipairs(templates) do
             if template.invalid then error('invalid provider model') end
+            if ids[template.id] then error('duplicate template id '..template.id) end
+            ids[template.id]=true
         end
     end,
     new=function(_,_,templates,locations,own)
@@ -65,6 +69,34 @@ assert(failed['bad-execution'] and failed['bad-metadata'] and failed['bad-hook']
 boot:stop()
 assert(sessions[1].stops==1 and hookLive==0 and closed==1)
 print('PASS: malformed providers and throwing loaded hooks are isolated with owned cleanup')
+
+-- Valid files are checked together once, after the categories alone. A file valid on its
+-- own that conflicts with an earlier one is rejected, and only its hooks are undone.
+local function start(paths,files)
+    sessions,events,validations,hookLive={},{},0,0
+    local loop
+    local run=Bootstrap.new({host=host,categories={},execute=function(path) return files[path] end,
+        subscribeLoopStart=function(callback) loop=callback;return function() end end})
+    for _,path in ipairs(paths) do run:registerTemplate(path) end
+    loop()
+    return run
+end
+local clean=start({'good-a','good-b'},definitions)
+assert(clean.phase=='running' and #sessions[1]==2 and validations==2)
+clean:stop()
+local duplicateA={id='A',category='c',loaded=function(onCleanup)
+    hookLive=hookLive+1
+    onCleanup(function() hookLive=hookLive-1 end)
+end}
+local conflicting=start({'good-a','duplicate-a','good-b'},
+    {['good-a']=goodA,['duplicate-a']=duplicateA,['good-b']=goodB})
+assert(conflicting.phase=='running' and sessions[1][1].path=='good-a' and sessions[1][2].path=='good-b'
+    and sessions[1][3]==nil and hookLive==1)
+assert(#events==1 and events[1].stage=='provider' and events[1].provider=='duplicate-a'
+    and events[1].message:find('duplicate template id A',1,true))
+conflicting:stop()
+assert(hookLive==0)
+print('PASS: providers validate together, and a file conflicting with an earlier one is rejected alone')
 
 local withdrawals,cleanupAttempts,hostAttempts=0,0,0
 package.loaded['menu_contributions']={publisher=function()

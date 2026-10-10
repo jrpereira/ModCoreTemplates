@@ -1,7 +1,6 @@
 -- Event-driven lifecycle: no timers or periodic scans.
 local Selectors = require('mc.selectors')
 local ManagedTemplate = require('mc.managed_template')
-local TargetState = require('mc.target_state')
 local TemplateTargets = require('mc.template_targets')
 local Objects = require('mc.objects')
 local array = require('mc.util').array
@@ -56,8 +55,10 @@ function M.new(host, definitions, templates, state, options)
     -- Lifecycle decisions at TRACE; each subject logs only when its message changes.
     local log = host.log and require('mc_log').wrap(host.log) or nil
     local traced = {}
+    -- Callers check this before building a trace message's parts.
+    local function tracing() return log ~= nil and log.enabled('TRACE') end
     local function trace(subject, ...)
-        if not log or not log.enabled('TRACE') then return end
+        if not tracing() then return end
         local parts = {}
         for index = 1, select('#', ...) do parts[index] = tostring((select(index, ...))) end
         local message = table.concat(parts)
@@ -78,7 +79,7 @@ function M.new(host, definitions, templates, state, options)
     local busy, unsubscribe = false, nil
     local failedInTurn = nil
     local function managedRecord(definition, graph, targets, externallyCreated)
-        local specs=TargetState.specs(graph,targets)
+        local specs=TemplateTargets.compile(graph,targets)
         local created={}
         for _,name in ipairs(graph.order) do
             local selector=graph.byName[name]
@@ -383,11 +384,12 @@ function M.new(host, definitions, templates, state, options)
                         end
                     end
                     resolved[id]={objects=objects,bundles=bundles}
-                    local found=0
-                    for _ in pairs(objects) do found=found+1 end
-                    local known=0
-                    for _ in pairs(candidates) do known=known+1 end
-                    trace(id,'enabled, ',found,' root(s) resolved from ',known,' candidate(s)')
+                    if tracing() then
+                        local found,known=0,0
+                        for _ in pairs(objects) do found=found+1 end
+                        for _ in pairs(candidates) do known=known+1 end
+                        trace(id,'enabled, ',found,' root(s) resolved from ',known,' candidate(s)')
+                    end
                     for token,object in pairs(objects) do allObjects[token]=object end
                 else
                     trace(id,'not enabled')
@@ -511,7 +513,7 @@ function M.new(host, definitions, templates, state, options)
                             end
                         end
                         local old = record.attached[token]
-                        if log and not old then
+                        if not old and tracing() then
                             local why={}
                             if blocked then why[#why+1]='blocked by another template' end
                             if record.pending[token] then why[#why+1]='detach pending' end
