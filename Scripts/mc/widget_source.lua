@@ -355,13 +355,26 @@ function M.new(categories, api, log)
         end
         return false
     end
+    -- Stops at the first live root; dead ones met on the way are dropped.
     local function anyKnownValid()
-        return #knownObjects()>0
+        for key,handle in pairs(known) do
+            if Objects.get(handle) then return true end
+            known[key]=nil; Objects.release(handle)
+        end
+        return false
     end
     -- An unrelated call while every known root is gone means the game left
-    -- the world (map change or main menu): drop the widget hooks.
+    -- the world (map change or main menu): drop the widget hooks. The hooks see
+    -- every reflected UMG call in the game, so unrelated calls share one check per
+    -- game-thread dispatch instead of each reading the known roots.
+    local missQueued = false
     local function missed()
-        if not anyKnownValid() then refreshHooks() end
+        if missQueued or not active then return end
+        missQueued = true
+        api.ExecuteInGameThread(function()
+            missQueued = false
+            if active and not anyKnownValid() then refreshHooks() end
+        end)
     end
     -- Game state decides which widget hooks exist:
     --   idle     no live root (boot, main menu, loading): none

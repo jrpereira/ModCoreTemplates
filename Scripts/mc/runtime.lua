@@ -6,13 +6,14 @@ local Objects = require('mc.objects')
 local array = require('mc.util').array
 local copy = require('mc.util').copy
 local M = {}
--- MCT's signals, each with the one that ends it, or false. A signal holds from
--- when it fires until its opposite fires; none holds before it first fires, and
--- one without an opposite holds for good once it has.
+-- MCT's signals, each with its opposite. A signal holds from when it fires
+-- until its opposite fires; none holds before it first fires.
 M.SIGNALS = {
-    MCTPlayerReady=false,
+    MCTPlayerReady='MCTPlayerUnready', MCTPlayerUnready='MCTPlayerReady',
     MCTCombatStart='MCTCombatEnd', MCTCombatEnd='MCTCombatStart',
 }
+-- The signals that end their opposite.
+M.ENDS = {MCTPlayerUnready=true, MCTCombatEnd=true}
 -- Template events delivered by the runtime itself, once per template rather than
 -- per attachment: wake starts the template's event intake, sleep ends it.
 M.TEMPLATE_EVENTS = {wake=true, sleep=true}
@@ -75,7 +76,8 @@ local function targetNames(targets)
 end
 
 -- options: defer(ms, callback), which runs callback later on the game thread. Without
--- defer, attachDelay is ignored.
+-- defer, attachDelay is ignored. unavailable lists signals whose game hook could
+-- not be registered.
 function M.new(host, definitions, templates, state, options)
     options = options or {}
     local defer = options.defer
@@ -107,7 +109,20 @@ function M.new(host, definitions, templates, state, options)
     local failedInTurn = nil
     -- When each signal last fired, as an ordinal; the signal being handled, if any.
     local fired, firings, currentSignal = {}, 0, nil
+    -- A signal that can never fire, or whose opposite can never fire, holds for
+    -- good and its firings are ignored: categories timed by it degrade to always
+    -- attached and awake rather than never, or never again.
+    -- An end that can never fire simply never ends its opposite.
+    local unavailable = {}
+    for _, signal in ipairs(options.unavailable or {}) do
+        assert(M.SIGNALS[signal] ~= nil, 'unknown signal: '..tostring(signal))
+        if not M.ENDS[signal] then
+            unavailable[signal] = true
+            unavailable[M.SIGNALS[signal]] = true
+        end
+    end
     local function holds(signal)
+        if unavailable[signal] then return true end
         local at = fired[signal]
         local opposite = M.SIGNALS[signal]
         local ended = opposite and fired[opposite] or nil
@@ -122,7 +137,9 @@ function M.new(host, definitions, templates, state, options)
         if not (hooks and hooks.wake) then return true end
         if not holds(hooks.wake) then return false end
         local slept = hooks.sleep and fired[hooks.sleep]
-        return slept == nil or slept < fired[hooks.wake]
+        -- An unavailable wake holds without ever firing: only its opposite ends it.
+        local woke = fired[hooks.wake]
+        return slept == nil or woke == nil or slept < woke
     end
     local function managedRecord(definition, graph, targets, externallyCreated)
         local specs=TemplateTargets.compile(graph,targets)
@@ -715,6 +732,7 @@ function M.new(host, definitions, templates, state, options)
     -- name it attach, wake or sleep their templates.
     function self:signal(name)
         assert(M.SIGNALS[name] ~= nil, 'unknown signal: '..tostring(name))
+        if unavailable[name] then return end
         serialize(function()
             firings = firings + 1
             fired[name] = firings

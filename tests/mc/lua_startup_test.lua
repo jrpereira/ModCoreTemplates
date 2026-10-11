@@ -103,6 +103,37 @@ end
 print('PASS: object source skips categories without templates')
 
 do
+    -- A signal hook only queues: settle and signals run after the hooked call returns.
+    local hooks,queued={}, {}
+    local api={
+        FindAllOf=function() return {} end,
+        NotifyOnNewObject=function() end,
+        RegisterHook=function(path,callback) hooks[path]=hooks[path] or callback;return 1,2 end,
+        UnregisterHook=function() end,
+        IsInGameThread=function() return true end,
+        ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
+        UE4SSLuaEventBridge=Lifetimes.bridge(),
+    }
+    local used={name='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
+    local live=Startup.start({categoryFiles={'used'},execute=function(path)
+        return ({used=used,template=template})[path] end},api)
+    live:registerTemplate('template')
+    api.UE4SSLuaEventBridge.loopStart()
+    table.remove(queued,1)()
+    assert(live.phase=='running')
+    while #queued>0 do table.remove(queued,1)() end
+    local calls={}
+    live.runtime.settle=function() calls[#calls+1]='settle' end
+    live.runtime.signal=function(_,name) calls[#calls+1]=name end
+    hooks['/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished']()
+    assert(#calls==0,'the hook does no runtime work inline')
+    while #queued>0 do table.remove(queued,1)() end
+    assert(calls[1]=='settle' and calls[2]=='MCTPlayerReady','settle, then the signal, on the game thread')
+    live:stop()
+end
+print('PASS: signal hooks queue settle and signals outside the hooked call')
+
+do
     -- Stopping before loop start cancels the barrier.
     local queued,bridge={},Lifetimes.bridge()
     local early=Startup.start(opts,{ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,

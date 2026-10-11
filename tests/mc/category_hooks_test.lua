@@ -41,7 +41,7 @@ local function fixture(hooks,options)
                 ['controls.group.focus']=function() log[#log+1]=id..':focus' end,
             }}
     end
-    local runtime=Runtime.new(host,{category},templates,nil)
+    local runtime=Runtime.new(host,{category},templates,nil,{unavailable=options and options.unavailable})
     runtime:select('c',{a={}})
     local function take()
         local result=table.concat(log,', ')
@@ -146,6 +146,76 @@ do
     assert(take()=='a:wake MCTCombatStart' and #errors==1 and errors[1].stage=='wake')
     runtime:signal('MCTCombatEnd')
     assert(take()=='a:sleep MCTCombatEnd')
+    runtime:stop()
+end
+
+do
+    -- A combat hook that could not be registered: its pair holds for good, so
+    -- the template attaches and stays awake instead of never waking, or
+    -- never waking again after the first fight.
+    local runtime,take=fixture({attach='MCTPlayerReady',wake='MCTCombatStart',sleep='MCTCombatEnd'},
+        {unavailable={'MCTCombatStart'}})
+    runtime:start()
+    assert(take()=='a:wake' and runtime:awake('a'),'awake from the start without combat signals')
+    runtime:signal('MCTPlayerReady')
+    assert(take()=='a:attach','attach still waits for the player')
+    runtime:signal('MCTCombatEnd')
+    runtime:signal('MCTCombatStart')
+    assert(take()=='' and runtime:awake('a'),'firings of an unavailable pair are ignored')
+    runtime:stop()
+    -- A sleep other than an unavailable wake's opposite cannot be undone by a
+    -- wake that never fires: the template stays awake, and reconcile never fails.
+    local errors
+    runtime,take,errors=fixture({wake='MCTCombatStart',sleep='MCTPlayerUnready'},
+        {unavailable={'MCTCombatStart'}})
+    runtime:start()
+    assert(take()=='a:wake, a:attach')
+    runtime:signal('MCTPlayerUnready')
+    assert(take()=='' and runtime:awake('a') and #errors==0,'still awake, without a runtime error')
+    runtime:stop()
+    -- An unavailable attach signal no longer holds attachments back.
+    runtime,take=fixture({attach='MCTPlayerReady'},{unavailable={'MCTPlayerReady'}})
+    runtime:start()
+    assert(take()=='a:wake, a:attach','attaches at once without the loading screen hook')
+    runtime:stop()
+end
+
+do
+    -- A loading screen fading in ends combat and unreadies the player: a death
+    -- and reload never reports combat end.
+    local runtime,take=fixture({attach='MCTPlayerReady',wake='MCTCombatStart',sleep='MCTCombatEnd'})
+    runtime:start()
+    runtime:signal('MCTPlayerReady')
+    runtime:signal('MCTCombatStart')
+    assert(take()=='a:attach, a:wake MCTCombatStart')
+    runtime:signal('MCTCombatEnd')
+    runtime:signal('MCTPlayerUnready')
+    assert(take()=='a:sleep MCTCombatEnd' and runtime:awake('a')==false,'the fade-in puts it to sleep')
+    runtime:signal('MCTPlayerReady')
+    assert(take()=='' and runtime:awake('a')==false,'ready again, it sleeps until combat')
+    runtime:stop()
+    -- Templates awake while the player is ready sleep through the loading screen.
+    runtime,take=fixture({wake='MCTPlayerReady'})
+    runtime:start()
+    assert(take()=='a:attach')
+    runtime:signal('MCTPlayerReady')
+    assert(take()=='a:wake MCTPlayerReady')
+    runtime:signal('MCTPlayerUnready')
+    assert(take()=='a:sleep MCTPlayerUnready','asleep while loading')
+    runtime:signal('MCTPlayerReady')
+    assert(take()=='a:wake MCTPlayerReady','awake again once it lifts')
+    runtime:stop()
+end
+
+do
+    -- An end no hook can fire never ends its start; the start still works.
+    local runtime,take=fixture({attach='MCTPlayerReady',wake='MCTCombatStart',sleep='MCTCombatEnd'},
+        {unavailable={'MCTCombatEnd','MCTPlayerUnready'}})
+    runtime:start()
+    assert(take()=='','attach still waits for the player')
+    runtime:signal('MCTPlayerReady')
+    runtime:signal('MCTCombatStart')
+    assert(take()=='a:attach, a:wake MCTCombatStart' and runtime:awake('a'),'the start still wakes it')
     runtime:stop()
 end
 

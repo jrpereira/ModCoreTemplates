@@ -4,8 +4,12 @@
 -- past the current call only as a weak handle from hold, and read it with get.
 local M = {}
 
+-- Hoisted so a call builds no closure: these run inside game hooks.
+local function invoke(object, method, ...) return object[method](object, ...) end
+local function fetch(handle) return handle:get() end
+
 function M.call(object, method, ...)
-    local ok, value = pcall(function(...) return object[method](object, ...) end, ...)
+    local ok, value = pcall(invoke, object, method, ...)
     if ok then return value end
 end
 
@@ -56,7 +60,7 @@ end
 -- The live wrapper behind a handle from hold, or nil once its object died.
 function M.get(handle)
     if handle == nil then return nil end
-    local ok, object = pcall(function() return handle:get() end)
+    local ok, object = pcall(fetch, handle)
     if ok and M.valid(object) then return object end
 end
 

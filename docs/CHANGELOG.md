@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Widget hooks share one known-root check per game-thread dispatch. Before, every
+  unrelated `RemoveChild`, `ClearChildren`, `RemoveFromParent` or viewport call in the
+  game read every known root.
+- Existing `Scripts/categories` and `Scripts/cache` folders are found with a probe
+  file. Startup no longer starts a shell (cmd.exe on Windows) several times per boot.
+- The loading screen's fade-out settles pending attach delays on the game thread
+  after the hooked call returns, instead of attaching templates inside it.
+- A category whose wake signal is unavailable no longer fails its reconcile when a
+  different sleep signal fires.
 - In categories that allow several templates, such as Player Notifications, each
   template's toggle now reads `Enabled` under a heading that names the template,
   and is saved as `MCT_<Template>_Enabled`. The former

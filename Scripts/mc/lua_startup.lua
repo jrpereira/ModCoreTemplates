@@ -55,26 +55,43 @@ function M.start(options, api)
     -- The loading screen's fade-out also ends every pending attachDelay at once:
     -- nothing waits once the game is visible.
     if type(api.RegisterHook) == 'function' then
+        -- A loading screen fading in ends combat, which a death and reload never
+        -- reports, and the player is not ready again until it fades out.
         local sources = {
-            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished', 'MCTPlayerReady', settle=true},
-            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted', 'MCTCombatStart'},
-            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded', 'MCTCombatEnd'},
+            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeInFinished', {'MCTCombatEnd', 'MCTPlayerUnready'}},
+            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished', {'MCTPlayerReady'}, settle=true},
+            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted', {'MCTCombatStart'}},
+            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded', {'MCTCombatEnd'}},
         }
-        local registered = {}
+        local registered, sourced = {}, {}
         for _, source in ipairs(sources) do
-            local path, signal = source[1], source[2]
+            local path, signals = source[1], source[2]
             local ok, pre, post = pcall(api.RegisterHook, path, function()
-                local runtime = bootstrap and bootstrap.runtime
-                if not runtime then return end
-                if source.settle then runtime:settle() end
+                if not (bootstrap and bootstrap.runtime) then return end
                 api.ExecuteInGameThread(function()
-                    if bootstrap and bootstrap.runtime then bootstrap.runtime:signal(signal) end
+                    -- Settling attaches templates, so it too runs outside the hooked call.
+                    if source.settle and bootstrap and bootstrap.runtime then bootstrap.runtime:settle() end
+                    for _, signal in ipairs(signals) do
+                        if bootstrap and bootstrap.runtime then bootstrap.runtime:signal(signal) end
+                    end
                 end)
             end)
             if ok and type(pre) == 'number' and type(post) == 'number' then
                 registered[#registered + 1] = {path, pre, post}
+                for _, signal in ipairs(signals) do sourced[signal] = true end
             elseif configured.log then
-                require('mc_log').wrap(configured.log).warn(signal, ' hook unavailable: ', path, ' ', tostring(pre))
+                require('mc_log').wrap(configured.log).warn(table.concat(signals, ', '),
+                    ' hook unavailable: ', path, ' ', tostring(pre))
+            end
+        end
+        -- A signal no hook can fire: a start holds for good, an end never fires.
+        for _, source in ipairs(sources) do
+            for _, signal in ipairs(source[2]) do
+                if not sourced[signal] then
+                    sourced[signal] = true
+                    configured.unavailableSignals = configured.unavailableSignals or {}
+                    table.insert(configured.unavailableSignals, signal)
+                end
             end
         end
         if #registered > 0 then

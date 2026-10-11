@@ -285,6 +285,19 @@ do
     hooks['/Script/UMG.PanelWidget:ClearChildren'].post(wrap(menuPanel))
     hooks['/Script/UMG.Widget:RemoveFromParent'].pre(wrap(menuRow))
     assert(walks==0 and #events==found, 'menu widgets must cost no ancestry walk or wake')
+    do
+        -- Unrelated calls share one known-root check per game-thread dispatch.
+        local run,pending=api.ExecuteInGameThread,{}
+        api.ExecuteInGameThread=function(callback) pending[#pending+1]=callback end
+        for _=1,50 do
+            hooks['/Script/UMG.PanelWidget:RemoveChild'].post(wrap(menuPanel),wrap(menuRow))
+            hooks['/Script/UMG.Widget:RemoveFromParent'].post(wrap(menuRow))
+        end
+        assert(#pending==1, 'fifty unrelated calls queue one check, not one each')
+        api.ExecuteInGameThread=run
+        table.remove(pending)()
+        assert(hooks[AddChild], 'a live root keeps the widget hooks')
+    end
     hudSwitcher.parent=hudPanel
     hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(hud))
     assert(#events==found+1 and not hooks[AddChild], 'a ready root needs no AddChild hook')

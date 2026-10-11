@@ -55,6 +55,14 @@ M.moduleRoot = moduleRoot
 -- options.version is the release from VERSION; pages omit their version without it.
 function M.generate(registry, options)
     options = options or {}
+    -- The readable ids this registry generates, from a run that changes no
+    -- holder: only a holder outside it gives its id up (see namedId).
+    local live = options.live
+    if live == nil then
+        local dry = U.copy(options)
+        dry.live = false
+        live = M.generate(registry, dry).generated
+    end
     assert(options.version == nil or type(options.version) == 'string' and options.version:match('^%d+%.%d+%.%d+$'),
         'invalid menu version')
     local catalog = U.copy(options.catalog or {version = 1, next = 1, entries = {}})
@@ -79,18 +87,31 @@ function M.generate(registry, options)
     local function id(parts) return 'MCT_' .. allocate(parts) end
     catalog.names = catalog.names or {}
     assert(type(catalog.names) == 'table', 'invalid named setting catalog')
-    local publicIds = {}
+    -- Each public id's holder, and the identities generated in this run.
+    local holders, generated = {}, {}
     for key, name in pairs(catalog.names) do
         assert(type(key) == 'string' and type(name) == 'string' and name:match('^MCT_[%w_]+$')
-            and not publicIds[name], 'invalid/duplicate named setting catalog entry')
-        publicIds[name] = true
+            and not holders[name], 'invalid/duplicate named setting catalog entry')
+        holders[name] = key
     end
+    -- A setting takes its readable id unless a setting this registry still
+    -- generates holds it, so a template that moves category keeps its ids and
+    -- saved values, while a live holder always keeps its own. Holders no longer
+    -- generated are dropped at the end of the run.
     local function namedId(name, fallback)
         local identity = key(fallback)
-        if catalog.names[identity] then return catalog.names[identity] end
-        local settingId = 'MCT_' .. name
-        if publicIds[settingId] then settingId = id(fallback) end
-        publicIds[settingId] = true
+        generated[identity] = true
+        local wanted, kept = 'MCT_' .. name, catalog.names[identity]
+        local holder = holders[wanted]
+        local settingId
+        if holder == nil or holder == identity or (live and not live[holder]) then
+            settingId = wanted
+            if holder and holder ~= identity then catalog.names[holder] = nil end
+            if kept and kept ~= wanted then holders[kept] = nil end
+        else
+            settingId = kept or id(fallback)
+        end
+        holders[settingId] = identity
         catalog.names[identity] = settingId
         return settingId
     end
@@ -590,7 +611,12 @@ function M.generate(registry, options)
         end
         return state
     end
-    return {menu = aggregateMenu, catalog = catalog,
+    if live then
+        for identity in pairs(catalog.names) do
+            if not generated[identity] then catalog.names[identity] = nil end
+        end
+    end
+    return {menu = aggregateMenu, catalog = catalog, generated = generated,
         rows = rows, selectors = selectors, multiSelectors=multiSelectors, definitions = decoded,
         textSettings = textSettings, decodeState=decodeState, categorySettings=categorySettings,
         decode = decodeAll, aggregate=aggregate, pages=pages,
