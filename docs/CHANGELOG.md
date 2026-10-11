@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.1.0
 
+- Requires ModCore Settings 1.1.0 or later.
 - Widget hooks share one known-root check per game-thread dispatch. Before, every
   unrelated `RemoveChild`, `ClearChildren`, `RemoveFromParent` or viewport call in the
   game read every known root.
