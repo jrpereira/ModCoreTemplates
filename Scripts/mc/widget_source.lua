@@ -393,8 +393,8 @@ function M.new(categories, api, log)
                     local address = safe(value, 'GetAddress')
                     if type(address) == 'number' then knownAddresses[address] = safe(value, 'GetFullName') end
                     local parent = safe(value, 'GetParent')
-                    local address = Objects.valid(parent) and safe(parent, 'GetAddress')
-                    if type(address) == 'number' then panelAddresses[address] = true end
+                    local parentAddress = Objects.valid(parent) and safe(parent, 'GetAddress')
+                    if type(parentAddress) == 'number' then panelAddresses[parentAddress] = true end
                 end
             end
         end

@@ -328,12 +328,12 @@ function M.new(host, definitions, templates, state, options)
     end
     local reconcile
     -- Restores a root hidden while its attachDelay ran; a dead root is not touched.
-    local function revealRoot(state)
-        if type(state)~='table' or not state.hidden then return end
-        local live=Objects.get(state.hidden)
-        if live then pcall(function() live:SetRenderOpacity(state.opacity) end) end
-        Objects.release(state.hidden)
-        state.hidden=nil
+    local function revealRoot(rootState)
+        if type(rootState)~='table' or not rootState.hidden then return end
+        local live=Objects.get(rootState.hidden)
+        if live then pcall(function() live:SetRenderOpacity(rootState.opacity) end) end
+        Objects.release(rootState.hidden)
+        rootState.hidden=nil
     end
     local function include(object)
         if not host.valid(object) then return end
@@ -414,31 +414,31 @@ function M.new(host, definitions, templates, state, options)
             local function settledFor(token,object)
                 local delay=category.attachDelay
                 if not delay or not defer then return true end
-                local state=delay.roots[token]
-                if state=='settled' then return true end
+                local rootState=delay.roots[token]
+                if rootState=='settled' then return true end
                 if settledThisTurn[token]~=nil then return settledThisTurn[token] end
                 settledThisTurn[token]=false
-                if not state then
-                    state={generation=0}
+                if not rootState then
+                    rootState={generation=0}
                     local live=host.unwrap and host.unwrap(object) or object
                     local ok,opacity=pcall(function() return live:GetRenderOpacity() end)
                     local handle=ok and tonumber(opacity) and Objects.hold(live)
                     if handle and pcall(function() live:SetRenderOpacity(0) end) then
-                        state.hidden,state.opacity=handle,tonumber(opacity)
+                        rootState.hidden,rootState.opacity=handle,tonumber(opacity)
                     elseif handle then Objects.release(handle) end
                 end
-                state.generation=state.generation+1
-                delay.roots[token]=state
-                local generation=state.generation
+                rootState.generation=rootState.generation+1
+                delay.roots[token]=rootState
+                local generation=rootState.generation
                 local ok,why=pcall(defer,delay.ms,function()
-                    if delay.roots[token]~=state or state.generation~=generation then return end
+                    if delay.roots[token]~=rootState or rootState.generation~=generation then return end
                     delay.roots[token]='settled'
-                    revealRoot(state)
+                    revealRoot(rootState)
                     if self.phase=='running' then serialize(function() reconcile() end) end
                 end)
                 if not ok then
                     delay.roots[token],settledThisTurn[token]='settled',true
-                    revealRoot(state)
+                    revealRoot(rootState)
                     report('attach delay',nil,why)
                     return true
                 end
@@ -448,10 +448,10 @@ function M.new(host, definitions, templates, state, options)
             for token,object in pairs(requiredObjects) do allObjects[token]=object end
             if category.attachDelay then
                 -- Forget roots that are gone; a pending delay for one then does nothing.
-                for token,state in pairs(category.attachDelay.roots) do
+                for token,rootState in pairs(category.attachDelay.roots) do
                     if not candidates[token] then
                         category.attachDelay.roots[token]=nil
-                        revealRoot(state)
+                        revealRoot(rootState)
                     end
                 end
             end
@@ -750,10 +750,10 @@ function M.new(host, definitions, templates, state, options)
             local pending=false
             for _,category in pairs(categories) do
                 if category.attachDelay then
-                    for token,state in pairs(category.attachDelay.roots) do
-                        if type(state)=='table' then
+                    for token,rootState in pairs(category.attachDelay.roots) do
+                        if type(rootState)=='table' then
                             category.attachDelay.roots[token]='settled'
-                            revealRoot(state)
+                            revealRoot(rootState)
                             pending=true
                         end
                     end
@@ -858,7 +858,7 @@ function M.new(host, definitions, templates, state, options)
             candidates,activeRoots,searchSignature = {},{},nil
             for _,category in pairs(categories) do
                 if category.attachDelay then
-                    for _,state in pairs(category.attachDelay.roots) do revealRoot(state) end
+                    for _,rootState in pairs(category.attachDelay.roots) do revealRoot(rootState) end
                     category.attachDelay.roots={}
                 end
             end
