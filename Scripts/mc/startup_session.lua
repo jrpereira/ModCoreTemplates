@@ -86,13 +86,15 @@ function M.new(options,categories,templates,locations,own)
         return values
     end
     if options.menuRoot then savedValues=readValues() end
-    -- The Templates page lists every loaded template and marks the active ones.
+    -- The Templates page lists every loaded template by category, marks the active ones and
+    -- names the categories without templates.
     local onState
     if options.menuRoot then
         local path,slot=Layout.paths(options.menuRoot).templates,nil
         for _,page in ipairs(self.menu.pages) do slot=slot or page.slot end
         onState=function(state)
-            require('mc.safe_file').write(path,require('mc.templates_list').encode(model.registry.templates,state,slot))
+            require('mc.safe_file').write(path,require('mc.templates_list').encode(model.registry.templates,state,slot,
+                model.registry.categories:list()))
         end
     end
     self.menuController=MenuController.new(self.menu,self.runtime,

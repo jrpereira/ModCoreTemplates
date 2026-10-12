@@ -19,16 +19,29 @@ function M.build(menu, root)
     for _, page in ipairs(menu.pages) do
         if page.category then showAggregate = true end
     end
-    -- The aggregate takes the place of the menu entry for MCT's own folder. With no rows of
-    -- its own it is the Templates page: hooks list every loaded template by module.
-    local aggregate = {id=M.id, name='ModCore Templates', author='ModCoreTemplates',
-        version=version, attach=folder(root), configDirectory=root}
-    if #menu.aggregate.rows > 0 then aggregate.menu, aggregate.visible = menu.aggregate.menu, showAggregate
-    else
-        aggregate.hooks = root .. '/Scripts/mct_templates_page.lua'
-        aggregate.description = 'Every loaded template, by module, with the active ones marked.'
+    -- The Templates list fills ModCore Settings' Templates tab. Its hooks read the list MCT
+    -- writes on each commit, so the active marks follow selections; the rows name the
+    -- list's rows, which hold for the session.
+    local hooks = root .. '/Scripts/mct_templates_page.lua'
+    local listed = {}
+    -- The same file MCT's own Scripts load, run here only to name the rows.
+    for _, field in ipairs(require('mct_templates_page').menu({page=M.id, directory=root}).fields) do
+        listed[#listed + 1] = field.id
     end
-    local pages = {aggregate}
+    local description = 'Every loaded template, by category, with the active ones marked.'
+    -- The aggregate takes the place of the menu entry for MCT's own folder. With no rows of
+    -- its own it is the list, hidden unless category pages need it as their parent.
+    local aggregate = {id=M.id, name='ModCore Templates', author='ModCoreTemplates',
+        version=version, attach=folder(root), configDirectory=root, visible=showAggregate}
+    local pages, list = {aggregate}, aggregate
+    if #menu.aggregate.rows > 0 then
+        aggregate.menu = menu.aggregate.menu
+        list = {id=M.id .. '.templates', name='Templates', author='ModCoreTemplates', version=version,
+            configDirectory=root, visible=false, under=M.id}
+    end
+    list.hooks, list.description = hooks, description
+    -- Pages placed under the aggregate only while it is listed.
+    local parent = showAggregate and M.id or nil
     for _, page in ipairs(menu.pages) do
         if page.category then
             pages[#pages + 1] = {id=page.id, name=page.name, author='ModCoreTemplates',
@@ -37,13 +50,17 @@ function M.build(menu, root)
         end
     end
     -- A slot page stays hidden; its rows appear in the slot, edited and stored here.
-    -- ModCoreSettings shows it under the aggregate when no row finds its slot.
+    -- ModCoreSettings shows it (under the aggregate, when listed) when no row finds its slot.
     local rows = {}
+    for first = 1, #listed, ROW_SETTINGS do
+        rows[#rows + 1] = {page=list.id, slot='settings:templates',
+            settings={table.unpack(listed, first, math.min(first + ROW_SETTINGS - 1, #listed))}}
+    end
     for _, page in ipairs(menu.pages) do
         if page.slot then
             pages[#pages + 1] = {id=page.id, name=page.name, author='ModCoreTemplates',
                 version=version, description='Templates and settings for ' .. page.name .. '.',
-                menu=page.menu, configDirectory=root, visible=false, under=M.id}
+                menu=page.menu, configDirectory=root, visible=false, under=parent}
             local settings = {}
             for _, row in ipairs(page.rows) do
                 settings[#settings + 1] = row.id
@@ -74,7 +91,8 @@ function M.build(menu, root)
                 menu=page.menu, configDirectory=root, attach=folder(page.moduleRoot)}
         end
     end
-    return {pages=pages, rows=#rows > 0 and rows or nil}
+    if list ~= aggregate then pages[#pages + 1] = list end
+    return {pages=pages, rows=rows}
 end
 
 return M

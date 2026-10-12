@@ -135,9 +135,9 @@ function M.generate(registry, options)
         pageRows[currentCategory][#pageRows[currentCategory] + 1] = fields
         return fields.id
     end
-    local function picker(settingId, label, group, list, visible, level, default)
+    local function picker(settingId, label, group, list, visible, heading, default)
         return row({id = settingId, label = text(label), group = group, choices = list,
-            default = default == nil and list[1].value or default, visible = visible, level = level})
+            default = default == nil and list[1].value or default, visible = visible, heading = heading})
     end
     -- A generated group is headed by its label and shown only by its visibility rule.
     local function group(identity, label, visible, level, heading, publicId)
@@ -152,7 +152,7 @@ function M.generate(registry, options)
     end
     local function field(settingId, source, groupId)
         local item = {id = settingId, label = source.label, group = groupId, default = source.default,
-            description = source.description, level = source.level}
+            description = source.description, heading = source.heading, level = source.level}
         if source.type == 'picker' or source.type == 'navigation' then
             item.choices = choices(source.values, source.labels)
             item.tabs = source.tab or nil
@@ -220,7 +220,7 @@ function M.generate(registry, options)
                     or publicName(category) .. 'Template'
                 selector = namedId(selectorName, {'selector', category})
                 local isQuickslots = category == 'player.quickslots'
-                picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots and 1 or nil)
+                picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil)
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                 if slot then slotRow() end
@@ -338,7 +338,7 @@ function M.generate(registry, options)
     local function providerMenu(providerName, selectedRows, aggregatePage, configFile)
         local titles = 0
         for _, item in ipairs(selectedRows) do
-            if item.level == 1 then titles = titles + 1 end
+            if item.heading then titles = titles + 1 end
         end
         assert(titles <= 1, providerName .. ': only one heading picker per page')
         local used = {}
@@ -359,7 +359,7 @@ function M.generate(registry, options)
         for _, item in ipairs(selectedRows) do
             local stored = plain(item)
             -- The aggregate lists several categories, so none takes the title row.
-            if aggregatePage and stored.level == 1 then stored.level = 2 end
+            if aggregatePage and stored.heading then stored.heading, stored.level = nil, 2 end
             menu.fields[#menu.fields + 1] = stored
         end
         return menu
@@ -446,7 +446,7 @@ function M.generate(registry, options)
                 if item._control or (item._owner and owned[item._owner]) then
                     if item.id == headerSelector then
                         local header = U.copy(item)
-                        header.level = 1
+                        header.heading = true
                         selected[#selected + 1] = header
                     else
                         selected[#selected + 1] = item
@@ -459,7 +459,7 @@ function M.generate(registry, options)
             and selectors['player.quickslots'].id
         local otherHeader = false
         for _, item in ipairs(selected) do
-            if item.level == 1 and item.id ~= quickslotsSelector then
+            if item.heading and item.id ~= quickslotsSelector then
                 otherHeader = true
                 break
             end
@@ -468,7 +468,7 @@ function M.generate(registry, options)
             for index, item in ipairs(selected) do
                 if item.id == quickslotsSelector then
                     local selectorRow = U.copy(item)
-                    selectorRow.level = nil
+                    selectorRow.heading = nil
                     selected[index] = selectorRow
                 end
             end
@@ -525,7 +525,7 @@ function M.generate(registry, options)
                 groups = {{id = 'Slot'}}, fields = {}}
             for _, item in ipairs(selectedRows) do
                 local stored = plain(item)
-                stored.group, stored.level = 'Slot', nil
+                stored.group, stored.heading, stored.level = 'Slot', nil, nil
                 stored.visible = U.copy(item._slot.visible)
                 menu.fields[#menu.fields + 1] = stored
             end
@@ -562,9 +562,9 @@ function M.generate(registry, options)
         -- The template picker sits below the notice as in the slot, not in the title row.
         local selectedRows = {}
         for _, item in ipairs(routedRows(entry.categories, entry.owned)) do
-            if item.level == 1 then
+            if item.heading then
                 item = U.copy(item)
-                item.level = nil
+                item.heading = nil
             end
             if not item.action then selectedRows[#selectedRows + 1] = item end
         end

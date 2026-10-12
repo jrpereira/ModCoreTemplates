@@ -133,7 +133,7 @@ test('generated controls do not assign secondary levels or default tabs', functi
         local f=fixture(single)
         for _, provider in pairs(f.menu.providers) do
             for _, row in ipairs(provider.menu.fields) do
-                assert(row.level==nil or row.level==1, row.id .. ': unexpected level')
+                assert(row.level==nil, row.id .. ': unexpected level')
                 assert(not row.tabs, row.id .. ': unexpected tab')
             end
         end
@@ -147,11 +147,17 @@ test('module-target templates do not add controls to the MCT aggregate page', fu
     local moduleOnly=fixture(true,'module','module')
     assert(#moduleOnly.menu.aggregate.rows==0 and #moduleOnly.menu.pages==2)
     assert(moduleOnly.menu.pageByModule.Alpha and moduleOnly.menu.pageByModule.Beta)
-    local pages=Contribution.build(moduleOnly.menu,'/Mods/3_ModCore_Templates').pages
-    assert(#pages==3 and pages[1].id=='ModCoreTemplates' and pages[1].visible==nil and pages[1].menu==nil
+    local contribution=Contribution.build(moduleOnly.menu,'/Mods/3_ModCore_Templates')
+    local pages=contribution.pages
+    assert(Contributions.validate('ModCoreTemplates',contribution))
+    assert(#pages==3 and pages[1].id=='ModCoreTemplates' and pages[1].visible==false and pages[1].menu==nil
         and pages[1].hooks=='/Mods/3_ModCore_Templates/Scripts/mct_templates_page.lua'
-        and pages[1].configDirectory=='/Mods/3_ModCore_Templates',
-        'an aggregate without rows of its own is the Templates page, built by hooks')
+        and pages[1].configDirectory=='/Mods/3_ModCore_Templates' and pages[1].attach=='3_ModCore_Templates',
+        'an aggregate without rows of its own is the hidden Templates list, built by hooks')
+    -- Its rows fill ModCore Settings' Templates tab; before MCT has run, only the placeholder.
+    assert(#contribution.rows==1 and contribution.rows[1].page=='ModCoreTemplates'
+        and contribution.rows[1].slot=='settings:templates'
+        and table.concat(contribution.rows[1].settings,',')=='MCT_Listed_None')
     for index=2,3 do
         local page=pages[index]
         -- ModCoreSettings names and classifies the module from its folder.
@@ -579,7 +585,8 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value else beta=value end end
     assert(page.rows[1].id==selector.id,'Template comes first')
     local template=fieldOf(page.menu,selector.id)
-    assert(template.visible==nil and template.group=='Slot' and template.level==nil)
+    assert(template.visible==nil and template.group=='Slot' and template.level==nil
+        and template.heading==nil)
     local shared=fieldOf(page.menu,f.menu.categorySettings['player.quickslots'].fields.Size)
     assert(shown(shared)==selector.id..'='..alpha..'|'..beta or shown(shared)==selector.id..'='..beta..'|'..alpha)
     local size=fieldOf(page.menu,f.definitions.Alpha.settings.Size)
@@ -719,18 +726,23 @@ test('slot pages publish hidden with rows addressed to the slot', function()
     for _,candidate in ipairs(contribution.pages) do if candidate.id==page.id then published=candidate end end
     assert(published.visible==false and published.configDirectory=='/Mods/3_ModCore_Templates')
     local aggregate=contribution.pages[1]
-    assert(aggregate.id=='ModCoreTemplates' and aggregate.hooks and aggregate.link==nil
-        and aggregate.attach=='3_ModCore_Templates','ModCore Templates is listed as the Templates page')
-    assert(published.under=='ModCoreTemplates','the fallback page sits under the aggregate')
-    assert(#contribution.rows==math.ceil(#page.rows/32) and #contribution.rows>1,'rows are chunked')
-    local ids={}
+    assert(aggregate.id=='ModCoreTemplates' and aggregate.hooks and aggregate.link==nil and aggregate.visible==false
+        and aggregate.attach=='3_ModCore_Templates','ModCore Templates is the hidden Templates list')
+    assert(published.under==nil,'while the aggregate is hidden the fallback page stands on its own')
+    local ids,own={},{}
     for _,row in ipairs(contribution.rows) do
-        assert(row.page==page.id and row.slot=='controls:visuals' and #row.settings<=32)
-        for _,id in ipairs(row.settings) do ids[#ids+1]=id end
+        if row.page==page.id then
+            assert(row.slot=='controls:visuals' and #row.settings<=32)
+            own[#own+1]=row
+            for _,id in ipairs(row.settings) do ids[#ids+1]=id end
+        else assert(row.page=='ModCoreTemplates' and row.slot=='settings:templates') end
     end
+    assert(#own==math.ceil(#page.rows/32) and #own>1,'rows are chunked')
     for index,row in ipairs(page.rows) do assert(ids[index]==row.id) end
     local plain=Contribution.build(fixture(true).menu,'/Mods/3_ModCore_Templates')
-    assert(plain.rows==nil,'without slots the contribution keeps contract 1')
+    assert(Contributions.validate('ModCoreTemplates',plain))
+    assert(#plain.rows==1 and plain.rows[1].page=='ModCoreTemplates' and plain.pages[1].visible==true
+        and plain.pages[1].hooks,'an aggregate that parents category pages stays listed and still fills the tab')
 end)
 
 test('modules whose templates moved to a slot keep their page with a link to the slot', function()
@@ -756,7 +768,7 @@ test('modules whose templates moved to a slot keep their page with a link to the
     local selector=f.menu.selectors['player.quickslots']
     assert(fieldOf(page.menu,selector.id) and fieldOf(page.menu,f.definitions.Beta.settings.Size)
         and page.menu.storage.file=='Scripts/cache/config.ini','the page edits the slot rows in the central config')
-    assert(page.rows[2].id==selector.id and fieldOf(page.menu,selector.id).level==nil,
+    assert(page.rows[2].id==selector.id and fieldOf(page.menu,selector.id).heading==nil,
         'the template picker follows the notice as a plain row, not in the title row')
     assert(f.menu.selectors['player.quickslots'] and f.menu.pageBySlot['player.quickslots'].rows[1].id==selector.id)
     assert(not pcall(fieldOf,page.menu,f.definitions.Alpha.settings.Size),'only its own templates')
@@ -872,9 +884,11 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
         settingsCount=#page.rows,mcManifest=manifest,testOnly=false}
     local inserts={}
     for _,row in ipairs(Contribution.build(f.menu,'/mct').rows) do
-        local provider,name=Contributions.address(row.slot)
-        assert(provider==Contributions.provider('ModCoreControls') and name=='visuals')
-        inserts[#inserts+1]={contributor='ModCoreTemplates',source=source,settings=row.settings}
+        if row.slot~='settings:templates' then
+            local provider,name=Contributions.address(row.slot)
+            assert(provider==Contributions.provider('ModCoreControls') and name=='visuals')
+            inserts[#inserts+1]={contributor='ModCoreTemplates',source=source,settings=row.settings}
+        end
     end
     slots.inserts={[Contributions.provider('ModCoreControls')]={visuals=inserts}}
     local events={}

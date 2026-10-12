@@ -33,7 +33,15 @@
   module's author, version and icon, and lists it as a ModCore module from its
   `mod.json` group. Template choice notes and Templates page groups show the name
   ModCoreSettings gives the folder.
+- The list of loaded templates moves to ModCore Settings' Templates tab: MCT publishes it
+  as a hidden page whose rows fill the `settings:templates` slot, so MCT no longer has an
+  entry of its own in the mod list unless category pages need one. Templates are grouped by
+  category, with a subgroup per module supplying them, and keep those groups in the slot;
+  each template reads `Active` or stays blank. The list no longer opens with a link to
+  choose the quickslot template.
 - The aggregate page no longer puts a template picker in its title row.
+- Provider fields take `heading=true` for the title-row picker instead of `level=1`;
+  `level` now takes 0 or 2–6. Generated menu data marks title-row pickers the same way.
 - Template fields no longer accept `tabNavigation`, which had no effect.
 
 ## v1.0.2

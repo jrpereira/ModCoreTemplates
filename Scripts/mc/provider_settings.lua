@@ -11,10 +11,9 @@ local function identifier(v, where)
     text(v, where)
     assert(#v <= 128 and v:match('^[%a_][%w_]*$'), where .. ': invalid stable identifier')
 end
-local function level(v, picker)
-    assert(v == nil or (finite(v) and v % 1 == 0
-        and (v == 0 or (picker and v == 1) or (v >= 2 and v <= 6))),
-        'provider level must be 0 or 2..6; level 1 requires a picker')
+local function level(v)
+    assert(v == nil or (finite(v) and v % 1 == 0 and (v == 0 or (v >= 2 and v <= 6))),
+        'provider level must be 0 or 2..6')
 end
 local function allowed(value, names, where)
     for name in pairs(value) do assert(names[name], where .. ': unsupported property ' .. tostring(name)) end
@@ -265,14 +264,16 @@ function M.normalize(declaration)
         for fieldIndex, source in ipairs(sourceGroup.fields) do
             assert(type(source) == 'table', 'provider field must be a table')
             allowed(source, {id=true,label=true,type=true,order=true,default=true,values=true,
-                labels=true,min=true,max=true,step=true,suffix=true,tab=true,level=true,description=true,
-                visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
+                labels=true,min=true,max=true,step=true,suffix=true,tab=true,heading=true,level=true,
+                description=true,visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
                 labelText=true,linkProvider=true}, 'provider field')
             identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
-            level(source.level, source.type == 'picker' or source.type == 'navigation')
-            if source.level == 1 then
+            level(source.level)
+            if source.heading ~= nil then
+                assert(source.heading == true and (source.type == 'picker' or source.type == 'navigation')
+                    and source.level == nil, 'provider heading must be true on a picker without a level')
                 headerPickers = headerPickers + 1
-                assert(headerPickers <= 1, 'only one level-1 picker per template')
+                assert(headerPickers <= 1, 'only one heading picker per template')
             end
             assert(not fields[source.id], 'duplicate provider field ' .. source.id)
             local field = U.copy(source)
