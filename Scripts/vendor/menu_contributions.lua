@@ -357,20 +357,12 @@ function M.slot(value)
     return generation,path
 end
 
-local function defaultRead(path)
-    local file=io.open(path,'rb')
-    if not file then return nil end
-    local content=file:read('a')
-    file:close()
-    return content
-end
-
-local function defaultWrite(path,content)
-    local file=assert(io.open(path,'wb'))
-    local ok,err=file:write(content)
-    file:close()
-    assert(ok,err)
-end
+-- The publisher's own files are read and replaced crash-safely by default, so a crash while
+-- writing the generation counter leaves the previous counter rather than a truncated one.
+-- Removing a retired file also removes the backup a replacement kept beside it.
+local function defaultRead(path) return require('safe_file').read(path) end
+local function defaultWrite(path,content) require('safe_file').write(path,content) end
+local function defaultRemove(path) os.remove(path..'.old');return os.remove(path) end
 
 function M.publisher(shared,options)
     assert(shared and type(shared.GetSharedVariable)=='function'
@@ -381,7 +373,7 @@ function M.publisher(shared,options)
     line(directory,1024,'directory')
     assert(absolute(directory),'directory must be absolute')
     directory=directory:gsub('[/\\]+$','')
-    local write,remove=options.write or defaultWrite,options.remove or os.remove
+    local write,remove=options.write or defaultWrite,options.remove or defaultRemove
     local read=options.read or defaultRead
     local hexId=M.hex(id)
     local key=PREFIX..hexId

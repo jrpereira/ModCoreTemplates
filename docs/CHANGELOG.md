@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.2.0
+
+- Requires ModCore Settings 1.2.0 or later, whose Templates tab holds the template list.
+- Category definitions name their identity with `id` instead of `name`, like templates
+  and settings; `name` is no longer read.
+- The list of loaded templates moves to ModCore Settings' Templates tab: MCT publishes it
+  as a hidden page whose rows fill the `settings:templates` slot, so MCT no longer has an
+  entry of its own in the mod list unless category pages need one. Templates are grouped by
+  the module supplying them, with a subgroup per category, and keep those groups in the
+  slot; each template reads `Active` or stays blank. The list no longer opens with a link to
+  choose the quickslot template.
+- Provider fields take `heading=true` for the title-row picker instead of `level=1`;
+  `level` now takes 0 or 2–6. Generated menu data marks title-row pickers the same way.
+- Files are read and replaced through `safe_file.lua`, shared with the other ModCore modules
+  (same `.new`/`.old` protocol as before). Reading a file that exists but cannot be read now
+  raises instead of looking like a missing file.
+- `Scripts/cache/config.ini` is read and edited through the shared `mc_ini.lua`: repairs and
+  added settings keep each line's spacing, comment and line endings.
+- Until ModCore Controls reports a focused group, templates see no focus (`group={}`), as
+  MCT's own state already assumed.
+
 ## v1.1.0
 
 - Requires ModCore Settings 1.1.0 or later.
@@ -19,8 +40,6 @@
 - Faster startup with many template providers: all provider files are validated
   together once, instead of rebuilding the full menu after each file. A file that
   conflicts with an earlier one is still rejected on its own.
-- Category definitions name their identity with `id` instead of `name`, like templates
-  and settings; `name` is no longer read.
 - Lifecycle trace details are no longer computed when the log level is above TRACE.
 - Removed migrations from before the first release: slot values are no longer copied
   from module configs, retired slot settings are no longer cleaned, the central config
@@ -35,15 +54,7 @@
   module's author, version and icon, and lists it as a ModCore module from its
   `mod.json` group. Template choice notes and Templates page groups show the name
   ModCoreSettings gives the folder.
-- The list of loaded templates moves to ModCore Settings' Templates tab: MCT publishes it
-  as a hidden page whose rows fill the `settings:templates` slot, so MCT no longer has an
-  entry of its own in the mod list unless category pages need one. Templates are grouped by
-  the module supplying them, with a subgroup per category, and keep those groups in the
-  slot; each template reads `Active` or stays blank. The list no longer opens with a link to
-  choose the quickslot template.
 - The aggregate page no longer puts a template picker in its title row.
-- Provider fields take `heading=true` for the title-row picker instead of `level=1`;
-  `level` now takes 0 or 2–6. Generated menu data marks title-row pickers the same way.
 - Template fields no longer accept `tabNavigation`, which had no effect.
 
 ## v1.0.2

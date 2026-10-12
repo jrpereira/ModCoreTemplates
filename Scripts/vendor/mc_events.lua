@@ -8,7 +8,7 @@
 local M={focus='controls.group.focus'}
 local definitions={
     [M.focus]={command='MCC_Controls_GroupFocus_v1',data='MCC.Controls.GroupFocus.v1.data',
-        initial={group={from=1,to=1}}},
+        initial={group={}}},
 }
 
 local function logger(api)
@@ -110,7 +110,7 @@ function M.hub(api,state,onEvent)
     assert(type(state)=='table','event state required')
     assert(onEvent==nil or type(onEvent)=='function','event sink must be a function')
     state.events=state.events or {}
-    state.controls=state.controls or {group={from=1,to=1}}
+    state.controls=state.controls or {group={}}
     local subscriptions,interest,active={},{},true
     local hub={}
     local function receive(event,current)

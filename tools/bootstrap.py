@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Opt in to this repository's reviewed local Git guards; no global changes."""
 from pathlib import Path
 import subprocess

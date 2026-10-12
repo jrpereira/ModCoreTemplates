@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Check every incoming commit, including files deleted before the final tree."""
 import json
 import os

@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Reject local/generated files in Git trees, the index, and introduced commits.
 
 Uses Git objects rather than working files so staged and historical checks cannot

@@ -42,13 +42,9 @@ function M.new(options)
     -- templates still run on their saved settings, so a failure is only reported.
     local function publishMenu(menu)
         local Contribution=require('mc.menu_contribution')
-        local SafeFile=require('mc.safe_file')
-        -- The vendored client stays unchanged; MCT supplies crash-safe file access.
-        -- Removing a retired generation file also removes its kept backup.
+        -- The publisher replaces its files crash-safely through the vendored safe_file.
         menuPublisher=menuPublisher or require('menu_contributions').publisher(options.menuShared,
-            {id=Contribution.id,directory=require('mc.layout').paths(options.menuRoot).cache,
-                read=SafeFile.read,write=SafeFile.write,
-                remove=function(path) os.remove(path..'.old'); return os.remove(path) end})
+            {id=Contribution.id,directory=require('mc.layout').paths(options.menuRoot).cache})
         return menuPublisher:publish(Contribution.build(menu,options.menuRoot))
     end
     function self:registerTemplate(path)

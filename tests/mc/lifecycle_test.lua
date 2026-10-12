@@ -1,4 +1,4 @@
-package.path = './Scripts/?.lua;./Scripts/?/init.lua;' .. package.path
+package.path = './Scripts/?.lua;./Scripts/?/init.lua;./Scripts/vendor/?.lua;' .. package.path
 local Runtime = require('mc.runtime')
 local Selectors = require('mc.selectors')
 local Bootstrap = require('mc.bootstrap')

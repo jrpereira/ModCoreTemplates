@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 import importlib.util
 from pathlib import Path
 import tempfile

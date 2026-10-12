@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Extract one version's release notes from the consolidated changelog."""
 import argparse
 from pathlib import Path
@@ -34,14 +35,20 @@ def extract_notes(changelog, tag):
     return notes + '\n'
 
 
+def default_changelog(root=Path('.')):
+    """docs/CHANGELOG.md where a module keeps its documents in docs/, else CHANGELOG.md."""
+    docs = root / 'docs/CHANGELOG.md'
+    return docs if docs.exists() else root / 'CHANGELOG.md'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--changelog', type=Path, default=Path('docs/CHANGELOG.md'))
+    parser.add_argument('--changelog', type=Path)
     parser.add_argument('--tag', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
-        notes = extract_notes(args.changelog.read_text(encoding='utf-8'), args.tag)
+        notes = extract_notes((args.changelog or default_changelog()).read_text(encoding='utf-8'), args.tag)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     args.output.write_text(notes, encoding='utf-8')

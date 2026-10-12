@@ -93,7 +93,7 @@ function M.new(options,categories,templates,locations,own)
         local path,slot=Layout.paths(options.menuRoot).templates,nil
         for _,page in ipairs(self.menu.pages) do slot=slot or page.slot end
         onState=function(state)
-            require('mc.safe_file').write(path,require('mc.templates_list').encode(model.registry.templates,state,slot,
+            require('safe_file').write(path,require('mc.templates_list').encode(model.registry.templates,state,slot,
                 model.registry.categories:list()))
         end
     end

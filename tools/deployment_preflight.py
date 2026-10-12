@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """On-demand payload and session checks. Never deploys, stops or launches a game."""
 import argparse
 import hashlib

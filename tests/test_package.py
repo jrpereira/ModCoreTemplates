@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 import hashlib
 import importlib.util
 import json
@@ -17,7 +18,7 @@ class PackageTests(unittest.TestCase):
     def test_allowlist_checksum_and_reproducibility(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'repo'
-            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', 'dist', '__pycache__'))
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', 'dist', 'work', 'state', '__pycache__'))
             (root / 'config.ini').write_text('PERSONAL_CONFIGURATION_MUST_NOT_SHIP')
             (root / 'crash.dmp').write_bytes(b'PRIVATE_DUMP')
             (root / 'Scripts/temporary_probe.lua').write_text('TEMPORARY_PROBE')
@@ -38,10 +39,12 @@ class PackageTests(unittest.TestCase):
                                  or '/tools/' in n.lower() for n in names))
             # Every package ships enabled by default.
             self.assertIn(pack.MODULE + '/enabled.txt', names)
-            # Markdown documents in docs/ are published at the module root; the
-            # BBCode Nexus description stays in the repository.
-            for doc in (ROOT / 'docs').glob('*.md'):
-                self.assertIn(pack.MODULE + '/' + doc.name, names)
+            # README and CHANGELOG at the root, where present, and Markdown documents in docs/
+            # are published at the module root; the BBCode Nexus description stays in the
+            # repository.
+            docs = [name for name in ('README.md', 'CHANGELOG.md') if (ROOT / name).exists()]
+            for doc in docs + [doc.name for doc in (ROOT / 'docs').glob('*.md')]:
+                self.assertIn(pack.MODULE + '/' + doc, names)
             self.assertNotIn(pack.MODULE + '/NEXUS.bb', names)
             self.assertFalse(any('/docs/' in n for n in names))
             self.assertEqual(names, {pack.MODULE + '/' + dest for dest in spec['files']}

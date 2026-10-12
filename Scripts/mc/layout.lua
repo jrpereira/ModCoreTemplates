@@ -17,27 +17,9 @@ function M.version(root)
     file:close()
     return value
 end
--- Creates a folder when it is missing. A probe file shows an existing one without starting
--- a shell, which on Windows is a cmd.exe process on the game thread for every call.
-local function mkdir(path)
-    local probe = path .. '/.mct-probe'
-    local file = io.open(probe, 'wb')
-    if file then file:close(); os.remove(probe); return end
-    local command
-    if package.config:sub(1,1) == '\\' then
-        -- Quoting alone does not prevent cmd.exe environment expansion.
-        assert(not path:find('["%%!\r\n]'), 'unsupported directory path')
-        path = path:gsub('/', '\\')
-        command = 'if not exist "' .. path .. '" mkdir "' .. path .. '"'
-    else
-        command = "mkdir -p -- '" .. path:gsub("'", "'\\''") .. "'"
-    end
-    local ok = os.execute(command)
-    assert(ok == true or ok == 0, 'cannot create directory: ' .. path)
-end
 function M.prepare(root, createDirectory)
     local paths = M.paths(root)
-    createDirectory = createDirectory or mkdir
+    createDirectory = createDirectory or require('safe_file').mkdir
     for _, path in ipairs({paths.categories,paths.cache}) do createDirectory(path) end
     return paths
 end

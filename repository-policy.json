@@ -2,9 +2,23 @@
   "allowed_paths": [],
   "vendored": {
     "Scripts/vendor/mc_events.lua": "ModCoreControls",
+    "Scripts/vendor/mc_ini.lua": "ModCoreSettings",
     "Scripts/vendor/mc_log.lua": "ModCoreSettings",
     "Scripts/vendor/menu_contributions.lua": "ModCoreSettings",
+    "Scripts/vendor/safe_file.lua": "ModCoreSettings",
     "Scripts/vendor/settings_api.lua": "ModCoreSettings",
-    "tests/support/lifetimes.lua": "UE4SSLuaEventBridge"
+    "tests/support/lifetimes.lua": "UE4SSLuaEventBridge",
+    "tests/test_deployment_preflight.py": "ModCoreSettings",
+    "tests/test_manifest_package.py": "ModCoreSettings",
+    "tests/test_package.py": "ModCoreSettings",
+    "tests/test_release_notes.py": "ModCoreSettings",
+    "tests/test_repository_hygiene.py": "ModCoreSettings",
+    "tools/bootstrap.py": "ModCoreSettings",
+    "tools/check_incoming_history.py": "ModCoreSettings",
+    "tools/deployment_preflight.py": "ModCoreSettings",
+    "tools/package.py": "ModCoreSettings",
+    "tools/package_manifest.py": "ModCoreSettings",
+    "tools/release_notes.py": "ModCoreSettings",
+    "tools/repository_hygiene.py": "ModCoreSettings"
   }
 }

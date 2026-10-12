@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Deterministic packaging from an explicit source-to-install manifest."""
 import hashlib
 import json
