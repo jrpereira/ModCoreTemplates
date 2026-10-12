@@ -6,7 +6,7 @@ local category=dofile('Scripts/categories/player_quickslots.lua')
 local graph=Selectors.compile(category.objects)
 local radialCategory=dofile('Scripts/categories/player_radial.lua')
 local radialGraph=Selectors.compile(radialCategory.objects)
-assert(category.name=='player.quickslots' and radialCategory.name=='player.radial')
+assert(category.id=='player.quickslots' and radialCategory.id=='player.radial')
 assert(category.objects.radial==nil and radialCategory.objects.radial~=nil)
 local objects={}
 local function object(id,class)
@@ -179,7 +179,7 @@ assert(#lookedUp==1 and lookedUp[1].object==category.objects.switcher.object,
 categoryOnly:stop()
 lookedUp={}
 local calls={}
-local template={id='layout',category=category.name,managed=false,
+local template={id='layout',category=category.id,managed=false,
     objects={'switcher','abilities','consumables','actions'},
     attach=function(_,_,targets)
         assert(targets.abilities==ability and targets.consumables==consumable)
@@ -195,7 +195,7 @@ local template={id='layout',category=category.name,managed=false,
     detach=function() calls[#calls+1]='detach' end,
 }
 local runtime=Runtime.new(host,{category},{template})
-runtime:select(category.name,{layout={}})
+runtime:select(category.id,{layout={}})
 runtime:start()
 assert(#lookedUp==1 and lookedUp[1].object==category.objects.switcher.object,
     'unused quickslot targets must not be searched')
@@ -205,7 +205,7 @@ assert(ability:GetParent()~=switcher and consumable:GetParent()~=switcher,
 assert(ability.Slot.autoSize==true and consumable.Slot.autoSize==true
     and ability.Slot.layout.Anchors.Maximum.X==0,
     'wheels must use top-left autosized canvas slots')
-runtime:select(category.name,{layout={Style=1}})
+runtime:select(category.id,{layout={Style=1}})
 assert(#calls==2 and calls[2]=='update',
     'HUD-owned wheel targets remain resolvable after category reparenting')
 runtime:event({kind='changed',object=switcher,epoch=runtime.epoch})

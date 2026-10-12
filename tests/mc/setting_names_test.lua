@@ -5,7 +5,7 @@ local Menu=require('mc.menu')
 local Model=require('mc.menu_model')
 
 local function category(name)
-    return {name=name,objects={root={source='lookup',object='hud'}},settings={},menu={}}
+    return {id=name,objects={root={source='lookup',object='hud'}},settings={},menu={}}
 end
 local function template(categoryName)
     return {name='Cue',module='Mod',category=categoryName,objects={'root'},managed=false,

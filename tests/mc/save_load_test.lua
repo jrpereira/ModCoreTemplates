@@ -144,7 +144,7 @@ local function drain()
 end
 local function wrap(value) return {get=function() return value end} end
 
-local category={name='hud',objects={
+local category={id='hud',objects={
     hud={source='lookup',class=HUD},
     wheel={source='reference',from='hud',member='Wheel'},
     out={source='create',class='/Script/UMG.CanvasPanel',outer='hud',parent='hud',layout='fill'},

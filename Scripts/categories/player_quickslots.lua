@@ -12,7 +12,7 @@
 
 
 local category = {
-    name = "player.quickslots",
+    id = "player.quickslots",
     single = true,
     -- A loading save creates the HUD with empty wheels and fills them a moment
     -- later, while the loading screen still covers it. Attach once the HUD has

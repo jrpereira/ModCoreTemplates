@@ -1,4 +1,4 @@
 return {
-    name = "player.stats",
+    id = "player.stats",
     single = true,
 }

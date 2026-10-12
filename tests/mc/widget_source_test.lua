@@ -71,7 +71,7 @@ end
 function api.NotifyOnNewObject(class,callback) created[class]=callback end
 function api.RegisterHook(path,pre,post) hooks[path]={pre=pre,post=post}; return 1,2 end
 function api.UnregisterHook(path) hooks[path]=nil end
-local category={name='quickslots',objects={switcher={source='lookup',object=objectPath},slots={source='lookup',class='/Script/UMG.SlotWidget',within='switcher'}}}
+local category={id='quickslots',objects={switcher={source='lookup',object=objectPath},slots={source='lookup',class='/Script/UMG.SlotWidget',within='switcher'}}}
 local source=Source.new({category},api)
 do
     local unavailable={}
@@ -251,7 +251,7 @@ end
 do
     -- Game state scopes the widget hooks: none while idle, AddChild only while
     -- a root waits for readiness, and none again once every root is gone.
-    local scoped={name='scoped',objects={
+    local scoped={id='scoped',objects={
         switcher={source='lookup',object=objectPath},
         hud_root={source='reference',from='switcher',member='@owner.WidgetTree.RootWidget'}}}
     nextOwner.alive,nextRoot.alive=false,false
@@ -318,7 +318,7 @@ do
     assert(next(hooks)==nil, 'leaving the world removes every widget hook')
     game.stop()
 end
-local unloaded=Source.new({{name='unloaded',objects={widget={source='lookup',class='/Game/HUD/Missing.Missing_C'}}}},api)
+local unloaded=Source.new({{id='unloaded',objects={widget={source='lookup',class='/Game/HUD/Missing.Missing_C'}}}},api)
 assert(#unloaded.find({class='/Game/HUD/Missing.Missing_C'})==0)
 unloaded.stop()
 do
@@ -360,7 +360,7 @@ do
     hudOwner.class=ownerClass; hudOwner.world=nextWorld
     local pending={}
     function api.ExecuteInGameThread(callback) pending[#pending+1]=callback end
-    local notifications={name='notifications',objects={
+    local notifications={id='notifications',objects={
         hud={source='lookup',class=classPath,required=true},
         hud_root={source='reference',from='hud',member='WidgetTree.RootWidget',required=true}}}
     local scoped=Source.new({notifications},api)

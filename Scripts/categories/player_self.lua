@@ -1,4 +1,4 @@
 return {
-    name = "player.self",
+    id = "player.self",
     single = true,
 }

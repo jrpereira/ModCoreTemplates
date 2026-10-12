@@ -1,4 +1,4 @@
 return {
-    name = "player.compass",
+    id = "player.compass",
     single = true,
 }

@@ -1,3 +1,3 @@
 return {
-    name = "menu.controls",
+    id = "menu.controls",
 }

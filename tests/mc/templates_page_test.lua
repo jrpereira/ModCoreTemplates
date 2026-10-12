@@ -22,9 +22,9 @@ assert(list.slot=='controls:visuals' and #list.templates==4 and table.concat(lis
 assert(list.templates[2].active==true and list.templates[1].active==false and list.templates[3].active==false
     and list.templates[4].module=='' and list.templates[4].name=='Built In "Quoted"')
 
--- The hooks page has one group per category with templates and in it one subgroup per
--- module supplying them, MCT's own first; each template reads active or blank. Categories
--- without templates are not listed. Ids follow the list.
+-- The hooks page has one group per module supplying templates, MCT's own first, and in it
+-- one subgroup per category the module supplies; each template reads active or blank.
+-- Ids follow the list.
 local hooks=assert(loadfile('Scripts/mct_templates_page.lua'))()
 assert(hooks.contract==1 and type(hooks.menu)=='function' and hooks.manifest==nil and hooks.load==nil)
 local names={TemplatesPage='ModCore Templates',Fangdango='Quickslot Fangdango',Preymonition='Preymonition'}
@@ -37,22 +37,22 @@ for _,group in ipairs(menu.groups) do
     for _,sub in ipairs(group.groups) do inner[#inner+1]=sub.id..':'..sub.label end
     order[#order+1]=group.id..':'..group.label..'['..table.concat(inner,',')..']'
 end
-assert(table.concat(order,',')=='Category1:Npc Attacks[Category1_1:Preymonition],'
-    ..'Category2:Player Quickslots[Category2_1:ModCore Templates,Category2_2:Quickslot Fangdango]',table.concat(order,','))
+assert(table.concat(order,',')=='Module1:ModCore Templates[Module1_1:Player Quickslots],'
+    ..'Module2:Preymonition[Module2_1:Npc Attacks],Module3:Quickslot Fangdango[Module3_1:Player Quickslots]',table.concat(order,','))
 local labels={}
 for _,item in ipairs(menu.fields) do
     assert(item.readOnly and item.choices[1].note==nil,'rows are read-only, without notes')
     labels[#labels+1]=item.group..':'..item.id..':'..item.label
 end
-assert(table.concat(labels,',')=='Category1_1:MCT_Listed_3:Preymonition,Category2_1:MCT_Listed_4:Built In "Quoted",'
-    ..'Category2_2:MCT_Listed_1:Wheels,Category2_2:MCT_Listed_2:Double Sidebar',table.concat(labels,','))
+assert(table.concat(labels,',')=='Module1_1:MCT_Listed_4:Built In "Quoted",Module2_1:MCT_Listed_3:Preymonition,'
+    ..'Module3_1:MCT_Listed_1:Wheels,Module3_1:MCT_Listed_2:Double Sidebar',table.concat(labels,','))
 local function row(label) for _,item in ipairs(menu.fields) do if item.label==label then return item end end end
 local blank='\u{A0}'
 assert(row('Double Sidebar').choices[1].label=='Active' and row('Wheels').choices[1].label==blank
     and row('Preymonition').choices[1].label==blank,'only the selected template shows as active')
 -- Without names the folders are shown as they are.
 local unnamed=hooks.menu({page='ModCoreTemplates',directory=root})
-assert(unnamed.groups[2].groups[1].label=='TemplatesPage' and unnamed.groups[2].groups[2].label=='Fangdango')
+assert(unnamed.groups[1].label=='TemplatesPage' and unnamed.groups[2].label=='Fangdango')
 
 -- Without a list (before MCT has run) the page says so instead of failing.
 local empty=hooks.menu({page='ModCoreTemplates',directory=root..'/Missing'})
@@ -78,4 +78,4 @@ assert(#seen==1,'the starting state is reported')
 Controller.new(menu,runtime,{onState=function() error('disk full') end,
     onError=function(event) errors[#errors+1]=event end})
 assert(#errors==1 and errors[1].stage=='state' and errors[1].message:find('disk full'))
-print('PASS: the Templates page lists templates by category and marks the active ones')
+print('PASS: the Templates page lists templates by module and category and marks the active ones')

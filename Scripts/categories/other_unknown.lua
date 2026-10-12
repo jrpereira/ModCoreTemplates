@@ -1,3 +1,3 @@
 return {
-    name = "other.unknown",
+    id = "other.unknown",
 }

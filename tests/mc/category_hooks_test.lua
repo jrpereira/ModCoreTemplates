@@ -24,7 +24,7 @@ local function fixture(hooks,options)
         onError=function(e) errors[#errors+1]=e end,
     }
     local log={}
-    local category={name='c',single=true,hooks=hooks,objects={root={source='lookup',class='Root'}}}
+    local category={id='c',single=true,hooks=hooks,objects={root={source='lookup',class='Root'}}}
     local templates={}
     for _,id in ipairs({'a','b'}) do
         templates[#templates+1]={id=id,category='c',objects={'root'},

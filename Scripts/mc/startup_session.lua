@@ -86,7 +86,7 @@ function M.new(options,categories,templates,locations,own)
         return values
     end
     if options.menuRoot then savedValues=readValues() end
-    -- The Templates page lists every loaded template by category, marks the active ones and
+    -- The Templates page lists every loaded template by module and category, marks the active ones and
     -- names the categories without templates.
     local onState
     if options.menuRoot then

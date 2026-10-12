@@ -27,7 +27,7 @@ local function fixture(withDefer)
     local options={}
     if withDefer then options.defer=function(ms,callback) timers[#timers+1]={ms=ms,run=callback} end end
     local attaches,attachOpacity=0,nil
-    local category={name='c',attachDelay=2000,objects={root={source='lookup',class='Root'}}}
+    local category={id='c',attachDelay=2000,objects={root={source='lookup',class='Root'}}}
     local templates={}
     for _,id in ipairs({'a','b'}) do
         templates[#templates+1]={id=id,category='c',objects={'root'},

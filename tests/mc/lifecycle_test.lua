@@ -31,7 +31,7 @@ local function fixture(single, paths)
         subscribe=function(callback, getEpoch) sink, epoch = callback, getEpoch; return function() unsubs=unsubs+1 end end,
         onError=function(e) errors[#errors + 1] = e end,
     }
-    local categories = {{name='player.quickslots', single=single, objects=paths or {slots={source='lookup',class='Slot'}}}}
+    local categories = {{id='player.quickslots', single=single, objects=paths or {slots={source='lookup',class='Slot'}}}}
     local function template(id)
         local targets={}
         for name in pairs(categories[1].objects) do targets[#targets+1]=name end
@@ -90,7 +90,7 @@ test('category targets are searched only when required or selected by a template
     }
     local template={id='b',category='c',objects={'b'},managed=false,
         attach=function() end,update=function() end,detach=function() end}
-    local runtime=Runtime.new(host,{{name='c',objects=roots}},{template})
+    local runtime=Runtime.new(host,{{id='c',objects=roots}},{template})
     runtime:start()
     assert(#searches==1 and searches[1]=='a')
     runtime:select('c',{b={}})

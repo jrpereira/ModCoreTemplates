@@ -10,16 +10,16 @@ local menuRoot=testRoot..'/ModCoreTemplates'
 Layout.prepare(moduleRoot)
 
 local field={id='Size',label='Size',values={min=0,max=100,step=1},default=20}
-local category={name='player.quickslots',single=true,
+local category={id='player.quickslots',single=true,
     objects={root={source='lookup',object='switcher'}},settings={},menu={}}
-local template={id='Wheels',name='Wheels',module='Fangdango',category=category.name,
+local template={id='Wheels',name='Wheels',module='Fangdango',category=category.id,
     objects={'root'},managed=false,
     menu={{id='Layout',label='Layout',fields={field}}},
     attach=function() end,update=function() end,detach=function() end}
 local location=moduleRoot..'/Scripts/mc.lua'
 local preview=Menu.generate(Model.build({category},{template},{location}).registry)
 local sizeId
-for _,definition in pairs(preview.definitions[category.name]) do
+for _,definition in pairs(preview.definitions[category.id]) do
     if definition.id=='Wheels' then sizeId=definition.settings.Size end
 end
 assert(sizeId and preview.pageByModule.Fangdango.configPath==moduleRoot..'/config.ini')

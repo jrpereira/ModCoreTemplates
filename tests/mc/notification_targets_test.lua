@@ -2,7 +2,7 @@ package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Runtime=require('mc.runtime')
 local category=dofile('Scripts/categories/npc_attacks.lua')
-assert(category.name=='npc.attacks' and category.single==nil,
+assert(category.id=='npc.attacks' and category.single==nil,
     'notification templates chain instead of replacing each other')
 local objects={}
 local function object(id,class)
@@ -86,7 +86,7 @@ host.onError=function(error) error(error.message) end
 local cues={}
 local function template(id)
     cues[id]={}
-    return {id=id,category=category.name,objects={hud={},cue={}},
+    return {id=id,category=category.id,objects={hud={},cue={}},
         attach=function(values,_,original)
             assert(values.hud and values.hud.class=='WBP_GameHUD_C','hud is the live game HUD')
             assert(values.hud_root==nil,'hud_root stays a category dependency')
@@ -104,7 +104,7 @@ local function template(id)
         end}
 end
 local runtime=Runtime.new(host,{category},{template('a'),template('b')})
-runtime:select(category.name,{a={},b={}})
+runtime:select(category.id,{a={},b={}})
 runtime:start()
 assert(#runtime.errors==0,runtime.errors[1] and runtime.errors[1].message)
 assert(next(cues.a)==nil and next(cues.b)==nil,'cues wait until the player is ready')
@@ -114,7 +114,7 @@ assert(a and b and a~=b,'each notification template receives its own cue')
 assert(hudRoot:GetChildrenCount()==3 and hudRoot:GetChildAt(0).id=='hudNative',
     'cues are added after native HUD content')
 
-runtime:select(category.name,{a={Size=2},b={}})
+runtime:select(category.id,{a={Size=2},b={}})
 assert(cues.a.hud==a and a.parent==hudRoot and b.parent==hudRoot,
     'settings commits re-attach the same cue')
 assert(hudRoot:GetChildrenCount()==3 and hudRoot:GetChildAt(0).id=='hudNative',
@@ -126,7 +126,7 @@ assert(#runtime.errors==0,runtime.errors[1] and runtime.errors[1].message)
 assert(cues.a.second and cues.b.second and cues.a.second~=a
     and cues.a.second.parent==secondRoot,'templates attach once per live game HUD')
 
-runtime:select(category.name,{b={}})
+runtime:select(category.id,{b={}})
 assert(a.parent==nil and b.parent==hudRoot and hudRoot:GetChildrenCount()==2,
     'detach removes only that template cue')
 runtime:stop()

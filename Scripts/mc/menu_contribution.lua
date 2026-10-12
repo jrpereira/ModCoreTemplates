@@ -28,7 +28,7 @@ function M.build(menu, root)
     for _, field in ipairs(require('mct_templates_page').menu({page=M.id, directory=root}).fields) do
         listed[#listed + 1] = field.id
     end
-    local description = 'Every loaded template, by category, with the active ones marked.'
+    local description = 'Every loaded template, by module and category, with the active ones marked.'
     -- The aggregate takes the place of the menu entry for MCT's own folder. With no rows of
     -- its own it is the list, hidden unless category pages need it as their parent.
     local aggregate = {id=M.id, name='ModCore Templates', author='ModCoreTemplates',

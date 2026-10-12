@@ -22,7 +22,7 @@ end
 function M.build(definitions, templates, locations)
     local categories, names, runtimeCategories = {}, {}, {}
     for _, definition in ipairs(definitions) do
-        assert(type(definition.name) == 'string' and not categories[definition.name], 'duplicate/invalid category')
+        assert(type(definition.id) == 'string' and not categories[definition.id], 'duplicate/invalid category')
         assert(type(definition.settings) ~= 'table'
             or (definition.settings.fields == nil and definition.settings.groups == nil
                 and definition.settings.target == nil),
@@ -39,20 +39,20 @@ function M.build(definitions, templates, locations)
         -- A slot names where another provider's page shows this category's menu.
         local slot = definition.slot
         if slot ~= nil then
-            assert(type(slot) == 'table', definition.name .. '.slot must be a table')
+            assert(type(slot) == 'table', definition.id .. '.slot must be a table')
             for key in pairs(slot) do
-                assert(key == 'provider' or key == 'slot', definition.name .. '.slot: unknown field ' .. tostring(key))
+                assert(key == 'provider' or key == 'slot', definition.id .. '.slot: unknown field ' .. tostring(key))
             end
             assert(type(slot.provider) == 'string' and #slot.provider <= 128
-                and slot.provider:match('^[%w_.-]+$'), definition.name .. '.slot.provider is invalid')
+                and slot.provider:match('^[%w_.-]+$'), definition.id .. '.slot.provider is invalid')
             assert(type(slot.slot) == 'string' and #slot.slot <= 64 and slot.slot:match('^[%w_]+$'),
-                definition.name .. '.slot.slot is invalid')
-            assert(definition.single == true, definition.name .. ': a slot requires a single category')
+                definition.id .. '.slot.slot is invalid')
+            assert(definition.single == true, definition.id .. ': a slot requires a single category')
             slot = slot.provider .. ':' .. slot.slot
         end
-        categories[definition.name] = {name=definition.name, menu=declaration, runtimeSettings=values,
+        categories[definition.id] = {id=definition.id, menu=declaration, runtimeSettings=values,
             single=definition.single == true, slot=slot}
-        names[#names + 1] = definition.name
+        names[#names + 1] = definition.id
     end
     table.sort(names)
     local registry = {templates={}, categories={}}
@@ -85,7 +85,7 @@ function M.build(definitions, templates, locations)
     -- source never watch its objects.
     local used = {}
     for _, runtime in ipairs(runtimeCategories) do
-        if categories[runtime.name].count then used[#used + 1] = runtime end
+        if categories[runtime.id].count then used[#used + 1] = runtime end
     end
     return {registry=registry, categories=used, templates=templates}
 end

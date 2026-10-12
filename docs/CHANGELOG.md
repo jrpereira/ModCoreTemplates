@@ -19,6 +19,8 @@
 - Faster startup with many template providers: all provider files are validated
   together once, instead of rebuilding the full menu after each file. A file that
   conflicts with an earlier one is still rejected on its own.
+- Category definitions name their identity with `id` instead of `name`, like templates
+  and settings; `name` is no longer read.
 - Lifecycle trace details are no longer computed when the log level is above TRACE.
 - Removed migrations from before the first release: slot values are no longer copied
   from module configs, retired slot settings are no longer cleaned, the central config
@@ -36,8 +38,8 @@
 - The list of loaded templates moves to ModCore Settings' Templates tab: MCT publishes it
   as a hidden page whose rows fill the `settings:templates` slot, so MCT no longer has an
   entry of its own in the mod list unless category pages need one. Templates are grouped by
-  category, with a subgroup per module supplying them, and keep those groups in the slot;
-  each template reads `Active` or stays blank. The list no longer opens with a link to
+  the module supplying them, with a subgroup per category, and keep those groups in the
+  slot; each template reads `Active` or stays blank. The list no longer opens with a link to
   choose the quickslot template.
 - The aggregate page no longer puts a template picker in its title row.
 - Provider fields take `heading=true` for the title-row picker instead of `level=1`;

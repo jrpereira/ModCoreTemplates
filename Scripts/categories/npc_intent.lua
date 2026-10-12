@@ -1,3 +1,3 @@
 return {
-    name = "npc.intent",
+    id = "npc.intent",
 }

@@ -1,3 +1,3 @@
 return {
-    name = "menu.templates",
+    id = "menu.templates",
 }

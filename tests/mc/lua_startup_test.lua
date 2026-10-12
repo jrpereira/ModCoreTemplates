@@ -48,7 +48,7 @@ local newer=assert(host.capture(object))
 assert(newer~=ref and host.valid(newer))
 
 local jobs={}
-local category={name='player.quickslots',objects={root={source='lookup',class='/Script/UMG.UserWidget'}}}
+local category={id='player.quickslots',objects={root={source='lookup',class='/Script/UMG.UserWidget'}}}
 local template={id='example.template',name='Template',category='player.quickslots',
     module='Example',managed=false,objects={'root'},
     attach=function() end,update=function() end,detach=function() end}
@@ -86,8 +86,8 @@ do
         ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
         UE4SSLuaEventBridge=Lifetimes.bridge(),
     }
-    local used={name='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
-    local unused={name='player.radial',objects={root={source='lookup',class='/Game/HUD/Unused.Unused_C'}}}
+    local used={id='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
+    local unused={id='player.radial',objects={root={source='lookup',class='/Game/HUD/Unused.Unused_C'}}}
     local files={used=used,unused=unused,template=template}
     local live=Startup.start({categoryFiles={'used','unused'},
         execute=function(path) return files[path] end},api)
@@ -114,7 +114,7 @@ do
         ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
         UE4SSLuaEventBridge=Lifetimes.bridge(),
     }
-    local used={name='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
+    local used={id='player.quickslots',objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
     local live=Startup.start({categoryFiles={'used'},execute=function(path)
         return ({used=used,template=template})[path] end},api)
     live:registerTemplate('template')

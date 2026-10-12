@@ -54,11 +54,11 @@ local function categoryField(id,default)
 end
 local function fixture(single, alphaTarget, betaTarget, locationBase)
     local calls, errors = {}, {}
-    local category = {name='player.quickslots', single=single, objects={root={source='lookup',object='switcher'}},
+    local category = {id='player.quickslots', single=single, objects={root={source='lookup',object='switcher'}},
         settings={constant=false}, menu={groups={{id='Layout', label='Layout',
             fields={categoryField('Size', 10), categoryField('Opacity', 50)}}}}}
     local function template(id, target)
-        local t = {id=id, name=id, category=category.name, objects={'root'},managed=false,
+        local t = {id=id, name=id, category=category.id, objects={'root'},managed=false,
             menuTarget=target,menu={{id='Layout',label='Layout',fields={field('Size',20)}}}}
         for _, operation in ipairs({'attach','update','detach'}) do
             t[operation] = function(object, params)
@@ -87,15 +87,15 @@ local function fixture(single, alphaTarget, betaTarget, locationBase)
     local controller = Controller.new(menu,runtime)
     runtime:start()
     local definitions = {}
-    for _, definition in pairs(menu.definitions[category.name]) do definitions[definition.id]=definition end
+    for _, definition in pairs(menu.definitions[category.id]) do definitions[definition.id]=definition end
     local function choose(values, id, enabled)
         if single then
-            local selector=menu.selectors[category.name]
+            local selector=menu.selectors[category.id]
             for value, identity in pairs(selector.byValue) do
                 if identity==id then values[selector.id]=enabled and value or 0 end
             end
         else
-            for _, item in ipairs(menu.multiSelectors[category.name]) do
+            for _, item in ipairs(menu.multiSelectors[category.id]) do
                 if item.definition.id==id then values[item.id]=enabled and 1 or 0 end
             end
         end
@@ -274,7 +274,7 @@ test('menu metadata in runtime settings is rejected', function()
     local template={name='Old',category='player.quickslots',
         settings={target='module',fields={categoryField('Size',42)}},
         attach=function() end,update=function() end,detach=function() end}
-    local ok,why=pcall(Model.build,{{name='player.quickslots'}},{template},{'fixture.lua'})
+    local ok,why=pcall(Model.build,{{id='player.quickslots'}},{template},{'fixture.lua'})
     assert(not ok and tostring(why):find('template.menu',1,true))
 end)
 
@@ -565,7 +565,7 @@ local function slotFixture(locationBase, extraFields, conditional)
     f.runtime,f.controller=runtime,Controller.new(f.menu,runtime)
     runtime:start()
     f.definitions={}
-    for _,definition in pairs(f.menu.definitions[f.category.name]) do f.definitions[definition.id]=definition end
+    for _,definition in pairs(f.menu.definitions[f.category.id]) do f.definitions[definition.id]=definition end
     return f
 end
 -- A visibility rule as '<field>=<values>' with values in order, or nil.
@@ -656,7 +656,7 @@ local function conditionalPage()
     local model=Model.build({f.category},{f.a,f.b},f.locations)
     local menu=Menu.generate(model.registry)
     local definition
-    for _,candidate in pairs(menu.definitions[f.category.name]) do
+    for _,candidate in pairs(menu.definitions[f.category.id]) do
         if candidate.id=='Alpha' then definition=candidate end
     end
     return menu.pageByModule.Alpha,definition.settings,menu.selectors['player.quickslots']
@@ -788,7 +788,7 @@ test('modules whose templates moved to a slot keep their page with a link to the
     f.controller:apply(event(f,page,1,function(v) f.choose(v,'Beta',true);v[f.definitions.Beta.settings.Size]=42 end))
     assert(#f.calls==1 and f.calls[1].id=='Beta' and f.calls[1].settings.Size==42)
     -- A module that still has its own settings keeps its own page.
-    local other={name='player.stats',single=true,objects={root={source='lookup',object='switcher'}}}
+    local other={id='player.stats',single=true,objects={root={source='lookup',object='switcher'}}}
     local extra={id='Gamma',name='Gamma',category='player.stats',objects={'root'},managed=false,
         menu={{id='Layout',label='Layout',fields={field('Size',20)}}},
         attach=function() end,update=function() end,detach=function() end}
@@ -936,7 +936,7 @@ end)
 
 test('category slots are validated', function()
     local function rejects(slot,single,pattern)
-        local ok,why=pcall(Model.build,{{name='player.quickslots',single=single,slot=slot}},{},{})
+        local ok,why=pcall(Model.build,{{id='player.quickslots',single=single,slot=slot}},{},{})
         assert(not ok and tostring(why):find(pattern,1,true),tostring(why))
     end
     rejects('controls:visuals',true,'must be a table')
@@ -944,7 +944,7 @@ test('category slots are validated', function()
     rejects({provider='controls'},true,'slot.slot')
     rejects({provider='a b',slot='visuals'},true,'slot.provider')
     rejects({provider='controls',slot='visuals'},false,'requires a single category')
-    local model=Model.build({{name='player.quickslots',single=true,slot={provider='controls',slot='visuals'}}},{},{})
+    local model=Model.build({{id='player.quickslots',single=true,slot={provider='controls',slot='visuals'}}},{},{})
     assert(model.registry.categories:getCategory('player.quickslots').slot=='controls:visuals')
 end)
 

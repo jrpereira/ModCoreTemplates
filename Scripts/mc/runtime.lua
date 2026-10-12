@@ -22,7 +22,7 @@ M.TEMPLATE_EVENTS = {wake=true, sleep=true}
 --   wake     templates are awake, receiving events, while it holds; defaults to attach
 --   sleep    puts them to sleep when it fires; defaults to wake's opposite, if any
 local function compileHooks(definition)
-    local name, hooks = definition.name, definition.hooks
+    local name, hooks = definition.id, definition.hooks
     assert(type(hooks) == 'table', name .. '.hooks must be a table')
     for key, signal in pairs(hooks) do
         assert(key == 'attach' or key == 'wake' or key == 'sleep',
@@ -160,7 +160,7 @@ function M.new(host, definitions, templates, state, options)
         return ManagedTemplate.new(definition,specs,graph.order,created)
     end
     for _, definition in ipairs(definitions) do
-        assert(type(definition.name) == 'string' and not categories[definition.name], 'duplicate/invalid category')
+        assert(type(definition.id) == 'string' and not categories[definition.id], 'duplicate/invalid category')
         assert(definition.settings == nil or type(definition.settings) == 'table', 'category settings must be a table')
         local graph=Selectors.compile(definition.objects or {})
         local mandatory={}
@@ -171,10 +171,10 @@ function M.new(host, definitions, templates, state, options)
             requiredGraph=Selectors.project(graph,mandatory),
             single=definition.single == true, templates={}, objects={}}
         if definition.sharedObjects ~= nil then
-            assert(array(definition.sharedObjects,definition.name..'.sharedObjects')>0,
-                definition.name..'.sharedObjects must not be empty')
+            assert(array(definition.sharedObjects,definition.id..'.sharedObjects')>0,
+                definition.id..'.sharedObjects must not be empty')
             local sharedGraph=Selectors.project(graph,definition.sharedObjects)
-            local sharedDefinition={id='@category:'..definition.name,attach=function(_,_,original)
+            local sharedDefinition={id='@category:'..definition.id,attach=function(_,_,original)
                 return original
             end}
             local sharedNames={}
@@ -189,11 +189,11 @@ function M.new(host, definitions, templates, state, options)
         -- A newly found root attaches this long after it first could.
         if definition.attachDelay ~= nil then
             assert(type(definition.attachDelay) == 'number' and definition.attachDelay > 0,
-                definition.name..'.attachDelay must be a positive number of milliseconds')
+                definition.id..'.attachDelay must be a positive number of milliseconds')
             category.attachDelay = {ms=definition.attachDelay, roots={}}
         end
         if definition.hooks ~= nil then category.hooks = compileHooks(definition) end
-        categories[definition.name] = category
+        categories[definition.id] = category
     end
     for _, template in ipairs(templates) do
         assert(type(template.id) == 'string' and template.id ~= '' and not byId[template.id], 'duplicate/invalid template id')

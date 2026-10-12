@@ -4,7 +4,7 @@
 --       └─ cue (per template, full screen, added last)
 
 return {
-    name = "npc.attacks",
+    id = "npc.attacks",
     -- The cue joins the HUD once the player is in the game and follows the
     -- game's indicator only during combat.
     hooks = { attach = "MCTPlayerReady", wake = "MCTCombatStart", sleep = "MCTCombatEnd" },

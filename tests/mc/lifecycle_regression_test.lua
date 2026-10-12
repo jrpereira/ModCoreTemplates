@@ -53,7 +53,7 @@ local function fixture(template,targets)
         onError=function(e) errors[#errors+1]=e end,
     }
     template.id,template.category='t','c'
-    local runtime=Runtime.new(host,{{name='c',objects=targets or {root={source='lookup',class='Root'}}}},{template})
+    local runtime=Runtime.new(host,{{id='c',objects=targets or {root={source='lookup',class='Root'}}}},{template})
     runtime:select('c',{t={}})
     return runtime,o,host,errors
 end
@@ -146,7 +146,7 @@ do
         end}
     local replacement={id='replacement',category='single',objects={'root'},managed=false,
         attach=function()activated=true end,update=function()end,detach=function()end}
-    local r=Runtime.new(host,{{name='single',single=true,objects={root={source='lookup',class='Root'}}}},
+    local r=Runtime.new(host,{{id='single',single=true,objects={root={source='lookup',class='Root'}}}},
         {old,replacement})
     r:select('single',{old={}});r:start()
     r:select('single',{replacement={}})

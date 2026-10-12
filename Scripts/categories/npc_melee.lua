@@ -1,3 +1,3 @@
 return {
-    name = "npc.melee",
+    id = "npc.melee",
 }
