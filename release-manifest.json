@@ -63,6 +63,7 @@
     "DEVELOPERS.md": "docs/DEVELOPERS.md",
     "LIFECYCLE-DRAFT.md": "docs/LIFECYCLE-DRAFT.md",
     "MENUS.md": "docs/MENUS.md",
-    "OBJECT-SOURCE.md": "docs/OBJECT-SOURCE.md"
+    "OBJECT-SOURCE.md": "docs/OBJECT-SOURCE.md",
+    "settings.md": "docs/settings.md"
   }
 }
