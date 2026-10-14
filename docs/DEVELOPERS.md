@@ -81,6 +81,21 @@ Editing a menu row changes only the pending value. Apply commits it; MCT restore
 and reruns managed `attach`, preventing offsets from accumulating.
 See [Template menus](MENUS.md) for pickers, conditions and variations.
 
+### Publish a settings reference
+
+A template module ships no `mod_settings.ini`, so give players a list of its settings
+instead. From the folder holding both repositories, run:
+
+```sh
+lua5.4 ModCoreTemplates/tools/settings_reference.lua YourProvider
+```
+
+It loads your templates as MCT does and writes `docs/SETTINGS.md`, every template's
+settings with their options, defaults and saved keys, and `MOD_SETTINGS.txt`, a short
+pointer to it, at your module root. Commit both and list them in your release manifest
+(`"SETTINGS.md": "docs/SETTINGS.md"` and `"MOD_SETTINGS.txt": "MOD_SETTINGS.txt"`).
+Add `--check` in CI: it writes nothing and fails when either file is out of date.
+
 ## Callback rules
 
 | Value | Meaning |

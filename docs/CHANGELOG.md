@@ -2,6 +2,10 @@
 
 ## v1.2.0
 
+- `tools/settings_reference.lua` writes a template module's `docs/SETTINGS.md`, listing
+  each template's settings with their options, defaults and saved keys, and a
+  `MOD_SETTINGS.txt` that points players to it in place of a `mod_settings.ini`.
+  `--check` fails when either is out of date.
 - Requires ModCore Settings 1.2.0 or later, whose Templates tab holds the template list.
 - Template `conditions` take ModCore Settings' menu-data shapes: `visible={field=,values=,
   playerExists=}`, `label={field=,values={[value]='text'}}` (a key may list values) and `dim`.
