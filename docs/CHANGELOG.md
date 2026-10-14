@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.2.0
+## v1.3.0
 
 - Emits `MC_NPCAttackIndicator`: MCT watches the game's combat target indicator and
   delivers each change to the awake templates of `npc.attacks` as their `update`
@@ -15,12 +15,10 @@
 - Templates may declare a numeric `priority`. Within a category, templates attach, wake,
   sleep and receive events in priority order, lowest first, then by id; a template
   without one comes after those with one.
-
 - `tools/settings_reference.lua` writes a template module's `docs/SETTINGS.md`, listing
   each template's settings with their options, defaults and saved keys, and a
   `MOD_SETTINGS.txt` that points players to it in place of a `mod_settings.ini`.
   `--check` fails when either is out of date.
-- Requires ModCore Settings 1.2.0 or later, whose Templates tab holds the template list.
 - Template `conditions` take ModCore Settings' menu-data shapes: `visible={field=,values=,
   playerExists=}`, `label={field=,values={[value]='text'}}` (a key may list values) and `dim`.
   `match` and `text` are gone.
@@ -28,11 +26,16 @@
   row changes to it.
 - Generated menu data puts row and group rules under `conditions`, as ModCore Settings 1.2.0
   reads them; the vendored menu client is version 7.
+- Without category pages, MCT's entry in the mod list links to the Templates tab.
+
+## v1.2.0
+
+- Requires ModCore Settings 1.2.0 or later, whose Templates tab holds the template list.
 - Category definitions name their identity with `id` instead of `name`, like templates
   and settings; `name` is no longer read.
 - The list of loaded templates moves to ModCore Settings' Templates tab: MCT publishes it
-  as a hidden page whose rows fill the `settings:templates` slot. Without category pages,
-  MCT's entry in the mod list links to that tab. Templates are grouped by
+  as a hidden page whose rows fill the `settings:templates` slot, so MCT no longer has an
+  entry of its own in the mod list unless category pages need one. Templates are grouped by
   the module supplying them, with a subgroup per category, and keep those groups in the
   slot; each template reads `Active` or stays blank. The list no longer opens with a link to
   choose the quickslot template.
