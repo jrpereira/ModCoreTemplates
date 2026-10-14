@@ -58,10 +58,10 @@ function M.start(options, api)
         -- A loading screen fading in ends combat, which a death and reload never
         -- reports, and the player is not ready again until it fades out.
         local sources = {
-            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeInFinished', {'MCTCombatEnd', 'MCTPlayerUnready'}},
-            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished', {'MCTPlayerReady'}, settle=true},
-            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted', {'MCTCombatStart'}},
-            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded', {'MCTCombatEnd'}},
+            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeInFinished', {'MC_CombatEnd', 'MC_PlayerUnready'}},
+            {'/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished', {'MC_PlayerReady'}, settle=true},
+            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted', {'MC_CombatStart'}},
+            {'/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded', {'MC_CombatEnd'}},
         }
         local registered, sourced = {}, {}
         for _, source in ipairs(sources) do
@@ -100,6 +100,24 @@ function M.start(options, api)
                 for _, hook in ipairs(registered) do pcall(api.UnregisterHook, hook[1], hook[2], hook[3]) end
                 if closeHost then return closeHost(...) end
             end
+        end
+    end
+    -- MC_NPCAttackIndicator watches the game only while a template listens: its
+    -- source starts when one wakes and stops when the last sleeps or MCT closes.
+    if not configured.attackIndicator and type(api.RegisterHook) == 'function' then
+        configured.attackIndicator = require('mc.attack_indicator').new(api, function(event)
+            if bootstrap and bootstrap.runtime then bootstrap.runtime:emit('MC_NPCAttackIndicator', event) end
+        end, configured.log and require('mc_log').wrap(configured.log) or nil)
+    end
+    if configured.attackIndicator then
+        local attacks = configured.attackIndicator
+        configured.awakeChanged = function(runtime)
+            if runtime:listening('MC_NPCAttackIndicator') then attacks:start() else attacks:stop() end
+        end
+        local closeHost = configured.closeHost
+        configured.closeHost = function(...)
+            attacks:stop()
+            if closeHost then return closeHost(...) end
         end
     end
     -- No group has focus until ModCore Controls reports its Default wheel.

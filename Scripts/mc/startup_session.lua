@@ -45,7 +45,8 @@ function M.new(options,categories,templates,locations,own)
     end
     self.menu=Menu.generate(model.registry,menuOptions)
     self.categories=model.categories
-    self.runtime=Runtime.new(options.host,model.categories,model.templates,options.state,{defer=options.defer,unavailable=options.unavailableSignals})
+    self.runtime=Runtime.new(options.host,model.categories,model.templates,options.state,{defer=options.defer,unavailable=options.unavailableSignals,
+        awakeChanged=options.awakeChanged})
     local savedValues=options.menuValues
     local configSources={}
     if options.menuRoot then

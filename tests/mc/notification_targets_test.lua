@@ -108,7 +108,7 @@ runtime:select(category.id,{a={},b={}})
 runtime:start()
 assert(#runtime.errors==0,runtime.errors[1] and runtime.errors[1].message)
 assert(next(cues.a)==nil and next(cues.b)==nil,'cues wait until the player is ready')
-runtime:signal('MCTPlayerReady')
+runtime:signal('MC_PlayerReady')
 local a,b=cues.a.hud,cues.b.hud
 assert(a and b and a~=b,'each notification template receives its own cue')
 assert(hudRoot:GetChildrenCount()==3 and hudRoot:GetChildAt(0).id=='hudNative',

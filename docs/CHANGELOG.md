@@ -2,6 +2,20 @@
 
 ## v1.2.0
 
+- Emits `MC_NPCAttackIndicator`: MCT watches the game's combat target indicator and
+  delivers each change to the awake templates of `npc.attacks` as their `update`
+  event, inside the game's call, so a cue changes in the frame the game shows it.
+  Each event has a `kind`: `arrow` and `critical` (with `direction`, 1 top, 2 bottom,
+  3 left, 4 right), `resolve` (`reason` sword, dark or hidden), `unblockable`
+  (`active`) and `early` (the game's early warning, with `direction`, `unblockable`
+  and `attacker`), plus the indicator's `path` and, for the call only, the live
+  `indicator`. The indicator is hooked only while such a template is awake.
+- Categories may name an update event in `hooks.update`; its awake templates receive
+  it as `update(params, event)`.
+- Templates may declare a numeric `priority`. Within a category, templates attach, wake,
+  sleep and receive events in priority order, lowest first, then by id; a template
+  without one comes after those with one.
+
 - `tools/settings_reference.lua` writes a template module's `docs/SETTINGS.md`, listing
   each template's settings with their options, defaults and saved keys, and a
   `MOD_SETTINGS.txt` that points players to it in place of a `mod_settings.ini`.

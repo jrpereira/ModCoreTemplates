@@ -128,10 +128,51 @@ do
     hooks['/Script/DogwoodUI.DWLoadingScreenWidget:OnFadeOutFinished']()
     assert(#calls==0,'the hook does no runtime work inline')
     while #queued>0 do table.remove(queued,1)() end
-    assert(calls[1]=='settle' and calls[2]=='MCTPlayerReady','settle, then the signal, on the game thread')
+    assert(calls[1]=='settle' and calls[2]=='MC_PlayerReady','settle, then the signal, on the game thread')
     live:stop()
 end
 print('PASS: signal hooks queue settle and signals outside the hooked call')
+
+do
+    -- MC_NPCAttackIndicator's source hooks the game only while a template that
+    -- takes it is awake, and MCT's stop unhooks it.
+    local hooks,queued,removed={}, {}, {}
+    local api={
+        FindAllOf=function() return {} end,
+        NotifyOnNewObject=function() end,
+        RegisterHook=function(path,callback) hooks[path]=callback;return 1,2 end,
+        UnregisterHook=function(path) removed[#removed+1]=path; hooks[path]=nil end,
+        IsInGameThread=function() return true end,
+        ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
+        UE4SSLuaEventBridge=Lifetimes.bridge(),
+    }
+    local function drain() while #queued>0 do table.remove(queued,1)() end end
+    local attacks={id='npc.attacks',hooks={wake='MC_CombatStart',sleep='MC_CombatEnd',update='MC_NPCAttackIndicator'},
+        objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
+    local listener={id='example.listener',name='Listener',category='npc.attacks',module='Example',managed=false,
+        objects={'root'},attach=function() end,update=function() end,detach=function() end,
+        events={update=function() end}}
+    local live=Startup.start({categoryFiles={'attacks'},execute=function(path)
+        return ({attacks=attacks,listener=listener})[path] end},api)
+    live:registerTemplate('listener')
+    api.UE4SSLuaEventBridge.loopStart()
+    drain()
+    live.runtime:select('npc.attacks',{['example.listener']={}})
+    local STYLING='/Script/UMG.Image:SetBrushFromAtlasInterface'
+    assert(not hooks[STYLING],'nothing listens outside combat')
+    hooks['/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted']()
+    drain()
+    assert(hooks[STYLING],'combat wakes the listener and hooks the styling call')
+    hooks['/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded']()
+    drain()
+    assert(not hooks[STYLING],'the listener sleeping unhooks it')
+    hooks['/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted']()
+    drain()
+    assert(hooks[STYLING])
+    live:stop()
+    assert(not hooks[STYLING],'stopping MCT unhooks it')
+end
+print('PASS: the attack indicator source listens only while a template does')
 
 do
     -- Stopping before loop start cancels the barrier.

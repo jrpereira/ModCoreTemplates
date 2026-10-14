@@ -9,30 +9,36 @@ local M = {}
 -- MCT's signals, each with its opposite. A signal holds from when it fires
 -- until its opposite fires; none holds before it first fires.
 M.SIGNALS = {
-    MCTPlayerReady='MCTPlayerUnready', MCTPlayerUnready='MCTPlayerReady',
-    MCTCombatStart='MCTCombatEnd', MCTCombatEnd='MCTCombatStart',
+    MC_PlayerReady='MC_PlayerUnready', MC_PlayerUnready='MC_PlayerReady',
+    MC_CombatStart='MC_CombatEnd', MC_CombatEnd='MC_CombatStart',
 }
 -- The signals that end their opposite.
-M.ENDS = {MCTPlayerUnready=true, MCTCombatEnd=true}
+M.ENDS = {MC_PlayerUnready=true, MC_CombatEnd=true}
+-- MCT's update events: game happenings delivered, with their data, to the awake
+-- templates of the categories whose update hook names them. They hold no state.
+M.UPDATES = {MC_NPCAttackIndicator=true}
 -- Template events delivered by the runtime itself, once per template rather than
--- per attachment: wake starts the template's event intake, sleep ends it.
-M.TEMPLATE_EVENTS = {wake=true, sleep=true}
+-- per attachment: wake starts the template's event intake, sleep ends it, and
+-- update carries an update event.
+M.TEMPLATE_EVENTS = {wake=true, sleep=true, update=true}
 -- category.hooks names the signals that time its templates:
 --   attach   new attachments wait until it holds
 --   wake     templates are awake, receiving events, while it holds; defaults to attach
 --   sleep    puts them to sleep when it fires; defaults to wake's opposite, if any
+--   update   an update event (M.UPDATES) its awake templates receive as update
 local function compileHooks(definition)
     local name, hooks = definition.id, definition.hooks
     assert(type(hooks) == 'table', name .. '.hooks must be a table')
     for key, signal in pairs(hooks) do
-        assert(key == 'attach' or key == 'wake' or key == 'sleep',
+        assert(key == 'attach' or key == 'wake' or key == 'sleep' or key == 'update',
             name .. '.hooks: unknown hook ' .. tostring(key))
-        assert(M.SIGNALS[signal] ~= nil, name .. '.hooks.' .. key .. ': unknown signal ' .. tostring(signal))
+        local known = key == 'update' and M.UPDATES or M.SIGNALS
+        assert(known[signal] ~= nil, name .. '.hooks.' .. key .. ': unknown signal ' .. tostring(signal))
     end
     local wake = hooks.wake or hooks.attach
     assert(hooks.sleep == nil or wake, name .. '.hooks.sleep requires wake or attach')
     assert(hooks.sleep == nil or hooks.sleep ~= wake, name .. '.hooks: sleep must differ from wake')
-    return {attach=hooks.attach, wake=wake, sleep=hooks.sleep}
+    return {attach=hooks.attach, wake=wake, sleep=hooks.sleep, update=hooks.update}
 end
 -- Overlay complete setting values by key; nested values are copied, not merged.
 local function overlay(base, overrides)
@@ -44,6 +50,19 @@ local function keys(values)
     local result = {}
     for key in pairs(values) do result[#result + 1] = key end
     table.sort(result)
+    return result
+end
+-- A template's priority when it declares none: after those that do.
+M.DEFAULT_PRIORITY = 100
+-- Template ids by priority, lowest first, then by id: templates attach, wake,
+-- sleep and receive events in this order.
+local function ordered(records)
+    local result = keys(records)
+    table.sort(result, function(a, b)
+        local left, right = records[a].priority, records[b].priority
+        if left ~= right then return left < right end
+        return a < b
+    end)
     return result
 end
 local function sameTargets(left,right,host)
@@ -81,6 +100,9 @@ end
 function M.new(host, definitions, templates, state, options)
     options = options or {}
     local defer = options.defer
+    -- awakeChanged(runtime) runs after templates wake or sleep, e.g. so an
+    -- update source watches the game only while someone listens.
+    local awakeChanged = options.awakeChanged
     -- Lifecycle decisions at TRACE; each subject logs only when its message changes.
     local log = host.log and require('mc_log').wrap(host.log) or nil
     local traced = {}
@@ -96,6 +118,7 @@ function M.new(host, definitions, templates, state, options)
         log.trace(subject, ': ', message)
     end
     assert(defer == nil or type(defer) == 'function', 'defer must be a function')
+    assert(awakeChanged == nil or type(awakeChanged) == 'function', 'awakeChanged must be a function')
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
         assert(type(host[name]) == 'function', 'host requires ' .. name)
     end
@@ -217,6 +240,8 @@ function M.new(host, definitions, templates, state, options)
             assert(type(template.attach) == 'function' and type(template.update) == 'function'
                 and type(template.detach) == 'function', 'template requires attach, update and detach')
         end
+        assert(template.priority == nil or type(template.priority) == 'number',
+            'template.priority must be a number: '..template.id)
         assert(template.events == nil or type(template.events) == 'table',
             'template.events must be a table: '..template.id)
         for name in pairs(M.TEMPLATE_EVENTS) do
@@ -233,7 +258,8 @@ function M.new(host, definitions, templates, state, options)
             defaults=copy(template.settings or {}),
             overrides={}, settings={}, revision=0, attached={}, pending={}, waiting={},
             manager=manager, graph=graph,
-            targetTree=targetTree,sharedTargets=sharedTargets}
+            targetTree=targetTree,sharedTargets=sharedTargets,
+            priority=template.priority or M.DEFAULT_PRIORITY}
         byId[template.id], category.templates[template.id] = record, record
     end
     local function report(stage, id, message)
@@ -308,11 +334,13 @@ function M.new(host, definitions, templates, state, options)
     -- reported and still changes the state, so a later sleep can undo a partial wake.
     local function syncAwake(category)
         local open = self.phase == 'running' and wakeOpen(category)
-        for _, id in ipairs(keys(category.templates)) do
+        local changed = false
+        for _, id in ipairs(ordered(category.templates)) do
             local record = category.templates[id]
             local wanted = record.enabled and open
             if wanted ~= record.awake then
                 record.awake = wanted
+                changed = true
                 local name = wanted and 'wake' or 'sleep'
                 trace(id, name, currentSignal and ' on '..currentSignal or '')
                 local callback = record.definition.events and record.definition.events[name]
@@ -324,6 +352,10 @@ function M.new(host, definitions, templates, state, options)
                     if not ok then report(name, id, why) end
                 end
             end
+        end
+        if changed and awakeChanged then
+            local ok, why = pcall(awakeChanged, self)
+            if not ok then report('awake', nil, why) end
         end
     end
     local reconcile
@@ -378,7 +410,7 @@ function M.new(host, definitions, templates, state, options)
             end
             add(category.requiredGraph)
             if category.shared and hasEnabledTemplate(category) then add(category.shared.graph) end
-            for _,id in ipairs(keys(category.templates)) do
+            for _,id in ipairs(ordered(category.templates)) do
                 local record=category.templates[id]
                 if record.enabled then add(record.graph) end
             end
@@ -462,7 +494,7 @@ function M.new(host, definitions, templates, state, options)
                 sharedObjects,sharedBundles=objects,bundles
                 for token,object in pairs(objects) do allObjects[token]=object end
             end
-            for _,id in ipairs(keys(category.templates)) do
+            for _,id in ipairs(ordered(category.templates)) do
                 local record=category.templates[id]
                 if record.enabled then
                     local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
@@ -501,7 +533,7 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
             -- Detach all outgoing templates before any incoming template attaches.
-            for _, id in ipairs(keys(category.templates)) do
+            for _, id in ipairs(ordered(category.templates)) do
                 local record = category.templates[id]
                 local objects=resolved[id] and resolved[id].objects or {}
                 local bundles=resolved[id] and resolved[id].bundles or {}
@@ -598,7 +630,7 @@ function M.new(host, definitions, templates, state, options)
             -- Outgoing templates sleep after they detach; incoming ones wake
             -- before they attach.
             syncAwake(category)
-            for _, id in ipairs(keys(category.templates)) do
+            for _, id in ipairs(ordered(category.templates)) do
                 local record = category.templates[id]
                 if record.enabled then
                     local objects,bundles=resolved[id].objects,resolved[id].bundles
@@ -705,7 +737,7 @@ function M.new(host, definitions, templates, state, options)
         assert(event==nil or type(event)=='table' and type(event.name)=='string',
             'invalid template event')
         serialize(function()
-            for _,id in ipairs(keys(byId)) do
+            for _,id in ipairs(ordered(byId)) do
                 local record=byId[id]
                 local callback=record.awake and event and not M.TEMPLATE_EVENTS[event.name]
                     and record.definition.events
@@ -868,6 +900,45 @@ function M.new(host, definitions, templates, state, options)
     end
     function self:awake(id)
         return assert(byId[id], 'unknown template').awake
+    end
+    -- Whether any awake template's category takes an update event, so its
+    -- source need only watch the game while one does.
+    function self:listening(name)
+        assert(M.UPDATES[name] ~= nil, 'unknown update event: '..tostring(name))
+        for _, category in pairs(categories) do
+            if category.hooks and category.hooks.update == name then
+                for _, record in pairs(category.templates) do
+                    if record.awake then return true end
+                end
+            end
+        end
+        return false
+    end
+    -- Delivers an update event to the awake templates whose category takes it,
+    -- as update(params, event) with params.settings, at once and in the caller's
+    -- frame: a source inside a game call keeps that call's timing. The event
+    -- may carry live objects valid only during the call; settings are the
+    -- template's own, not copies. A failing template is reported and the rest
+    -- still receive it.
+    function self:emit(name, event)
+        assert(M.UPDATES[name] ~= nil, 'unknown update event: '..tostring(name))
+        assert(type(event) == 'table', 'update event data must be a table')
+        if self.phase ~= 'running' then return end
+        event.name, event.signal = 'update', name
+        for _, categoryName in ipairs(keys(categories)) do
+            local category = categories[categoryName]
+            if category.hooks and category.hooks.update == name then
+                for _, id in ipairs(ordered(category.templates)) do
+                    local record = category.templates[id]
+                    local callback = record.awake and record.definition.events
+                        and record.definition.events.update
+                    if callback then
+                        local ok, why = pcall(callback, {settings=record.settings, state=state}, event)
+                        if not ok then report('update', id, why) end
+                    end
+                end
+            end
+        end
     end
     function self:attachments(id)
         local result = {}
