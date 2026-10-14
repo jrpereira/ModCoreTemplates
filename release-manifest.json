@@ -23,6 +23,7 @@
     "Scripts/categories/player_stats.lua": "Scripts/categories/player_stats.lua",
     "Scripts/main.lua": "Scripts/main.lua",
     "Scripts/mc.lua": "Scripts/mc.lua",
+    "Scripts/mc/attack_indicator.lua": "Scripts/mc/attack_indicator.lua",
     "Scripts/mc/bootstrap.lua": "Scripts/mc/bootstrap.lua",
     "Scripts/mc/layout.lua": "Scripts/mc/layout.lua",
     "Scripts/mc/lua_references.lua": "Scripts/mc/lua_references.lua",
