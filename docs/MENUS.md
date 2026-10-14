@@ -41,7 +41,8 @@ its `.old`.
 ## Where pages appear
 
 - **ModCore Templates:** category selectors, template toggles and shared category settings.
-  It takes the place of the menu entry for MCT's own folder and is hidden when empty.
+  It takes the place of the menu entry for MCT's own folder. When it has nothing of its
+  own to show, the entry links to ModCore Settings' Templates tab instead.
 - **Category page:** fields for templates explicitly targeting `templates`, listed under
   ModCore Templates.
 - **Module page:** the default location for template fields. The module is the mod
@@ -132,26 +133,40 @@ arrow selector by default; set `tab=true` for a picker with up to eight choices.
 MCT infers the field type; templates do not declare `type` or
 parallel `labels`.
 
-A field may declare `conditions` that depend on a picker in the same template:
+A picker choice is its label, or a ModCore Settings menu-data choice without its
+value: `{label=, note=, sound=}`. `note` is shown small under the choice (at most 64
+characters); `sound` is a Wwise event path under `/Game/` that plays instead of the
+menu's change sound when the row changes to that choice, or `'none'` for silence:
+
+```lua
+values={[0]='None', [1]={label='Short Swoosh', sound='/Game/Audio/AK_Events/Events/UI/UI_Inventory/UI_Claws_Equip'}}
+```
+
+A field may declare `conditions`, in ModCore Settings' menu-data shapes:
 
 ```lua
 {id='Bars', label='Bars', fields={
     {id='.A', label='Orientation', values={[7]='Horizontal', [5]='Vertical'}, default=7},
     {id='.KH', label='Key Indicators', values={[0]='Above', [1]='Below'}, default=0,
-        conditions={visible={field='.A', match={7}}}},
+        conditions={visible={field='.A', values={7}}}},
     {id='.KV', label='Key Indicators', values={[0]='Left', [1]='Right'}, default=0,
-        conditions={visible={field='.A', match={5}},
-            label={field='.A', match={5}, text='Side Key Indicators'}}},
+        conditions={visible={field='.A', values={5}},
+            label={field='.A', values={[5]='Side Key Indicators'}}}},
 }},
 ```
 
-- `visible` shows the row only while `field` holds one of the `match` values.
-- `label` shows `text` instead of `label` while `field` holds one of the `match`
-  values.
+- `visible={field=, values={...}, playerExists=}` shows the row only while every
+  given part holds: `field` holds one of `values`, and a player is (`true`) or is
+  not (`false`) in the world. `field` and `values` go together; either part may be
+  left out.
+- `label={field=, values={[value]='text'}}` shows that text instead of `label` while
+  `field` holds the value. A key may list values sharing one text:
+  `values={[{5,7}]='Keys'}`; each value appears once.
+- `dim={value, ...}` fades the row while its own value is one of these.
 - `field` resolves like a field ID: `.A` in group `Bars` is `BarsA`. A variation
   picker is named by its title-cased ID, such as `Style`. A standalone field must
   use an absolute ID.
-- The source must be a picker declared earlier in the template. `match` lists
+- The source must be a picker declared earlier in the template. `values` lists
   its values, not its labels.
 - A field in a variation branch must depend on a picker in the same branch. A
   slot row carries one visibility condition, so it inherits the branch through
@@ -161,9 +176,8 @@ A field may declare `conditions` that depend on a picker in the same template:
 - Conditions only affect presentation. Hidden fields keep their saved values and
   are still delivered in `params.settings`.
 
-Conditions become the row's `visible` and `relabel` rules in the published menu
-data. Both apply on slot pages too; `label` there needs the ModCoreSettings release
-that copies slot label rules.
+Conditions are published as the row's `conditions` in the menu data, alongside
+the template picker's own rules. They apply on slot pages too.
 
 A field may also appear directly in the `menu` array when it needs no visual group.
 Its ID must be absolute. MCT places it in an unheaded generated section while

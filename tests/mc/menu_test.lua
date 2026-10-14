@@ -150,12 +150,18 @@ test('module-target templates do not add controls to the MCT aggregate page', fu
     local contribution=Contribution.build(moduleOnly.menu,'/Mods/3_ModCore_Templates')
     local pages=contribution.pages
     assert(Contributions.validate('ModCoreTemplates',contribution))
-    assert(#pages==3 and pages[1].id=='ModCoreTemplates' and pages[1].visible==false and pages[1].menu==nil
-        and pages[1].hooks=='/Mods/3_ModCore_Templates/Scripts/mct_templates_page.lua'
-        and pages[1].configDirectory=='/Mods/3_ModCore_Templates' and pages[1].attach=='3_ModCore_Templates',
-        'an aggregate without rows of its own is the hidden Templates list, built by hooks')
+    assert(#pages==4 and pages[1].id=='ModCoreTemplates' and pages[1].visible==nil and pages[1].menu==nil
+        and pages[1].hooks==nil and pages[1].configDirectory==nil and pages[1].link=='settings:templates'
+        and pages[1].attach=='3_ModCore_Templates',
+        'an aggregate without rows or category pages is MCT\'s mod list entry, linking to the Templates tab')
+    local list=pages[4]
+    assert(list.id=='ModCoreTemplates.templates' and list.visible==false and list.attach==nil
+        and list.under==nil and list.name=='ModCore Templates'
+        and list.hooks=='/Mods/3_ModCore_Templates/Scripts/mct_templates_page.lua'
+        and list.configDirectory=='/Mods/3_ModCore_Templates',
+        'the hidden Templates list is built by hooks and stands alone without the tab')
     -- Its rows fill ModCore Settings' Templates tab; before MCT has run, only the placeholder.
-    assert(#contribution.rows==1 and contribution.rows[1].page=='ModCoreTemplates'
+    assert(#contribution.rows==1 and contribution.rows[1].page=='ModCoreTemplates.templates'
         and contribution.rows[1].slot=='settings:templates'
         and table.concat(contribution.rows[1].settings,',')=='MCT_Listed_None')
     for index=2,3 do
@@ -214,7 +220,7 @@ test('multi-template toggles read Enabled under a heading named for the template
         assert(row.label=='Enabled' and row.group=='MCT_'..name and row.default==0)
         local menu=f.menu.pageByCategory['player.quickslots'].menu
         local heading=groupOf(menu,'MCT_'..name)
-        assert(heading.label==name and heading.visible==nil and heading.relabel==nil)
+        assert(heading.label==name and heading.conditions==nil)
         for _,group in ipairs(menu.groups) do assert(not group.id:find('CategorySeparator',1,true)) end
     end
 end)
@@ -542,11 +548,12 @@ local orientation={[7]='Horizontal',[5]='Vertical'}
 local function barsGroup()
     return {id='Bars',label='Bars',fields={
         {id='.A',label='Orientation',values=orientation,default=7},
-        {id='.KH',label='Horizontal Keys',values={[0]='Above',[1]='Below'},default=0,
-            conditions={visible={field='.A',match={7}}}},
+        {id='.KH',label='Horizontal Keys',default=0,
+            values={[0]='Above',[1]={label='Below',note='Under the bar',sound='/Game/Audio/Below'}},
+            conditions={visible={field='.A',values={7}},dim={0}}},
         {id='.KV',label='Vertical Keys',values={[0]='Left',[1]='Right'},default=1,
-            conditions={visible={field='.A',match={5}},
-                label={field='.A',match={5},text='Side Keys'}}},
+            conditions={visible={field='.A',values={5}},
+                label={field='.A',values={[5]='Side Keys'}}}},
     }}
 end
 local function slotFixture(locationBase, extraFields, conditional)
@@ -569,8 +576,11 @@ local function slotFixture(locationBase, extraFields, conditional)
     return f
 end
 -- A visibility rule as '<field>=<values>' with values in order, or nil.
+-- ModCoreSettings menu data holds a row's rules under conditions.
+local function rules(item) return item.conditions or {} end
 local function shown(item)
-    return item.visible and item.visible.field..'='..table.concat(item.visible.values,'|') or nil
+    local visible=rules(item).visible
+    return visible and visible.field..'='..table.concat(visible.values,'|') or nil
 end
 
 test('a slot category moves to one hidden page with flattened visibility', function()
@@ -585,7 +595,7 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value else beta=value end end
     assert(page.rows[1].id==selector.id,'Template comes first')
     local template=fieldOf(page.menu,selector.id)
-    assert(template.visible==nil and template.group=='Slot' and template.level==nil
+    assert(template.conditions==nil and template.group=='Slot' and template.level==nil
         and template.heading==nil)
     local shared=fieldOf(page.menu,f.menu.categorySettings['player.quickslots'].fields.Size)
     assert(shown(shared)==selector.id..'='..alpha..'|'..beta or shown(shared)==selector.id..'='..beta..'|'..alpha)
@@ -599,7 +609,7 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     local seen={}
     for index,row in ipairs(page.rows) do
         assert(not row.action,'navigation links stay out of the slot')
-        local rule=fieldOf(page.menu,row.id).visible
+        local rule=rules(fieldOf(page.menu,row.id)).visible
         assert(rule==nil or seen[rule.field],row.id..': rule must name an earlier slot row')
         seen[row.id]=index
     end
@@ -665,13 +675,15 @@ end
 test('field conditions become row visibility and label rules', function()
     local page,ids=conditionalPage()
     local kh,kv=fieldOf(page.menu,ids.BarsKH),fieldOf(page.menu,ids.BarsKV)
-    assert(shown(kh)==ids.BarsA..'=7' and kh.relabel==nil)
+    assert(shown(kh)==ids.BarsA..'=7' and rules(kh).label==nil)
     assert(shown(kv)==ids.BarsA..'=5')
-    assert(kv.relabel.field==ids.BarsA and kv.relabel.values[5]=='Side Keys' and kv.label=='Vertical Keys')
+    assert(rules(kv).label.field==ids.BarsA and rules(kv).label.values[5]=='Side Keys' and kv.label=='Vertical Keys')
     local a=fieldOf(page.menu,ids.BarsA)
-    assert(a.visible==nil and a.relabel==nil,'fields without conditions are unchanged')
+    assert(a.conditions==nil,'fields without conditions are unchanged')
+    assert(kh.choices[2].note=='Under the bar' and kh.choices[2].sound=='/Game/Audio/Below'
+        and kh.choices[1].sound==nil and rules(kh).dim[1]==0,'choice notes, sounds and dim reach the menu data')
     -- The template picker still gates the group through its rule.
-    assert(groupOf(page.menu,kh.group).visible,'the group keeps its template-picker rule')
+    assert(rules(groupOf(page.menu,kh.group)).visible,'the group keeps its template-picker rule')
 end)
 
 compatibility('field conditions hide and relabel rows live in DMM', function()
@@ -681,6 +693,15 @@ compatibility('field conditions hide and relabel rows live in DMM', function()
     Presentation.parse(manifest,choices)
     local model=Choices.open({id=page.id,choices=choices,testOnly=true})
     assert(not model.error,model.error)
+    local checked=false
+    for _,setting in ipairs(choices) do
+        if setting.id==ids.BarsKH then
+            checked=true
+            assert(setting.mcChoiceSounds[1]=='/Game/Audio/Below.Below' and setting.mcChoiceNotes[1]=='Under the bar'
+                and setting.mcDimValues[0],'ModCoreSettings reads the sound, note and dim')
+        end
+    end
+    assert(checked,'the keys row is on the page')
     local index={}
     for i,setting in ipairs(model.items) do index[setting.id]=i end
     local alpha
@@ -706,9 +727,9 @@ test('slot rows take field conditions and hidden values still apply', function()
     local ids=f.definitions.Alpha.settings
     local kh,kv=fieldOf(page.menu,ids.BarsKH),fieldOf(page.menu,ids.BarsKV)
     assert(shown(kh)==ids.BarsA..'=7')
-    assert(shown(kv)==ids.BarsA..'=5' and kv.relabel.values[5]=='Side Keys')
+    assert(shown(kv)==ids.BarsA..'=5' and rules(kv).label.values[5]=='Side Keys')
     local selector=f.menu.selectors['player.quickslots']
-    assert(fieldOf(page.menu,ids.BarsA).visible.field==selector.id,'the source keeps the template rule')
+    assert(rules(fieldOf(page.menu,ids.BarsA)).visible.field==selector.id,'the source keeps the template rule')
     f.controller:apply(event(f,page,1,function(v)
         f.choose(v,'Alpha',true); v[ids.BarsA]=5; v[ids.BarsKH]=1
     end))
@@ -726,22 +747,23 @@ test('slot pages publish hidden with rows addressed to the slot', function()
     for _,candidate in ipairs(contribution.pages) do if candidate.id==page.id then published=candidate end end
     assert(published.visible==false and published.configDirectory=='/Mods/3_ModCore_Templates')
     local aggregate=contribution.pages[1]
-    assert(aggregate.id=='ModCoreTemplates' and aggregate.hooks and aggregate.link==nil and aggregate.visible==false
-        and aggregate.attach=='3_ModCore_Templates','ModCore Templates is the hidden Templates list')
-    assert(published.under==nil,'while the aggregate is hidden the fallback page stands on its own')
+    assert(aggregate.id=='ModCoreTemplates' and aggregate.hooks==nil and aggregate.link=='settings:templates'
+        and aggregate.visible==nil and aggregate.attach=='3_ModCore_Templates',
+        'ModCore Templates is listed as a link to the Templates tab')
+    assert(published.under==nil,'a link page has no children, so the fallback page stands on its own')
     local ids,own={},{}
     for _,row in ipairs(contribution.rows) do
         if row.page==page.id then
             assert(row.slot=='controls:visuals' and #row.settings<=32)
             own[#own+1]=row
             for _,id in ipairs(row.settings) do ids[#ids+1]=id end
-        else assert(row.page=='ModCoreTemplates' and row.slot=='settings:templates') end
+        else assert(row.page=='ModCoreTemplates.templates' and row.slot=='settings:templates') end
     end
     assert(#own==math.ceil(#page.rows/32) and #own>1,'rows are chunked')
     for index,row in ipairs(page.rows) do assert(ids[index]==row.id) end
     local plain=Contribution.build(fixture(true).menu,'/Mods/3_ModCore_Templates')
     assert(Contributions.validate('ModCoreTemplates',plain))
-    assert(#plain.rows==1 and plain.rows[1].page=='ModCoreTemplates' and plain.pages[1].visible==true
+    assert(#plain.rows==1 and plain.rows[1].page=='ModCoreTemplates' and plain.pages[1].visible~=false
         and plain.pages[1].hooks,'an aggregate that parents category pages stays listed and still fills the tab')
 end)
 
@@ -751,7 +773,7 @@ test('modules whose templates moved to a slot keep their page with a link to the
     assert(Contributions.validate('ModCoreTemplates',contribution))
     local merged={}
     for _,page in ipairs(contribution.pages) do
-        assert(not page.link,'merged modules publish pages, not link entries')
+        assert(not page.link or page.id=='ModCoreTemplates','merged modules publish pages, not link entries')
         if page.id:find('.module.',1,true) then merged[#merged+1]=page end
     end
     assert(#merged==2 and merged[1].id=='ModCoreTemplates.module.Alpha' and merged[2].id=='ModCoreTemplates.module.Beta')

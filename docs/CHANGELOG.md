@@ -3,11 +3,18 @@
 ## v1.2.0
 
 - Requires ModCore Settings 1.2.0 or later, whose Templates tab holds the template list.
+- Template `conditions` take ModCore Settings' menu-data shapes: `visible={field=,values=,
+  playerExists=}`, `label={field=,values={[value]='text'}}` (a key may list values) and `dim`.
+  `match` and `text` are gone.
+- A picker choice may be `{label=,note=,sound=}`: a note under it, and a sound played when the
+  row changes to it.
+- Generated menu data puts row and group rules under `conditions`, as ModCore Settings 1.2.0
+  reads them; the vendored menu client is version 7.
 - Category definitions name their identity with `id` instead of `name`, like templates
   and settings; `name` is no longer read.
 - The list of loaded templates moves to ModCore Settings' Templates tab: MCT publishes it
-  as a hidden page whose rows fill the `settings:templates` slot, so MCT no longer has an
-  entry of its own in the mod list unless category pages need one. Templates are grouped by
+  as a hidden page whose rows fill the `settings:templates` slot. Without category pages,
+  MCT's entry in the mod list links to that tab. Templates are grouped by
   the module supplying them, with a subgroup per category, and keep those groups in the
   slot; each template reads `Active` or stays blank. The list no longer opens with a link to
   choose the quickslot template.

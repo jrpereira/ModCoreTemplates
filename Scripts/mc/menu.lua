@@ -36,9 +36,21 @@ local function hidden(heading)
     if heading == false then return false end
 end
 
-local function choices(values, labels)
+-- Menu-data choices; notes and sounds (optional) are keyed by value.
+local function choices(values, labels, notes, sounds)
     local out = {}
-    for index, value in ipairs(values) do out[index] = {value=value, label=labels[index]} end
+    for index, value in ipairs(values) do
+        out[index] = {value=value, label=labels[index], note=notes and notes[value],
+            sound=sounds and sounds[value]}
+    end
+    return out
+end
+
+-- A visibility rule with the field's player condition (playerExists) added, or nil.
+local function withPlayer(visible, player)
+    if player == nil then return visible end
+    local out = U.copy(visible or {})
+    out.playerExists = player
     return out
 end
 
@@ -154,7 +166,8 @@ function M.generate(registry, options)
         local item = {id = settingId, label = source.label, group = groupId, default = source.default,
             description = source.description, heading = source.heading, level = source.level}
         if source.type == 'picker' or source.type == 'navigation' then
-            item.choices = choices(source.values, source.labels)
+            item.choices = choices(source.values, source.labels, source.notes, source.sounds)
+            item.dim = source.dim and U.copy(source.dim) or nil
             item.tabs = source.tab or nil
             item.action = source.type == 'navigation' or nil
             item.link = source.linkProvider
@@ -188,7 +201,7 @@ function M.generate(registry, options)
             local function slotRow(visible)
                 local item = rows[#rows]
                 if item.action then return end
-                assert(not visible or slotIds[visible.field],
+                assert(not visible or not visible.field or slotIds[visible.field],
                     category .. ': slot row ' .. item.id .. ' depends on a row outside the slot')
                 item._slot, slotIds[item.id] = {visible = visible}, true
             end
@@ -303,16 +316,19 @@ function M.generate(registry, options)
                                 .. source.id)
                             item.visible = rule(sourceId, source.visibleValues)
                         end
+                        item.visible = withPlayer(item.visible, source.visiblePlayer)
                         if source.labelWhen then
-                            local labels = {}
-                            for _, choice in ipairs(source.labelValues) do labels[choice] = source.labelText end
                             item.relabel = {field = assert(providerFieldIds[source.labelWhen],
-                                'provider label source must precede dependent field: ' .. source.id), values = labels}
+                                'provider label source must precede dependent field: ' .. source.id),
+                                values = U.copy(source.labelTexts)}
                         end
                         row(item)
                         -- Slot rows carry no group rules, so each takes the rule its group or
                         -- field would apply.
-                        if slot then slotRow(source.visibleWhen and item.visible or groupVisible) end
+                        if slot then
+                            slotRow(withPlayer(source.visibleWhen and item.visible or groupVisible,
+                                source.visiblePlayer))
+                        end
                         providerFieldIds[source.id] = settingId
                         if source.type == 'navigation' then
                             definition.navigation[source.id] = settingId
@@ -326,12 +342,20 @@ function M.generate(registry, options)
         end
     end
     currentCategory = nil
+    -- ModCoreSettings takes a row's or group's rules under conditions.
+    local function conditioned(out)
+        if out.visible or out.relabel or out.dim then
+            out.conditions = {visible = out.visible, label = out.relabel, dim = out.dim}
+            out.visible, out.relabel, out.dim = nil, nil, nil
+        end
+        return out
+    end
     local function plain(item)
         local out = {}
         for name, value in pairs(item) do
             if name:sub(1, 1) ~= '_' then out[name] = U.copy(value) end
         end
-        return out
+        return conditioned(out)
     end
     -- A page's menu data. Values are stored in configFile (the central config by default),
     -- relative to the page's config directory.
@@ -354,7 +378,7 @@ function M.generate(registry, options)
             end
         end
         for _, groupId in ipairs(groupOrder) do
-            if used[groupId] then menu.groups[#menu.groups + 1] = U.copy(groupSections[groupId]) end
+            if used[groupId] then menu.groups[#menu.groups + 1] = conditioned(U.copy(groupSections[groupId])) end
         end
         for _, item in ipairs(selectedRows) do
             local stored = plain(item)
@@ -526,7 +550,10 @@ function M.generate(registry, options)
             for _, item in ipairs(selectedRows) do
                 local stored = plain(item)
                 stored.group, stored.heading, stored.level = 'Slot', nil, nil
-                stored.visible = U.copy(item._slot.visible)
+                -- A slot row keeps its other rules and takes its slot's visibility.
+                local conditions = stored.conditions or {}
+                conditions.visible = U.copy(item._slot.visible)
+                stored.conditions = next(conditions) and conditions or nil
                 menu.fields[#menu.fields + 1] = stored
             end
             local page = {id=providerId, name=categoryLabels[category], slot=slot,

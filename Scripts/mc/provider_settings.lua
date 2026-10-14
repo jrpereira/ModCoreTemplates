@@ -1,4 +1,5 @@
 local U = require('mc.util')
+local Contributions = require('menu_contributions')
 local M = {}
 local function finite(v) return type(v) == 'number' and v == v and math.abs(v) <= 1000000000 end
 local function text(v, where)
@@ -35,18 +36,33 @@ local function title(value)
     return value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end)
 end
 
+-- A choice is its label, or a ModCoreSettings menu-data choice without its value:
+-- {label=,note=,sound=}. Notes and sounds come back keyed by value.
 local function choiceDomain(source, where)
     assert(type(source) == 'table', where .. ': values must be a named domain or table')
-    local values, labels = {}, {}
-    for value, label in pairs(source) do
+    local values, labels, notes, sounds = {}, {}, nil, nil
+    local byValue = {}
+    for value, choice in pairs(source) do
         assert(finite(value), where .. ': picker keys must be finite numbers')
-        text(label, where .. ' label')
+        if type(choice) == 'table' then
+            allowed(choice, {label=true,note=true,sound=true}, where .. ' choice ' .. tostring(value))
+            if choice.note ~= nil then
+                notes = notes or {}
+                notes[value] = text(choice.note, where .. ' note')
+            end
+            if choice.sound ~= nil then
+                sounds = sounds or {}
+                sounds[value] = choice.sound
+            end
+            choice = choice.label
+        end
+        byValue[value] = text(choice, where .. ' label')
         values[#values + 1] = value
     end
     table.sort(values)
     assert(#values >= 2 and #values <= 64, where .. ': picker requires 2..64 choices')
-    for index, value in ipairs(values) do labels[index] = source[value] end
-    return {type='picker',values=values,labels=labels}
+    for index, value in ipairs(values) do labels[index] = byValue[value] end
+    return {type='picker',values=values,labels=labels,notes=notes,sounds=sounds}
 end
 
 local function valueDomain(source, where)
@@ -76,36 +92,52 @@ end
 -- generated row names a row that precedes it. A slot row carries one visibility
 -- condition, so a field in a variation branch inherits that branch through a
 -- source in the same branch.
+-- conditions take ModCoreSettings' menu-data shapes: visible={field=,values={...},
+-- playerExists=}, label={field=,values={[value]='text'}} (a key may list values) and
+-- dim={value,...}.
 local function conditions(field, source, parent, pickers, branch)
     if source.conditions == nil then return end
     local where = 'template field ' .. field.id .. ' conditions'
     assert(type(source.conditions) == 'table', where .. ' must be a table')
-    allowed(source.conditions, {visible=true,label=true}, where)
-    local function condition(name, extra)
-        local rule = source.conditions[name]
-        if rule == nil then return end
-        assert(type(rule) == 'table', where .. '.' .. name .. ' must be a table')
-        allowed(rule, {field=true,match=true,text=extra}, where .. '.' .. name)
+    allowed(source.conditions, {visible=true,label=true,dim=true}, where)
+    local function sourceField(rule, name)
         if parent == '' then
             text(rule.field, where .. '.' .. name .. '.field')
             assert(rule.field:sub(1,1) ~= '.', where .. '.' .. name .. '.field must be absolute')
         end
         local id = resolveId(parent, rule.field, where .. '.' .. name .. '.field')
         assert(pickers[id], where .. '.' .. name .. '.field must name a picker declared earlier')
-        U.array(rule.match, where .. '.' .. name .. '.match')
-        return id, U.copy(rule.match), rule
+        return id
     end
-    local id, match = condition('visible')
-    if id then
-        assert(not branch or pickers[id] == branch,
-            where .. '.visible.field must name a picker in the same variation branch')
-        field.visibleWhen, field.visibleValues = id, match
+    local visible = source.conditions.visible
+    if visible ~= nil then
+        assert(type(visible) == 'table', where .. '.visible must be a table')
+        allowed(visible, {field=true,values=true,playerExists=true}, where .. '.visible')
+        assert((visible.field == nil) == (visible.values == nil),
+            where .. '.visible: field and values go together')
+        assert(visible.field ~= nil or visible.playerExists ~= nil,
+            where .. '.visible needs a field or playerExists')
+        assert(visible.playerExists == nil or type(visible.playerExists) == 'boolean',
+            where .. '.visible.playerExists must be boolean')
+        if visible.field ~= nil then
+            local id = sourceField(visible, 'visible')
+            assert(not branch or pickers[id] == branch,
+                where .. '.visible.field must name a picker in the same variation branch')
+            U.array(visible.values, where .. '.visible.values')
+            field.visibleWhen, field.visibleValues = id, U.copy(visible.values)
+        end
+        field.visiblePlayer = visible.playerExists
     end
-    local rule
-    id, match, rule = condition('label', true)
-    if id then
-        field.labelWhen, field.labelValues = id, match
-        field.labelText = text(rule.text, where .. '.label.text')
+    local label = source.conditions.label
+    if label ~= nil then
+        assert(type(label) == 'table', where .. '.label must be a table')
+        allowed(label, {field=true,values=true}, where .. '.label')
+        field.labelWhen = sourceField(label, 'label')
+        field.labelTexts = Contributions.unfold(label.values, where .. '.label.values')
+    end
+    if source.conditions.dim ~= nil then
+        U.array(source.conditions.dim, where .. '.dim')
+        field.dim = U.copy(source.conditions.dim)
     end
 end
 
@@ -167,9 +199,9 @@ function M.template(menu, variations)
             text(sourceGroup.label, 'template field label')
             local domain = valueDomain(sourceGroup.values, 'template field ' .. id)
             local field = {id=id,label=sourceGroup.label,type=domain.type,values=domain.values,
-                labels=domain.labels,min=domain.min,max=domain.max,step=domain.step,
-                suffix=domain.suffix,default=sourceGroup.default,tab=sourceGroup.tab,
-                level=sourceGroup.level,description=sourceGroup.description}
+                labels=domain.labels,notes=domain.notes,sounds=domain.sounds,min=domain.min,
+                max=domain.max,step=domain.step,suffix=domain.suffix,default=sourceGroup.default,
+                tab=sourceGroup.tab,level=sourceGroup.level,description=sourceGroup.description}
             conditions(field, sourceGroup, '', pickers)
             if field.type == 'picker' then pickers[id] = true end
             local groupId = 'Standalone' .. tostring(#groups + absentTemplate)
@@ -220,7 +252,8 @@ function M.template(menu, variations)
                 text(source.label, 'template field label')
                 local domain = valueDomain(source.values, 'template field ' .. id)
                 local field = {id=id,label=source.label,type=domain.type,values=domain.values,
-                    labels=domain.labels,min=domain.min,max=domain.max,step=domain.step,
+                    labels=domain.labels,notes=domain.notes,sounds=domain.sounds,min=domain.min,
+                    max=domain.max,step=domain.step,
                     suffix=domain.suffix,default=source.default,tab=source.tab,level=source.level,
                     description=source.description}
                 local branch = variationName and variationName .. '=' .. tostring(variationValue)
@@ -264,9 +297,9 @@ function M.normalize(declaration)
         for fieldIndex, source in ipairs(sourceGroup.fields) do
             assert(type(source) == 'table', 'provider field must be a table')
             allowed(source, {id=true,label=true,type=true,order=true,default=true,values=true,
-                labels=true,min=true,max=true,step=true,suffix=true,tab=true,heading=true,level=true,
-                description=true,visibleWhen=true,visibleValues=true,labelWhen=true,labelValues=true,
-                labelText=true,linkProvider=true}, 'provider field')
+                labels=true,notes=true,sounds=true,min=true,max=true,step=true,suffix=true,tab=true,
+                heading=true,level=true,description=true,visibleWhen=true,visibleValues=true,
+                visiblePlayer=true,labelWhen=true,labelTexts=true,dim=true,linkProvider=true}, 'provider field')
             identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
             level(source.level)
             if source.heading ~= nil then
@@ -291,15 +324,20 @@ function M.normalize(declaration)
             if field.visibleWhen ~= nil then identifier(field.visibleWhen, 'provider visibility source') end
             assert((field.visibleWhen == nil) == (field.visibleValues == nil),
                 'provider visibility requires both visibleWhen and visibleValues')
+            assert(field.visiblePlayer == nil or type(field.visiblePlayer) == 'boolean',
+                'provider visiblePlayer must be boolean')
             if field.labelWhen ~= nil then
                 identifier(field.labelWhen, 'provider label source')
-                text(field.labelText, 'provider label text')
+                assert(type(field.labelTexts) == 'table' and next(field.labelTexts) ~= nil,
+                    'provider label texts required')
+                for _, label in pairs(field.labelTexts) do text(label, 'provider label text') end
             end
-            assert((field.labelWhen == nil) == (field.labelValues == nil)
-                and (field.labelWhen == nil) == (field.labelText == nil),
-                'provider label requires labelWhen, labelValues and labelText')
+            assert((field.labelWhen == nil) == (field.labelTexts == nil),
+                'provider label requires labelWhen and labelTexts')
             assert(field.tab == nil or type(field.tab) == 'boolean', 'provider tab must be boolean')
             if field.type == 'integer' then
+                assert(field.notes == nil and field.sounds == nil and field.dim == nil,
+                    'integer cannot declare notes, sounds or dim')
                 assert(field.values == nil and field.labels == nil and not field.tab,
                     'integer cannot declare choices/tabs')
                 field.step = field.step or 1
@@ -324,6 +362,22 @@ function M.normalize(declaration)
                     seen[value] = true; text(field.labels[i], 'provider choice label')
                 end
                 assert(finite(field.default) and seen[field.default], 'provider default must match a choice')
+                for name, map in pairs({notes=field.notes, sounds=field.sounds}) do
+                    assert(map == nil or type(map) == 'table', 'provider ' .. name .. ' must be a table')
+                    for value, entry in pairs(map or {}) do
+                        assert(seen[value], 'provider ' .. name .. ' key must be a choice')
+                        if name == 'notes' then
+                            assert(#text(entry, 'provider choice note') <= 64, 'provider choice note too long')
+                        else
+                            assert(type(entry) == 'string' and #entry <= 256
+                                and (entry == 'none' or entry:match('^/Game/[%w_/%.%-]+$')),
+                                'provider choice sound must be a /Game/ event path or none')
+                        end
+                    end
+                end
+                for _, value in ipairs(field.dim and field.dim or {}) do
+                    assert(seen[value], 'provider dim value must be a choice')
+                end
             else error('unsupported provider field type: ' .. tostring(field.type)) end
             group.fields[#group.fields+1] = field
         end
@@ -344,8 +398,14 @@ function M.normalize(declaration)
             assert(group.variationValues == nil, 'group variation values require a source')
         end
         for _, field in ipairs(group.fields) do
+            local labelValues
+            if field.labelTexts then
+                labelValues = {}
+                for value in pairs(field.labelTexts) do labelValues[#labelValues + 1] = value end
+                table.sort(labelValues)
+            end
             for _, rule in ipairs({{field.visibleWhen, field.visibleValues, 'visibility'},
-                {field.labelWhen, field.labelValues, 'label'}}) do
+                {field.labelWhen, labelValues, 'label'}}) do
                 local sourceId, matched, kind = rule[1], rule[2], rule[3]
                 if sourceId then
                     assert(sourceId ~= field.id, 'provider field cannot depend on itself')

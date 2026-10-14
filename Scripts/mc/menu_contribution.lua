@@ -30,14 +30,22 @@ function M.build(menu, root)
     end
     local description = 'Every loaded template, by module and category, with the active ones marked.'
     -- The aggregate takes the place of the menu entry for MCT's own folder. With no rows of
-    -- its own it is the list, hidden unless category pages need it as their parent.
+    -- its own it is the list while category pages need it as their parent; otherwise it
+    -- links to the Templates tab, so MCT keeps its entry in the mod list.
     local aggregate = {id=M.id, name='ModCore Templates', author='ModCoreTemplates',
-        version=version, attach=folder(root), configDirectory=root, visible=showAggregate}
+        version=version, attach=folder(root)}
     local pages, list = {aggregate}, aggregate
     if #menu.aggregate.rows > 0 then
-        aggregate.menu = menu.aggregate.menu
+        aggregate.menu, aggregate.configDirectory = menu.aggregate.menu, root
         list = {id=M.id .. '.templates', name='Templates', author='ModCoreTemplates', version=version,
             configDirectory=root, visible=false, under=M.id}
+    elseif showAggregate then
+        aggregate.configDirectory = root
+    else
+        aggregate.link = 'settings:templates'
+        -- Shown on its own, named as MCT, only when ModCore Settings has no Templates tab.
+        list = {id=M.id .. '.templates', name='ModCore Templates', author='ModCoreTemplates',
+            version=version, configDirectory=root, visible=false}
     end
     list.hooks, list.description = hooks, description
     -- Pages placed under the aggregate only while it is listed.

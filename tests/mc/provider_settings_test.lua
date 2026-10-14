@@ -53,16 +53,16 @@ local _,conditional=Provider.template({
     {id='Bars',label='Bars',fields={
         {id='.A',label='Orientation',values=orientation,default=7},
         {id='.KH',label='Keys',values={[0]='Above',[1]='Below'},default=0,
-            conditions={visible={field='.A',match={7}}}},
+            conditions={visible={field='.A',values={7}}}},
         {id='.KV',label='Keys',values={[0]='Left',[1]='Right'},default=0,
-            conditions={visible={field='BarsA',match={5}},
-                label={field='.A',match={5},text='Vertical Keys'}}},
+            conditions={visible={field='BarsA',values={5}},
+                label={field='.A',values={[5]='Vertical Keys'}}}},
     }},
 },{})
 local kh,kv=conditional[1].fields[2],conditional[1].fields[3]
 assert(kh.visibleWhen=='BarsA' and kh.visibleValues[1]==7 and kh.labelWhen==nil)
 assert(kv.visibleWhen=='BarsA' and kv.visibleValues[1]==5)
-assert(kv.labelWhen=='BarsA' and kv.labelValues[1]==5 and kv.labelText=='Vertical Keys')
+assert(kv.labelWhen=='BarsA' and kv.labelTexts[5]=='Vertical Keys' and kv.labelTexts[7]==nil)
 local _,plain=Provider.template({{id='Bars',label='Bars',fields={
     {id='.A',label='Orientation',values=orientation,default=7}}}},{})
 assert(plain[1].fields[1].visibleWhen==nil and plain[1].fields[1].labelWhen==nil)
@@ -79,25 +79,50 @@ end
 local function keys(conditions)
     return {id='.K',label='Keys',values={[0]='A',[1]='B'},default=0,conditions=conditions}
 end
-rejects(bars(keys({visible={field='.A',match={7}}}),true),nil,'declared earlier')
-rejects(bars(keys({visible={field='.Missing',match={7}}})),nil,'declared earlier')
-rejects(bars(keys({visible={field='.A',match={3}}})),nil,'distinct source choice')
-rejects(bars(keys({visible={field='.A',match={}}})),nil,'must not be empty')
-rejects(bars(keys({visible={field='.A',match={7},text='x'}})),nil,'unsupported property text')
-rejects(bars(keys({hidden={field='.A',match={7}}})),nil,'unsupported property hidden')
-rejects(bars(keys({label={field='.A',match={7}}})),nil,'label.text')
-rejects(bars(keys({label={field='.A',match={7},text='a;b'}})),nil,'unsupported metadata text')
+rejects(bars(keys({visible={field='.A',values={7}}}),true),nil,'declared earlier')
+rejects(bars(keys({visible={field='.Missing',values={7}}})),nil,'declared earlier')
+rejects(bars(keys({visible={field='.A',values={3}}})),nil,'distinct source choice')
+rejects(bars(keys({visible={field='.A',values={}}})),nil,'must not be empty')
+rejects(bars(keys({visible={field='.A',values={7},text='x'}})),nil,'unsupported property text')
+rejects(bars(keys({visible={field='.A'}})),nil,'field and values go together')
+rejects(bars(keys({visible={}})),nil,'needs a field or playerExists')
+rejects(bars(keys({visible={playerExists=1}})),nil,'playerExists must be boolean')
+rejects(bars(keys({hidden={field='.A',values={7}}})),nil,'unsupported property hidden')
+rejects(bars(keys({label={field='.A',values={7},text='x'}})),nil,'unsupported property text')
+rejects(bars(keys({label={field='.A',values={[7]='a;b'}}})),nil,'unsupported metadata text')
+rejects(bars(keys({label={field='.A',values={[3]='x'}}})),nil,'distinct source choice')
+rejects(bars(keys({label={field='.A',values={[7]='x',[{7,5}]='y'}}})),nil,'appears twice')
+rejects(bars(keys({dim={9}})),nil,'dim value must be a choice')
 rejects(bars({id='.S',label='Size',values='percent',default=1,
-    conditions={visible={field='.S',match={1}}}}),nil,'declared earlier')
+    conditions={visible={field='.S',values={1}}}}),nil,'declared earlier')
 -- A field in a variation branch must depend on a picker in that branch.
 rejects({{id='Bars',label='Bars',fields={{id='.A',label='Orientation',values=orientation,default=7}}},
-    {id='Extra',label='Extra',variation={style=1},fields={keys({visible={field='BarsA',match={7}}})}}},
+    {id='Extra',label='Extra',variation={style=1},fields={keys({visible={field='BarsA',values={7}}})}}},
     {style={values={[0]='A',[1]='B'},default=0}},'same variation branch')
 rejects({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
-    conditions={visible={field='.Style',match={0}}}}},
+    conditions={visible={field='.Style',values={0}}}}},
     {style={values={[0]='A',[1]='B'},default=0}},'must be absolute')
 local _,variationSource=Provider.template({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
-    conditions={visible={field='Style',match={1}}}}},{style={values={[0]='A',[1]='B'},default=0}})
+    conditions={visible={field='Style',values={1}}}}},{style={values={[0]='A',[1]='B'},default=0}})
 assert(variationSource[2].fields[1].visibleWhen=='Style','a shared field may depend on a variation')
+
+-- A label key may list values; the player and dim conditions pass through; a choice may be
+-- a menu-data choice with a note and a sound.
+local _,shaped=Provider.template({
+    {id='Bars',label='Bars',fields={
+        {id='.A',label='Orientation',values=orientation,default=7},
+        {id='.K',label='Keys',default=0,values={[0]='None',[1]={label='Swoosh',note='Short',
+            sound='/Game/Audio/Swoosh'},[2]={label='Quiet',sound='none'}},
+            conditions={visible={playerExists=true},label={field='.A',values={[{5,7}]='Keys'}},dim={0}}},
+    }},
+},{})
+local k=shaped[1].fields[2]
+assert(k.visibleWhen==nil and k.visiblePlayer==true and k.labelTexts[5]=='Keys' and k.labelTexts[7]=='Keys'
+    and k.dim[1]==0,'conditions keep MCS shapes')
+assert(k.labels[2]=='Swoosh' and k.notes[1]=='Short' and k.sounds[1]=='/Game/Audio/Swoosh'
+    and k.sounds[2]=='none' and k.notes[0]==nil,'a choice table carries its note and sound')
+rejects({{id='K',label='K',default=0,values={[0]='A',[1]={label='B',volume=1}}}},nil,'unsupported property volume')
+rejects({{id='K',label='K',default=0,values={[0]='A',[1]={label='B',sound='Audio/B'}}}},nil,'/Game/ event path')
+rejects({{id='K',label='K',default=0,values={[0]='A',[1]={note='n'}}}},nil,'label')
 
 print('PASS: concise template fields, value domains, variations, relative IDs and conditions')
