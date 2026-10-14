@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.1
+
+- Requires ModCore Settings 1.3.0 or later, which reads the `conditions` and choice sounds
+  that MCT 1.3.0 writes into menu data.
+
 ## v1.3.0
 
 - Emits `MC_NPCAttackIndicator`: MCT watches the game's combat target indicator and
