@@ -104,7 +104,7 @@ function M.start(options, api)
     end
     -- MC_NPCAttackIndicator watches the game only while a template listens: its
     -- source starts when one wakes and stops when the last sleeps or MCT closes.
-    if not configured.attackIndicator and type(api.RegisterHook) == 'function' then
+    if not configured.attackIndicator and api.UE4SSLuaEventBridge.Hooks then
         configured.attackIndicator = require('mc.attack_indicator').new(api, function(event)
             if bootstrap and bootstrap.runtime then bootstrap.runtime:emit('MC_NPCAttackIndicator', event) end
         end, configured.log and require('mc_log').wrap(configured.log) or nil)

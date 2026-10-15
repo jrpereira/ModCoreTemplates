@@ -39,8 +39,8 @@ Start with the [developer guide](DEVELOPERS.md) and the runnable
 
 ## Requirements and installation
 
-Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.0.12 or newer (API 6,
-weak handles), and ModCoreSettings with Dawnwalker Mod Menu (DMM).
+Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.1.0 or newer (API 7,
+weak handles and function hooks), and ModCoreSettings 1.3.0 or newer with Dawnwalker Mod Menu (DMM).
 Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
 `_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.
 MCC supplies the Controls page that hosts quickslot visual settings.

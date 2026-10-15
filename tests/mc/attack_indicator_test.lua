@@ -1,66 +1,45 @@
--- MC_NPCAttackIndicator's source: the game's indicator styling call and early
--- warning, hooked only between start and stop, become update events emitted
--- inside the call.
+-- MC_NPCAttackIndicator's source: the indicator's icon changes, hooked through
+-- UE4SSLuaEventBridge only between start and stop, become update events.
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Attacks=require('mc.attack_indicator')
 
-FName=function(value)
-    return {ToString=function() return value end,GetComparisonIndex=function() return 'index:'..value end}
-end
 local objects={}
-StaticFindObject=function(path) return objects[path] end
-
--- Fake UObjects: visible, opaque, with parents and outers.
+-- Fake UObjects: visible, opaque, with parents.
 local function object(name,fields)
     local value=fields or {}
     value.name=name
     if value.visible==nil then value.visible=true end
     local methods={}
-    function methods:IsValid() return true end
+    function methods:IsValid() return not self.gone end
     function methods:GetFullName() return 'Class '..self.name end
     function methods:IsVisible() return self.visible end
     function methods:GetRenderOpacity() return 1 end
     function methods:GetParent() return self.parent end
-    function methods:GetOuter() return self.outer end
-    function methods:GetOwner() return self.owner end
-    function methods:GetFName() return FName(self.fname or self.name:match('([^%.]+)$')) end
     return setmetatable(value,{__index=methods})
 end
-local DIM,LIT={R=0.2,G=0.1,B=0,A=1},{R=1,G=0.67,B=0.19,A=1}
-local function indicator(name)
-    local widget=object('/Game/HUD.'..name)
-    local tree=object('/Game/HUD.'..name..'.WidgetTree',{outer=widget})
-    for _,key in ipairs(Attacks.ARROWS) do
-        widget[key]=object('/Game/HUD.'..name..'.WidgetTree.'..key,{outer=tree,parent=widget,ColorAndOpacity=DIM})
-    end
-    widget.Reticle=object('/Game/HUD.'..name..'.WidgetTree.Reticle',{outer=tree,parent=widget})
-    objects['/Game/HUD.'..name]=widget
-    return widget
-end
-local main=indicator('WBP_CombatTargetIndicator_C_1')
-local twin=indicator('WBP_CombatTargetIndicator_C_2')
 local MAIN,TWIN='/Game/HUD.WBP_CombatTargetIndicator_C_1','/Game/HUD.WBP_CombatTargetIndicator_C_2'
+local main,twin=object(MAIN),object(TWIN)
+objects[MAIN],objects[TWIN]=main,twin
 
-local hooks,removed={},0
-local delayed={}
-local api={
-    RegisterHook=function(path,pre,post) hooks[path]={pre,post}; return 1,2 end,
-    UnregisterHook=function(path,pre,post) assert(hooks[path] and pre==1 and post==2); hooks[path]=nil; removed=removed+1 end,
-    ExecuteWithDelay=function(_,callback) delayed[#delayed+1]=callback end,
-    ExecuteInGameThread=function(callback) callback() end,
+-- A fake hook bridge: one hook per path, delivered by hand like the engine tick.
+local hooked,unhooked,caps={},0,{hooks=true,hooks_bp=true}
+local bridge={
+    GetCapabilities=function() return caps end,
+    Hooks={Hook=function(path,options)
+        assert(options.pre and options.params[1]=='IconType' and options.object_paths)
+        local handle={}
+        function handle:Unhook() hooked[path]=nil; unhooked=unhooked+1; return true end
+        hooked[path]=options
+        return handle
+    end},
 }
-local function run()
-    local batch=delayed
-    delayed={}
-    for _,callback in ipairs(batch) do callback() end
-end
+local api={UE4SSLuaEventBridge=bridge,StaticFindObject=function(path) return objects[path] end}
 local events,logged={},{}
 local log=setmetatable({},{__index=function(_,level)
     return function(...) logged[#logged+1]=level..' '..table.concat({...}) end
 end})
 local source=Attacks.new(api,function(event) events[#events+1]=event end,log)
--- A summary of the events since the last take.
 local function take()
     local parts={}
     for _,event in ipairs(events) do
@@ -68,117 +47,113 @@ local function take()
         if event.direction then text=text..' '..event.direction end
         if event.reason then text=text..' '..event.reason end
         if event.active~=nil then text=text..' '..tostring(event.active) end
-        if event.late then text=text..' late' end
         if event.path then text=text..' '..(event.path==MAIN and 'main' or event.path==TWIN and 'twin' or event.path) end
         parts[#parts+1]=text
     end
     events={}
     return table.concat(parts,', ')
 end
-local function param(value) return {get=function() return value end} end
-local STYLING=Attacks.STYLING
--- The game styling an arrow: the before callback sees the call, the after one
--- sees the arrow once its colour is set.
-local function style(target,key,color)
-    local image=target[key]
-    if color then image.ColorAndOpacity=color end
-    hooks[STYLING][1](param(image),param({}))
-    hooks[STYLING][2](param(image),param({}))
-end
-local function centre(target,sprite)
-    hooks[STYLING][1](param(target.Reticle),param(object('/Game/Atlas.'..sprite)))
-    hooks[STYLING][2](param(target.Reticle),param({}))
+-- The bridge delivering one icon change, as it copies it: an enum as value and name.
+local function icon(path,value)
+    hooked[Attacks.ICON].pre({phase='pre',object={address=1,path=path},params={IconType={value=value,name='x'}}})
 end
 
-assert(next(hooks)==nil,'nothing is hooked before start')
-assert(source:start() and hooks[STYLING] and hooks[Attacks.EARLY],'start hooks the styling call and the early warning')
-assert(source:start(),'a second start keeps the hooks')
+assert(next(hooked)==nil,'nothing is hooked before start')
+assert(source:start() and hooked[Attacks.ICON],'start hooks the icon change')
+assert(source:start(),'a second start keeps the hook')
 
--- Other atlas images and images outside an indicator are ignored.
-hooks[STYLING][1](param(object('/Game/HUD.Portrait')),param({}))
-local stray=object('/Game/Menu.WidgetTree.TopArrow',{outer=object('/Game/Menu.WidgetTree',{outer=object('/Game/Menu')}),
-    ColorAndOpacity=LIT})
-hooks[STYLING][2](param(stray),param({}))
-assert(take()=='','only indicator images count')
-
--- An attack: the first styling shows it, the second turns it critical, later ones change nothing.
-style(main,'LeftArrow',LIT)
-assert(events[1].indicator==main and events[1].late==false,'the event carries the live indicator')
-assert(take()=='arrow 3 main','a lit arrow is an attack from its direction')
-style(main,'LeftArrow')
-assert(take()=='critical 3 main','its second styling is the critical one')
-style(main,'LeftArrow')
+-- An attack from the left: shown, then its parry window, then resolved.
+icon(MAIN,1)
+assert(events[1].indicator==main,'the event carries the live indicator')
+assert(take()=='arrow 3 main','icon 1 is an attack on the left arrow')
+icon(MAIN,1)
+assert(take()=='','a repeated state changes nothing')
+icon(MAIN,5)
+assert(take()=='critical 3 main','icon 5 opens its parry window')
+icon(MAIN,5)
 assert(take()=='','a critical attack stays critical')
--- The arrow going dark ends it; the indicator is checked again next frame.
-style(main,'LeftArrow',DIM)
-assert(take()=='resolve 3 dark main' and #delayed==1,'a dark arrow ends its attack')
-main.TopArrow.ColorAndOpacity=LIT
-run()
-assert(take()=='arrow 1 late main','an arrow lit by next frame is an attack')
--- Another indicator's attack is its own.
-style(twin,'RightArrow',LIT)
-assert(take()=='arrow 4 twin')
--- The centre icon turning to the sword resolves the indicator's attack.
-centre(main,'T_Combat_Icon_Sword')
-assert(take()=='resolve sword main')
-centre(main,'T_Combat_Icon_Sword')
-assert(take()=='','the sword with no attack resolves nothing')
--- A hidden indicator's attack is over.
+icon(MAIN,0)
+assert(take()=='resolve sword main','defending ends the attack')
+icon(MAIN,0)
+assert(take()=='','defending with no attack resolves nothing')
+-- Directions follow ARROWS; a parry window seen first also shows its attack.
+icon(MAIN,3) icon(MAIN,4)
+assert(take()=='arrow 1 main, arrow 2 main','top is 1, bottom 2; a new direction is a new attack')
+icon(TWIN,6)
+assert(take()=='arrow 4 twin, critical 4 twin','another indicator is its own; a window alone shows its arrow')
+-- A weak spot means nothing is coming.
+icon(TWIN,12)
+assert(take()=='resolve sword twin')
+
+-- A hidden indicator's attack is over, and its states are not on screen.
+icon(TWIN,2)
+take()
 twin.visible=false
-style(twin,'RightArrow')
+icon(TWIN,6)
 assert(take()=='resolve hidden twin')
+icon(TWIN,2)
+assert(take()=='','a hidden attack is not shown')
 
--- The unblockable skull: shown by a visible indicator, taken away only by the
--- one that showed it; a hidden twin's skull is not on screen.
-centre(twin,'T_Combat_Icon_SkullRed')
+-- The unblockable skull: shown by a visible indicator, taken away by it.
+icon(TWIN,9)
 assert(take()=='','a hidden skull is not shown')
-centre(main,'T_Combat_Icon_SkullRed')
+icon(MAIN,9)
 assert(events[1].indicator==main and take()=='unblockable true main')
-centre(main,'T_Combat_Icon_SkullRed')
+icon(MAIN,9)
 assert(take()=='','a skull shows once')
-centre(twin,'T_Combat_Icon_Sword')
-assert(take()=='','a hidden twin does not take it away')
-centre(main,'T_Combat_Icon_Sword')
+icon(MAIN,0)
 assert(take()=='unblockable false main, resolve sword main',
-    'the indicator that showed it takes it away, and the sword resolves the attack')
+    'defending takes the skull away and resolves the attack')
 
--- The early warning: the game's 1-4 become arrow directions, with the attacker.
-local attacker=object('/Game/Map.Soldier')
-local component=object('/Game/Map.Soldier.Combat',{owner=attacker})
-hooks[Attacks.EARLY][1](param({}),param({Direction=3,bIsUnblockable=false,Instigator=component}))
-assert(events[1].attacker==attacker and events[1].unblockable==false,'the early warning names its attacker')
-assert(take()=='early 1','early direction 3 is the top arrow')
-hooks[Attacks.EARLY][1](param({}),param({Direction=0,bIsUnblockable=true}))
-assert(events[1].attacker==nil and events[1].unblockable and take()=='early','an unblockable early warning')
+-- A skull followed straight by an attack is taken away before the arrow.
+icon(MAIN,9)
+take()
+icon(MAIN,2)
+assert(take()=='unblockable false main, arrow 4 main','any other state ends the skull')
+icon(MAIN,0)
+take()
 
--- Events count up; a failing receiver or a fault in the call never escapes it,
--- and each kind of fault is logged once.
-local broken={get=function() error('unreadable') end}
-for _=1,3 do
-    hooks[STYLING][1](broken,param({}))
-    hooks[STYLING][2](broken,param({}))
-end
+-- An indicator that is gone forgets its attack quietly.
+icon(MAIN,1)
+take()
+objects[MAIN]=nil
+icon(MAIN,0)
+assert(take()=='','a missing indicator emits nothing')
+objects[MAIN]=main
+
+-- Malformed deliveries and a failing receiver never escape; one error per kind.
+hooked[Attacks.ICON].pre({object={path=MAIN},params={}})
+assert(take()=='','a call without an icon is ignored')
+local broken=Attacks.new(api,function() error('receiver failed') end,log)
+source:stop()
+assert(broken:start())
+for _=1,3 do icon(MAIN,(_%2==1) and 1 or 0) end
 local errors=0
 for _,line in ipairs(logged) do if line:match('^error') then errors=errors+1 end end
-assert(errors==2,'one error per kind, not one per call')
-
--- Stop unhooks and forgets: after a new start the same arrow is a new attack.
-style(main,'BottomArrow',LIT)
-take()
-source:stop()
-assert(removed==2 and next(hooks)==nil,'stop removes both hooks')
+assert(errors==1,'one error per kind, not one per call')
+broken:stop()
 local warned=0
 for _,line in ipairs(logged) do if line:match('^warn') and line:match('2 more times') then warned=warned+1 end end
-assert(warned==2,'repeated faults are counted at stop')
+assert(warned==1,'repeated faults are counted at stop')
+
+-- Stop unhooks and forgets: after a new start the same state is a new attack.
+assert(next(hooked)==nil and unhooked==2,'stop removes the hook')
 source:stop()
-assert(removed==2,'a second stop has nothing to remove')
+assert(unhooked==2,'a second stop has nothing to remove')
+events={}
 source:start()
-style(main,'BottomArrow')
-assert(take()=='arrow 2 main','state does not survive a stop')
+icon(MAIN,2)
+assert(take()=='arrow 4 main','state does not survive a stop')
+-- A delivery queued before stop arrives after it and is dropped.
+local pending=hooked[Attacks.ICON].pre
 source:stop()
+pending({object={path=MAIN},params={IconType={value=1}}})
+assert(take()=='','nothing is emitted after stop')
 
--- A styling hook the game refuses leaves the source stopped.
-local refusing=Attacks.new({RegisterHook=function() error('no such function') end},function() end,log)
-assert(refusing:start()==false and not refusing.active,'an unavailable styling call does not start')
+-- Without Blueprint hooks the source stays stopped and says why.
+caps={hooks=false,hooks_reason='Hooks disabled'}
+local refusing=Attacks.new(api,function() end,log)
+assert(refusing:start()==false and not refusing.active,'no bridge hooks, no source')
+assert(logged[#logged]:match('Hooks disabled'),'the bridge reason is logged')
 
-print('PASS: attack indicator source emits arrow, critical, resolve, unblockable and early events inside the call')
+print('PASS: attack indicator source emits arrow, critical, resolve and unblockable events from the icon')

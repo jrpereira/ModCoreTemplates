@@ -146,6 +146,13 @@ do
         ExecuteInGameThread=function(callback) queued[#queued+1]=callback end,
         UE4SSLuaEventBridge=Lifetimes.bridge(),
     }
+    -- The bridge's Blueprint hooks, as the attack source uses them.
+    local bridgeHooks={}
+    api.UE4SSLuaEventBridge.GetCapabilities=function() return {hooks=true,hooks_bp=true} end
+    api.UE4SSLuaEventBridge.Hooks={Hook=function(path,options)
+        bridgeHooks[path]=options
+        return {Unhook=function() bridgeHooks[path]=nil; return true end}
+    end}
     local function drain() while #queued>0 do table.remove(queued,1)() end end
     local attacks={id='npc.attacks',hooks={wake='MC_CombatStart',sleep='MC_CombatEnd',update='MC_NPCAttackIndicator'},
         objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
@@ -158,19 +165,19 @@ do
     api.UE4SSLuaEventBridge.loopStart()
     drain()
     live.runtime:select('npc.attacks',{['example.listener']={}})
-    local STYLING='/Script/UMG.Image:SetBrushFromAtlasInterface'
-    assert(not hooks[STYLING],'nothing listens outside combat')
+    local ICON=require('mc.attack_indicator').ICON
+    assert(not bridgeHooks[ICON],'nothing listens outside combat')
     hooks['/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted']()
     drain()
-    assert(hooks[STYLING],'combat wakes the listener and hooks the styling call')
+    assert(bridgeHooks[ICON],'combat wakes the listener and hooks the icon change')
     hooks['/Script/DogwoodCombat.PlayerCombatComponent:OnCombatEnded']()
     drain()
-    assert(not hooks[STYLING],'the listener sleeping unhooks it')
+    assert(not bridgeHooks[ICON],'the listener sleeping unhooks it')
     hooks['/Script/DogwoodCombat.PlayerCombatComponent:OnCombatStarted']()
     drain()
-    assert(hooks[STYLING])
+    assert(bridgeHooks[ICON])
     live:stop()
-    assert(not hooks[STYLING],'stopping MCT unhooks it')
+    assert(not bridgeHooks[ICON],'stopping MCT unhooks it')
 end
 print('PASS: the attack indicator source listens only while a template does')
 

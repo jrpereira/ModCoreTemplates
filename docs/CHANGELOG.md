@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.4.0
+
+- `MC_NPCAttackIndicator` now follows the indicator's own state change
+  (`OnObservedStubIconTypeChanged`) through UE4SSLuaEventBridge function hooks, in
+  place of every atlas image's styling call. `critical` is the game's parry window,
+  not a second styling. Events arrive on the next engine tick, about one frame after
+  the game's change, not inside its call; `indicator` is still live during the event.
+- `early` is gone: the game's early warning arrives in the same frame as the attack's
+  `arrow`. `resolve` reasons are `sword` and `hidden`; `dark` is gone.
+- Requires UE4SSLuaEventBridge 1.1.0 or later (API 7, function hooks). Without its
+  Blueprint hooks, `MC_NPCAttackIndicator` stays off and MCT logs why.
+
 ## v1.3.1
 
 - Requires ModCore Settings 1.3.0 or later, which reads the `conditions` and choice sounds
