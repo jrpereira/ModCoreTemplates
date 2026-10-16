@@ -13,6 +13,27 @@ def valid_version(value):
     match = SEMVER.fullmatch(value)
     return bool(match) and all(not (part.isdigit() and len(part) > 1 and part[0] == '0') for part in (match[4] or '').split('.'))
 
+# A dependency version in the source mod.json may carry update placeholders: X.Y.?+ follows
+# the dependency's latest minor and X.?.?+ its latest major when requirements are settled.
+# Packages publish them with 0 in place of each ?. A version without ? is locked and ships
+# as written.
+PLACEHOLDER = re.compile(r'(0|[1-9]\d*)\.((0|[1-9]\d*)\.\?|\?\.\?)\+\Z')
+
+def published_mod_json(data):
+    """The mod.json bytes to ship: placeholders resolved, otherwise unchanged."""
+    manifest = json.loads(data.decode('utf-8-sig'))
+    changed = False
+    for dependency in manifest.get('dependencies') or []:
+        value = dependency.get('version') if isinstance(dependency, dict) else None
+        if isinstance(value, str) and '?' in value:
+            if not PLACEHOLDER.fullmatch(value):
+                raise ValueError(f'Invalid dependency version placeholder: {value}')
+            dependency['version'] = value.replace('?', '0')
+            changed = True
+    if not changed:
+        return data
+    return (json.dumps(manifest, indent=2, ensure_ascii=False) + '\n').encode('utf-8')
+
 def definition(root):
     return json.loads((root / 'release-manifest.json').read_text(encoding='utf-8'))
 
@@ -47,6 +68,8 @@ def build(root, out=None, expected=None):
         if Path(dest).name.lower() == 'config.ini':
             raise ValueError('Never package a personal config destination; use config.example.ini')
         payload[dest] = safe_file(root, src).read_bytes()
+        if dest == 'mod.json':
+            payload[dest] = published_mod_json(payload[dest])
     hashes = {p: hashlib.sha256(data).hexdigest() for p, data in sorted(payload.items())}
     manifest = {'module': module, 'version': value, 'files': hashes}
     if 'manifest.json' in payload:

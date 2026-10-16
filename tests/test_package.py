@@ -50,6 +50,33 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(names, {pack.MODULE + '/' + dest for dest in spec['files']}
                              | {pack.MODULE + '/manifest.json'})
 
+    def test_dependency_placeholders_resolve_in_the_package(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'repo'
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', 'dist', 'work', 'state', '__pycache__'))
+            manifest = json.loads((root / 'mod.json').read_text(encoding='utf-8'))
+            manifest['dependencies'] = [
+                {'id': 'Locked', 'version': '1.0.7.1+'},
+                {'id': 'Minor', 'version': '1.2.?+'},
+                {'id': 'Major', 'version': '2.?.?+'},
+                {'id': 'Unversioned'},
+            ]
+            (root / 'mod.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+            archive = pack.build(root, out=Path(temp) / 'dist')
+            with ZipFile(archive) as bundle:
+                shipped = json.loads(bundle.read(pack.MODULE + '/mod.json'))
+            self.assertEqual([d.get('version') for d in shipped['dependencies']],
+                             ['1.0.7.1+', '1.2.0+', '2.0.0+', None])
+            for bad in ('1.?.3+', '1.2.?', '?.?.?+', '1.2.??+'):
+                manifest['dependencies'] = [{'id': 'Bad', 'version': bad}]
+                (root / 'mod.json').write_text(json.dumps(manifest), encoding='utf-8')
+                with self.assertRaises(ValueError, msg=bad):
+                    pack.build(root, out=Path(temp) / 'dist')
+
+    def test_mod_json_without_placeholders_ships_unchanged(self):
+        data = b'{\n  "id": "Mod",\n  "dependencies": [{"id": "Dep", "version": "1.3.1+"}]\n}\n'
+        self.assertIs(pack.package_manifest.published_mod_json(data), data)
+
     def test_release_version_mismatch_rejected(self):
         with self.assertRaises(ValueError):
             pack.build(expected='999.0.0')
