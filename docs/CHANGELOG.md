@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4.1
+
+- Requires ModCore Settings 1.3.1 or later. No change to templates or events.
+
 ## v1.4.0
 
 - `MC_NPCAttackIndicator` now follows the indicator's own state change
