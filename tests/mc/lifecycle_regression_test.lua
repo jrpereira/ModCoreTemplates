@@ -137,16 +137,16 @@ do
         screen=function()return{width=1920,height=1080}end,
         subscribe=function(fn,getEpoch)sink,epoch=fn,getEpoch;return function()end end,
         onError=function()end}
-    local old={id='old',category='single',managed=true,
+    local old={id='old',category='single',managed=true,uniqueBy='category',
         objects={root={properties={'opacity'}}},
         attach=function(objects)
             objects.root:SetRenderOpacity(.2)
             objects.root.failRestore=true
             error('attach failed')
         end}
-    local replacement={id='replacement',category='single',objects={'root'},managed=false,
+    local replacement={id='replacement',category='single',objects={'root'},managed=false,uniqueBy='category',
         attach=function()activated=true end,update=function()end,detach=function()end}
-    local r=Runtime.new(host,{{id='single',single=true,objects={root={source='lookup',class='Root'}}}},
+    local r=Runtime.new(host,{{id='single',objects={root={source='lookup',class='Root'}}}},
         {old,replacement})
     r:select('single',{old={}});r:start()
     r:select('single',{replacement={}})

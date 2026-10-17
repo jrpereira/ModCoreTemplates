@@ -49,7 +49,7 @@ assert(newer~=ref and host.valid(newer))
 
 local jobs={}
 local category={id='player.quickslots',objects={root={source='lookup',class='/Script/UMG.UserWidget'}}}
-local template={id='example.template',name='Template',category='player.quickslots',
+local template={id='example.template',label='Template',category='player.quickslots',
     module='Example',managed=false,objects={'root'},
     attach=function() end,update=function() end,detach=function() end}
 local opts={categoryFiles={'category'},
@@ -156,7 +156,7 @@ do
     local function drain() while #queued>0 do table.remove(queued,1)() end end
     local attacks={id='npc.attacks',hooks={wake='MC_CombatStart',sleep='MC_CombatEnd',update='MC_NPCAttackIndicator'},
         objects={root={source='lookup',class='/Game/HUD/Used.Used_C'}}}
-    local listener={id='example.listener',name='Listener',category='npc.attacks',module='Example',managed=false,
+    local listener={id='example.listener',label='Listener',category='npc.attacks',module='Example',managed=false,
         objects={'root'},attach=function() end,update=function() end,detach=function() end,
         events={update=function() end}}
     local live=Startup.start({categoryFiles={'attacks'},execute=function(path)

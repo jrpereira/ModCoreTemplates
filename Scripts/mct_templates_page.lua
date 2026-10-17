@@ -69,7 +69,7 @@ local function menu(context)
             local group = 'Module' .. m .. '_' .. c
             subgroups[#subgroups + 1] = {id=group, label=categoryLabel(category)}
             for _, template in ipairs(entry.byCategory[category]) do
-                display(template.listed, group, template.name, template.active == true and ACTIVE or BLANK)
+                display(template.listed, group, template.label, template.active == true and ACTIVE or BLANK)
             end
         end
     end

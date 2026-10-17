@@ -56,18 +56,19 @@ its `.old`.
 Set `menuTarget='templates'` on a template only when its fields belong on the
 category page rather than its module page.
 
-- **Slot:** a single category may name a slot on another provider's page:
+- **Slot:** a category may name a slot on another provider's page:
 
   ```lua
   slot = { provider = 'controls', slot = 'visuals' },
   ```
 
   `provider` is the full provider id, or the lowercase short name of a `ModCore<Name>`
-  provider. MCT publishes the category's Template picker, shared category fields and
-  every template's fields on a hidden page (`ModCoreTemplates.slot.<category>`), and
+  provider. MCT publishes the category's Template picker, Enabled toggles, shared
+  category fields and every template's fields on a hidden page (`ModCoreTemplates.slot.<category>`), and
   contributes those rows to the slot through ModCoreSettings. The category then has no
   aggregate, category or module rows. Slot rows carry no Category rules, so each row is
-  gated by its own rule: the Template picker always shows; other rows show while their
+  gated by its own rule: the Template picker and Enabled toggles always show, and the
+  toggles are plain rows there, since slot rows share one group; other rows show while their
   template is selected, or while their variation value is selected. Navigation links
   are left out. Values are stored in the central config. A module whose templates all
   moved to slots keeps its page in the module group. The page edits the same rows,
@@ -78,10 +79,15 @@ category page rather than its module page.
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
-Single categories get a template picker with `None`. Each template choice notes its
-module folder; ModCoreSettings shows the module's name on a second line under the
-template name. `None` and templates without a module have no note. Other categories get an `Enabled` toggle per template, saved as
-`MCT_<Template>_Enabled` under a heading that names the template. A template with `enabled = false` remains represented in the
+Templates with `uniqueBy = 'category'` share one template picker per category, with
+`None`. Templates with `uniqueBy = 'priority'` share one picker per priority, labelled
+`<Category> (priority <n>)`, after the category picker and lowest priority first.
+Each template choice notes its module folder; ModCoreSettings shows the module's name
+on a second line under the template's label. `None` and templates without a module have
+no note. Every other template gets an `Enabled` toggle (`mcType=onoff`), saved as
+`MCT_<Module>_<Id>_Enabled`. The toggle is labelled with the template's label and stands
+in for its group's heading (`category=true` on the row, `heading=false` on the group),
+so the heading row itself turns the template on or off. A category can have both. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
 
@@ -95,7 +101,7 @@ notice above.
 ```lua
 local template = {
     id = 'example.quickslots',
-    name = 'Example quickslots',
+    label = 'Example quickslots',
     category = 'player.quickslots',
     objects = {abilities = {}}, -- this example declares a menu without changing properties
     variations = {
@@ -193,7 +199,18 @@ are shared and templates override matching keys. Category text fields remain
 config-only. Generated navigation fields are neither persisted nor delivered to
 callbacks.
 
-Category `single` controls selection multiplicity.
+Template `uniqueBy` controls selection multiplicity:
+
+| `uniqueBy` | At most one enabled template per |
+|---|---|
+| `false` or omitted | no limit |
+| `'category'` | category |
+| `'priority'` | priority within the category (`priority`, 100 when omitted) |
+
+Enabling a template detaches the enabled one in its group before the new one attaches,
+and a failed detach holds the new one back. Groups are separate: a category-unique
+template never displaces a priority-unique one, and templates without `uniqueBy` attach
+alongside both. Categories do not declare `uniqueBy`.
 
 ## Startup integration
 

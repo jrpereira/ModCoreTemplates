@@ -25,10 +25,10 @@ local function fixture(hooks,options)
     }
     local log={}
     local multi=options and options.priorities~=nil
-    local category={id='c',single=not multi,hooks=hooks,objects={root={source='lookup',class='Root'}}}
+    local category={id='c',hooks=hooks,objects={root={source='lookup',class='Root'}}}
     local templates={}
     for _,id in ipairs({'a','b'}) do
-        templates[#templates+1]={id=id,category='c',objects={'root'},
+        templates[#templates+1]={id=id,category='c',objects={'root'},uniqueBy=not multi and 'category' or nil,
             priority=options and options.priorities and options.priorities[id],
             attach=function(_,_,saved) log[#log+1]=id..':attach'; return saved end,
             events={

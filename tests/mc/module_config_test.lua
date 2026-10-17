@@ -10,9 +10,10 @@ local menuRoot=testRoot..'/ModCoreTemplates'
 Layout.prepare(moduleRoot)
 
 local field={id='Size',label='Size',values={min=0,max=100,step=1},default=20}
-local category={id='player.quickslots',single=true,
+local category={id='player.quickslots',
     objects={root={source='lookup',object='switcher'}},settings={},menu={}}
-local template={id='Wheels',name='Wheels',module='Fangdango',category=category.id,
+-- providerId as MCT's load sets it from the Fangdango folder.
+local template={id='Wheels',module='Fangdango',providerId='Fangdango',category=category.id,uniqueBy='category',
     objects={'root'},managed=false,
     menu={{id='Layout',label='Layout',fields={field}}},
     attach=function() end,update=function() end,detach=function() end}

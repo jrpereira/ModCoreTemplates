@@ -54,6 +54,18 @@ local function keys(values)
 end
 -- A template's priority when it declares none: after those that do.
 M.DEFAULT_PRIORITY = 100
+-- The group of templates in a category of which at most one is enabled or attached,
+-- from template.uniqueBy: 'category' (one per category), 'priority' (one per priority
+-- within the category) or false/nil (no limit, returns nil).
+function M.uniqueKey(template)
+    local by = template.uniqueBy
+    assert(by == nil or by == false or by == 'category' or by == 'priority',
+        'template.uniqueBy must be false, category or priority: ' .. tostring(template.id))
+    assert(template.priority == nil or type(template.priority) == 'number',
+        'template.priority must be a number: ' .. tostring(template.id))
+    if by == 'category' then return 'category' end
+    if by == 'priority' then return 'priority:' .. (template.priority or M.DEFAULT_PRIORITY) end
+end
 -- Template ids by priority, lowest first, then by id: templates attach, wake,
 -- sleep and receive events in this order.
 local function ordered(records)
@@ -192,7 +204,7 @@ function M.new(host, definitions, templates, state, options)
         end
         local category = {settings=copy(definition.settings or {}), graph=graph,
             requiredGraph=Selectors.project(graph,mandatory),
-            single=definition.single == true, templates={}, objects={}}
+            templates={}, objects={}}
         if definition.sharedObjects ~= nil then
             assert(array(definition.sharedObjects,definition.id..'.sharedObjects')>0,
                 definition.id..'.sharedObjects must not be empty')
@@ -254,7 +266,8 @@ function M.new(host, definitions, templates, state, options)
             if category.sharedNames and category.sharedNames[name] then sharedTargets[#sharedTargets+1]=name end
         end
         -- enabled: selected in the menu. awake: receiving events (see syncAwake).
-        local record = {definition=template, enabled=false, awake=false,
+        -- unique: at most one template per key in the category is enabled or attached.
+        local record = {definition=template, enabled=false, awake=false, unique=M.uniqueKey(template),
             defaults=copy(template.settings or {}),
             overrides={}, settings={}, revision=0, attached={}, pending={}, waiting={},
             manager=manager, graph=graph,
@@ -636,10 +649,12 @@ function M.new(host, definitions, templates, state, options)
                     local objects,bundles=resolved[id].objects,resolved[id].bundles
                     for _, token in ipairs(keys(objects)) do
                         local object, blocked = objects[token], false
-                        -- A failed detach in a single category blocks the replacement.
-                        if category.single then
+                        -- A unique template attaches only after every other template with its
+                        -- key has detached; a failed detach blocks the replacement.
+                        if record.unique then
                             for otherId, other in pairs(category.templates) do
-                                if otherId ~= id and (other.attached[token] or other.pending[token]) then
+                                if otherId ~= id and other.unique == record.unique
+                                    and (other.attached[token] or other.pending[token]) then
                                     blocked = true
                                 end
                             end
@@ -696,13 +711,15 @@ function M.new(host, definitions, templates, state, options)
     function self:select(categoryName, selections)
         assert(self.phase == 'new' or self.phase == 'running', 'runtime is not accepting selections')
         local category = assert(categories[categoryName], 'unknown category')
-        local desired, count = {}, 0
+        local desired, count, unique = {}, 0, {}
         for id, settings in pairs(selections) do
             assert(category.templates[id], 'template does not belong to category')
             assert(type(settings) == 'table', 'settings must be a table')
             desired[id], count = copy(settings), count + 1
+            local key = category.templates[id].unique
+            assert(not key or not unique[key], 'a category accepts at most one template per uniqueBy group')
+            if key then unique[key] = true end
         end
-        assert(not category.single or count <= 1, 'single category accepts at most one template')
         if log then log.debug(categoryName, ': ', count, ' template(s) selected') end
         serialize(function()
             for id, record in pairs(category.templates) do
@@ -803,12 +820,13 @@ function M.new(host, definitions, templates, state, options)
         for name, change in pairs(changes) do
             local category = assert(categories[name], 'unknown category')
             assert(type(change.settings) == 'table' and type(change.selections) == 'table', 'invalid category commit')
-            local count = 0
+            local unique = {}
             for id, settings in pairs(change.selections) do
                 assert(category.templates[id] and type(settings) == 'table', 'invalid template selection')
-                count = count + 1
+                local key = category.templates[id].unique
+                assert(not key or not unique[key], 'a category accepts at most one template per uniqueBy group')
+                if key then unique[key] = true end
             end
-            assert(not category.single or count <= 1, 'single category accepts at most one template')
             pending[name] = copy(change)
         end
         serialize(function()

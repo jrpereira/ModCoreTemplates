@@ -52,14 +52,14 @@ end
 local function categoryField(id,default)
     return {id=id,label=id,type='integer',min=0,max=100,step=1,default=default}
 end
-local function fixture(single, alphaTarget, betaTarget, locationBase)
+local function fixture(unique, alphaTarget, betaTarget, locationBase)
     local calls, errors = {}, {}
-    local category = {id='player.quickslots', single=single, objects={root={source='lookup',object='switcher'}},
+    local category = {id='player.quickslots', objects={root={source='lookup',object='switcher'}},
         settings={constant=false}, menu={groups={{id='Layout', label='Layout',
             fields={categoryField('Size', 10), categoryField('Opacity', 50)}}}}}
     local function template(id, target)
-        local t = {id=id, name=id, category=category.id, objects={'root'},managed=false,
-            menuTarget=target,menu={{id='Layout',label='Layout',fields={field('Size',20)}}}}
+        local t = {id=id, category=category.id, objects={'root'},managed=false,
+            uniqueBy=unique and 'category' or nil, menuTarget=target,menu={{id='Layout',label='Layout',fields={field('Size',20)}}}}
         for _, operation in ipairs({'attach','update','detach'}) do
             t[operation] = function(object, params)
                 assert(params.screen.width==1920 and params.screen.top==1080)
@@ -69,6 +69,8 @@ local function fixture(single, alphaTarget, betaTarget, locationBase)
         return t
     end
     local a,b = template('Alpha',alphaTarget or 'templates'), template('Beta',betaTarget)
+    -- As loading sets it from each template's module folder.
+    a.providerId, b.providerId = 'Alpha', 'Beta'
     b.author,b.icon='Example Author','B'
     locationBase = locationBase or '/Mods'
     local locations = {locationBase..'/Alpha/Scripts/templates/template.lua',
@@ -89,7 +91,7 @@ local function fixture(single, alphaTarget, betaTarget, locationBase)
     local definitions = {}
     for _, definition in pairs(menu.definitions[category.id]) do definitions[definition.id]=definition end
     local function choose(values, id, enabled)
-        if single then
+        if unique then
             local selector=menu.selectors[category.id]
             for value, identity in pairs(selector.byValue) do
                 if identity==id then values[selector.id]=enabled and value or 0 end
@@ -208,19 +210,42 @@ test('aggregate Apply preserves template values from other pages', function()
     assert(f.calls[#f.calls].settings.Size==77 and f.calls[#f.calls].settings.Opacity==25)
 end)
 
-test('multi-template toggles read Enabled under a heading named for the template', function()
+test('multi-template toggles stand in for a heading named for the template', function()
     local f=fixture(false)
     local toggles=f.menu.multiSelectors['player.quickslots']
     assert(#toggles==2)
     for _,item in ipairs(toggles) do
         local name=item.definition.id
-        assert(item.id=='MCT_'..name..'_Enabled',item.id)
+        -- Generated ids name the module, then the template: MCT_<Provider>_<Id>.
+        local scope='MCT_'..name..'_'..name
+        assert(item.id==scope..'_Enabled',item.id)
         local row
         for _,candidate in ipairs(f.menu.rows) do if candidate.id==item.id then row=candidate end end
-        assert(row.label=='Enabled' and row.group=='MCT_'..name and row.default==0)
+        assert(row.label==name and row.group==scope and row.default==0)
         local menu=f.menu.pageByCategory['player.quickslots'].menu
-        local heading=groupOf(menu,'MCT_'..name)
-        assert(heading.label==name and heading.conditions==nil)
+        local heading=groupOf(menu,scope)
+        assert(heading.label==name and heading.conditions==nil and heading.heading==false)
+        local stored=fieldOf(menu,item.id)
+        assert(stored.category and stored.onOff, 'the toggle is an on/off heading row')
+        assert(stored.choices[1].label=='Disabled' and stored.choices[2].label=='Enabled')
+        -- The template's own groups, on the page holding its rows (Alpha's), are subgroups
+        -- of its heading: smaller, without a rule.
+        local sub=heading.groups and heading.groups[1]
+        if name=='Alpha' then
+            assert(sub and sub.label=='Layout' and sub.within==nil and #heading.groups==1,
+                'the template\'s groups nest under its heading')
+        end
+        for _,group in ipairs(menu.groups) do assert(not sub or group.id~=sub.id,'and are not listed again') end
+        if MenuData then
+            local manifest=compiled(menu)
+            local section=manifest:match('%[Setting%.'..item.id..'%][^%[]*')
+            assert(section and section:find('mcCategory=1',1,true) and section:find('mcType=onoff',1,true),
+                tostring(section))
+            if sub then
+                local subSection=manifest:match('%[Category%.'..sub.id..'%][^%[]*')
+                assert(subSection and subSection:find('mcWithin='..scope,1,true),tostring(subSection))
+            end
+        end
         for _,group in ipairs(menu.groups) do assert(not group.id:find('CategorySeparator',1,true)) end
     end
 end)
@@ -277,7 +302,7 @@ test('identity catalog preserves existing template choice and field IDs', functi
 end)
 
 test('menu metadata in runtime settings is rejected', function()
-    local template={name='Old',category='player.quickslots',
+    local template={id='Old',category='player.quickslots',
         settings={target='module',fields={categoryField('Size',42)}},
         attach=function() end,update=function() end,detach=function() end}
     local ok,why=pcall(Model.build,{{id='player.quickslots'}},{template},{'fixture.lua'})
@@ -359,7 +384,13 @@ test('bootstrap generates menus at barrier and routes committed Apply to runtime
     assert(boot.menu==nil); barrier(); assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
     assert(boot.menu and #f.calls==1)
     local page=boot.menu.pageByCategory['player.quickslots']
-    values=boot.menuController:values(); values[f.definitions.Alpha.settings.Size]=75
+    -- Loaded templates' generated ids name their module (here the folder: no ModCoreSettings).
+    local size
+    for _,definition in pairs(boot.menu.definitions['player.quickslots']) do
+        if definition.id=='Alpha' then size=definition.settings.Size end
+    end
+    assert(size=='MCT_Alpha_Alpha_Size',tostring(size))
+    values=boot.menuController:values(); values[size]=75
     callbacks[page.id]({providerId=page.id,revision=1,values=values})
     assert(#f.calls==2 and f.calls[2].operation=='update' and f.calls[2].settings.Size==75)
     boot:stop(); assert(f.calls[3].operation=='detach')
@@ -369,7 +400,7 @@ test('adding an earlier template cannot steal an existing saved field ID', funct
     local f=fixture(true)
     local previous=f.definitions.Alpha.settings.Size
     local extra=U.copy(f.model.registry.templates[1])
-    extra.id,extra.template.name='AAA','Earlier'
+    extra.id,extra.template.id,extra.template.label='AAA','AAA','Earlier'
     table.insert(f.model.registry.templates,1,extra)
     local rebuilt=Menu.generate(f.model.registry,{catalog=f.menu.catalog})
     local found
@@ -465,17 +496,21 @@ test('module settings are initialized in each template module folder', function(
     for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
     barrier()
     assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
+    -- Loaded templates' ids name their module folder.
+    local sizes={}
+    for _,definition in pairs(boot.menu.definitions['player.quickslots']) do
+        sizes[definition.id]=definition.settings.Size
+    end
     for _,name in ipairs({'Alpha','Beta'}) do
         local input=assert(io.open(modules..'/'..name..'/config.ini','rb'))
         local content=input:read('*a');input:close()
-        assert(content:find('[Templates]',1,true)
-            and content:find(f.definitions[name].settings.Size..'=',1,true))
+        assert(content:find('[Templates]',1,true) and content:find(sizes[name]..'=',1,true))
     end
     local central=io.open(menuRoot..'/Scripts/cache/config.ini','rb')
     local centralContent=central and central:read('*a') or ''
     if central then central:close() end
-    assert(not centralContent:find(f.definitions.Alpha.settings.Size,1,true)
-        and not centralContent:find(f.definitions.Beta.settings.Size,1,true),
+    assert(not centralContent:find(sizes.Alpha,1,true)
+        and not centralContent:find(sizes.Beta,1,true),
         'module settings stay in their module configs')
     boot:stop()
 end)
@@ -810,8 +845,8 @@ test('modules whose templates moved to a slot keep their page with a link to the
     f.controller:apply(event(f,page,1,function(v) f.choose(v,'Beta',true);v[f.definitions.Beta.settings.Size]=42 end))
     assert(#f.calls==1 and f.calls[1].id=='Beta' and f.calls[1].settings.Size==42)
     -- A module that still has its own settings keeps its own page.
-    local other={id='player.stats',single=true,objects={root={source='lookup',object='switcher'}}}
-    local extra={id='Gamma',name='Gamma',category='player.stats',objects={'root'},managed=false,
+    local other={id='player.stats',objects={root={source='lookup',object='switcher'}}}
+    local extra={id='Gamma',category='player.stats',objects={'root'},managed=false,uniqueBy='category',
         menu={{id='Layout',label='Layout',fields={field('Size',20)}}},
         attach=function() end,update=function() end,detach=function() end}
     local model=Model.build({f.category,other},{f.a,f.b,extra},
@@ -956,17 +991,131 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     assert(files['/mcc/config.ini']=='[Main]\nSpeed=0\n','the host config never sees slot values')
 end)
 
+test('category-unique templates share a picker and the others get Enabled toggles', function()
+    for _, slotted in ipairs({false, true}) do
+        local f=fixture(true)
+        local gamma={id='Gamma',category=f.category.id,objects={'root'},managed=false,
+            menu={{id='Layout',label='Layout',fields={field('Size',30)}}}}
+        for _, operation in ipairs({'attach','update','detach'}) do
+            gamma[operation]=function(_, params)
+                f.calls[#f.calls+1]={id='Gamma',operation=operation,settings=U.copy(params.settings)}
+            end
+        end
+        if slotted then f.category.slot={provider='controls',slot='visuals'} end
+        local model=Model.build({f.category},{f.a,f.b,gamma},
+            {f.locations[1],f.locations[2],'/Mods/Gamma/Scripts/templates/template.lua'})
+        local menu=Menu.generate(model.registry)
+        local selector=menu.selectors['player.quickslots']
+        local picked={}
+        for _, r in ipairs(menu.rows) do
+            if r.id==selector.id then
+                for _, choice in ipairs(r.choices) do picked[#picked+1]=choice.label end
+            end
+        end
+        assert(table.concat(picked,',')=='None,Alpha,Beta', table.concat(picked,','))
+        local toggles=menu.multiSelectors['player.quickslots']
+        assert(#toggles==1 and toggles[1].definition.id=='Gamma')
+        local values={}
+        for _, r in ipairs(menu.rows) do if not r.action then values[r.id]=r.default end end
+        for value, identity in pairs(selector.byValue) do
+            if identity=='Alpha' then values[selector.id]=value end
+        end
+        values[toggles[1].id]=1
+        local state=menu.decodeState(values)['player.quickslots']
+        assert(state.selections.Alpha and state.selections.Gamma and not state.selections.Beta)
+        local runtime=Runtime.new(f.host,model.categories,model.templates)
+        runtime:start()
+        runtime:commit({['player.quickslots']=state})
+        assert(runtime:attachments('Alpha')['instance:1'] and runtime:attachments('Gamma')['instance:1'])
+        if slotted then
+            local labels={}
+            for _, item in ipairs(menu.pageBySlot['player.quickslots'].menu.fields) do
+                if item.id==toggles[1].id then labels[#labels+1]=item.label end
+            end
+            assert(#labels==1 and labels[1]=='Gamma', 'a slotted toggle names its template')
+            for _, item in ipairs(menu.pageBySlot['player.quickslots'].menu.fields) do
+                assert(not item.category, 'slot rows share one group, so none stands in for its heading')
+            end
+        end
+    end
+end)
+
+test('priority-unique templates get one picker per priority', function()
+    local f=fixture(false)
+    local function template(id, priority)
+        return {id=id,category=f.category.id,objects={'root'},managed=false,
+            uniqueBy='priority',priority=priority,
+            menu={{id='Layout',label='Layout',fields={field('Size',30)}}},
+            attach=function() end,update=function() end,detach=function() end}
+    end
+    local high,low,other=template('High',20),template('Low',10),template('Low2',10)
+    local model=Model.build({f.category},{f.a,high,low,other},
+        {f.locations[1],'/Mods/High/Scripts/a.lua','/Mods/Low/Scripts/b.lua','/Mods/Low2/Scripts/c.lua'})
+    local menu=Menu.generate(model.registry)
+    assert(not menu.selectors['player.quickslots'], 'no category picker without category-unique templates')
+    assert(#menu.pickers==2)
+    local first,second=menu.pickers[1],menu.pickers[2]
+    assert(first.id=='MCT_PlayerQuickslotsPriority10Template' and second.id=='MCT_PlayerQuickslotsPriority20Template',
+        first.id..' '..second.id)
+    local members={}
+    for _, identity in pairs(first.byValue) do members[#members+1]=identity end
+    table.sort(members)
+    assert(table.concat(members,',')=='Low,Low2')
+    assert(#menu.multiSelectors['player.quickslots']==1, 'Alpha keeps its toggle')
+    local values={}
+    for _, r in ipairs(menu.rows) do if not r.action then values[r.id]=r.default end end
+    for value, identity in pairs(first.byValue) do if identity=='Low2' then values[first.id]=value end end
+    for value in pairs(second.byValue) do values[second.id]=value end
+    values[menu.multiSelectors['player.quickslots'][1].id]=1
+    local state=menu.decodeState(values)['player.quickslots']
+    assert(state.selections.Low2 and state.selections.High and state.selections.Alpha
+        and not state.selections.Low)
+    for _, provider in pairs(menu.providers) do
+        if MenuData then MenuData.manifest(provider.menu) end
+    end
+end)
+
+test('id names a template and its settings; label is what the menu shows', function()
+    local function build(templates)
+        local locations={}
+        for n in ipairs(templates) do locations[n]='/Mods/Mod/Scripts/t'..n..'.lua' end
+        return Menu.generate(Model.build({{id='npc.attacks'},{id='player.stats'}},templates,locations).registry)
+    end
+    local function template(fields)
+        local t={category='npc.attacks',objects={'root'},managed=false,
+            menu={{id='Main',label='Main',fields={field('Size',20)}}}}
+        for k,v in pairs(fields) do t[k]=v end
+        return t
+    end
+    for _,bad in ipairs({{},{id=''},{id='2Edges'},{id='Edges Overlay'},{id='Edges',label=''}}) do
+        assert(not pcall(build,{template(bad)}),'invalid id or label rejected')
+    end
+    local menu=build({template({id='Edges',label='Edges Overlay'}),template({id='Center'}),
+        template({id='Stats',label='Stats Bar',category='player.stats',uniqueBy='category'})})
+    local labels={}
+    for _,r in ipairs(menu.rows) do labels[r.id]=r.label end
+    assert(labels.MCT_Edges_Enabled=='Edges Overlay' and labels.MCT_Center_Enabled=='Center')
+    assert(labels.MCT_Edges_Size and labels.MCT_Center_Size, 'setting ids come from id')
+    local choices={}
+    for _,r in ipairs(menu.rows) do
+        if r.id==menu.selectors['player.stats'].id then
+            for _,choice in ipairs(r.choices) do choices[#choices+1]=choice.label end
+        end
+    end
+    assert(table.concat(choices,',')=='None,Stats Bar')
+end)
+
 test('category slots are validated', function()
-    local function rejects(slot,single,pattern)
-        local ok,why=pcall(Model.build,{{id='player.quickslots',single=single,slot=slot}},{},{})
+    local function rejects(slot,pattern,uniqueBy)
+        local ok,why=pcall(Model.build,{{id='player.quickslots',uniqueBy=uniqueBy,slot=slot}},{},{})
         assert(not ok and tostring(why):find(pattern,1,true),tostring(why))
     end
-    rejects('controls:visuals',true,'must be a table')
-    rejects({provider='controls',slot='visuals',extra=1},true,'unknown field')
-    rejects({provider='controls'},true,'slot.slot')
-    rejects({provider='a b',slot='visuals'},true,'slot.provider')
-    rejects({provider='controls',slot='visuals'},false,'requires a single category')
-    local model=Model.build({{id='player.quickslots',single=true,slot={provider='controls',slot='visuals'}}},{},{})
+    rejects('controls:visuals','must be a table')
+    rejects({provider='controls',slot='visuals',extra=1},'unknown field')
+    rejects({provider='controls'},'slot.slot')
+    rejects({provider='a b',slot='visuals'},'slot.provider')
+    rejects(nil,'uniqueBy belongs on templates','category')
+    local model=Model.build({{id='player.quickslots',slot={provider='controls',slot='visuals'}}},{},{})
     assert(model.registry.categories:getCategory('player.quickslots').slot=='controls:visuals')
 end)
 

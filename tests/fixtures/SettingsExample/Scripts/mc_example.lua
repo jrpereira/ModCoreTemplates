@@ -1,6 +1,7 @@
 -- Settings reference fixture: a variation, a branch group, field conditions and a loose field.
 local template={
-    name='Example Cue',
+    id='ExampleCue',
+    label='Example Cue',
     description='Exercise every row the settings reference describes.',
     category='npc.attacks',
     objects={hud={}},

@@ -1,6 +1,7 @@
 -- Adapt menu declarations to runtime value-only settings.
 local U = require('mc.util')
 local Provider = require('mc.provider_settings')
+local Runtime = require('mc.runtime')
 local M = {}
 local function defaults(groups, values)
     local result = U.copy(values or {})
@@ -23,6 +24,7 @@ function M.build(definitions, templates, locations)
     local categories, names, runtimeCategories = {}, {}, {}
     for _, definition in ipairs(definitions) do
         assert(type(definition.id) == 'string' and not categories[definition.id], 'duplicate/invalid category')
+        assert(definition.uniqueBy == nil, definition.id .. ': uniqueBy belongs on templates, not categories')
         assert(type(definition.settings) ~= 'table'
             or (definition.settings.fields == nil and definition.settings.groups == nil
                 and definition.settings.target == nil),
@@ -47,11 +49,10 @@ function M.build(definitions, templates, locations)
                 and slot.provider:match('^[%w_.-]+$'), definition.id .. '.slot.provider is invalid')
             assert(type(slot.slot) == 'string' and #slot.slot <= 64 and slot.slot:match('^[%w_]+$'),
                 definition.id .. '.slot.slot is invalid')
-            assert(definition.single == true, definition.id .. ': a slot requires a single category')
             slot = slot.provider .. ':' .. slot.slot
         end
         categories[definition.id] = {id=definition.id, menu=declaration, runtimeSettings=values,
-            single=definition.single == true, slot=slot}
+            slot=slot}
         names[#names + 1] = definition.id
     end
     table.sort(names)
@@ -61,6 +62,7 @@ function M.build(definitions, templates, locations)
     for index, template in ipairs(templates) do
         local category = registry.categories:getCategory(template.category)
         category.count = (category.count or 0) + 1
+        local unique = Runtime.uniqueKey(template)
         assert(type(template.settings) ~= 'table'
             or (template.settings.fields == nil and template.settings.groups == nil
                 and template.settings.target == nil),
@@ -72,14 +74,21 @@ function M.build(definitions, templates, locations)
         local values = U.copy(template.settings or {})
         overrideDefaults(declaration, values)
         values = defaults(Provider.normalize(declaration), values)
-        template.id = template.id or U.identity(template)
-        template.name = template.name or template.id
+        -- id is unique across modules and, with providerId (the module's id), names the
+        -- template's settings; label is what the menu shows.
+        assert(type(template.id) == 'string' and template.id:match('^%a[%w_.]*$'),
+            'template.id is required: a letter, then letters, digits, _ or .')
+        assert(template.label == nil or type(template.label) == 'string' and template.label ~= '',
+            template.id .. ': template.label must be a non-empty string')
+        assert(template.providerId == nil or type(template.providerId) == 'string'
+            and template.providerId:match('^[%w_.-]+$'), template.id .. ': invalid providerId')
+        template.label = template.label or template.id
         -- Preserve template identity: callbacks may close over this table.
         template.settings = values
-        local metadata = {name=template.name, category=template.category,
+        local metadata = {id=template.id, providerId=template.providerId, label=template.label, category=template.category,
             module=template.module, menu=declaration}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
-            single=category.single, location=assert(locations[index], 'template source path required')}
+            unique=unique, priority=template.priority or Runtime.DEFAULT_PRIORITY, location=assert(locations[index], 'template source path required')}
     end
     -- A category without templates has nothing to attach, so the runtime and object
     -- source never watch its objects.

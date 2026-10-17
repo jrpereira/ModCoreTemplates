@@ -8,7 +8,7 @@ local function test(name, body)
     assert(ok, name .. ': ' .. tostring(why))
     passed = passed + 1
 end
-local function fixture(single, paths)
+local function fixture(unique, paths)
     local objects, calls, errors = {}, {}, {}
     local sink, epoch, scans, unsubs = nil, nil, 0, 0
     local host = {
@@ -31,12 +31,17 @@ local function fixture(single, paths)
         subscribe=function(callback, getEpoch) sink, epoch = callback, getEpoch; return function() unsubs=unsubs+1 end end,
         onError=function(e) errors[#errors + 1] = e end,
     }
-    local categories = {{id='player.quickslots', single=single, objects=paths or {slots={source='lookup',class='Slot'}}}}
+    local categories = {{id='player.quickslots', objects=paths or {slots={source='lookup',class='Slot'}}}}
     local function template(id)
         local targets={}
         for name in pairs(categories[1].objects) do targets[#targets+1]=name end
+        -- unique: true makes every template unique by category; a table gives each
+        -- template its uniqueBy, or {uniqueBy, priority}.
         local t = {id=id, category='player.quickslots', module='Test',
             objects=targets, managed=false}
+        local spec = type(unique) == 'table' and unique[id]
+        if type(spec) == 'table' then t.uniqueBy, t.priority = spec[1], spec[2]
+        else t.uniqueBy = spec or unique == true and 'category' or nil end
         t.attach = function(o, params)
             assert(o.valid ~= false)
             assert(params.screen.center == 960)
@@ -50,8 +55,13 @@ local function fixture(single, paths)
         return t
     end
     local a, b = template('a'), template('b')
-    local runtime = Runtime.new(host, categories, {a,b})
-    local f = {runtime=runtime, host=host, objects=objects, calls=calls, errors=errors, a=a, b=b, categories=categories}
+    local list = {a, b}
+    -- A third template only when unique names it.
+    local c = type(unique) == 'table' and unique.c ~= nil and template('c') or nil
+    list[#list + 1] = c
+    local runtime = Runtime.new(host, categories, list)
+    local f = {runtime=runtime, host=host, objects=objects, calls=calls, errors=errors, a=a, b=b, c=c,
+        categories=categories}
     function f.object(id, class, parent, ready)
         local object = {id=id, path=id, class=class or 'Slot', parent=parent, ready=ready}
         objects[#objects + 1] = object
@@ -150,7 +160,7 @@ test('invalid objects never receive detach, replacements attach independently', 
     assert(#f.calls == 2 and f.runtime:attachments('a').old == nil)
 end)
 
-test('disable and single selection switch detach before attaching', function()
+test('disable and category-unique switch detach before attaching', function()
     local f = fixture(true)
     f.object('one')
     f.runtime:select('player.quickslots', {b={}}); f.runtime:start()
@@ -159,6 +169,52 @@ test('disable and single selection switch detach before attaching', function()
     assert(f.calls[2] == 'b:detach:one' and f.calls[3] == 'a:attach:one:nil')
     f.runtime:select('player.quickslots', {})
     assert(f.calls[4] == 'a:detach:one')
+end)
+
+test('a category-unique template detaches the others unique by category but not the rest', function()
+    local f = fixture({a='category', b='category', c=false})
+    f.object('one')
+    f.runtime:select('player.quickslots', {b={}, c={}}); f.runtime:start()
+    assert(#f.calls == 2)
+    assert(not pcall(function() f.runtime:select('player.quickslots', {a={},b={},c={}}) end))
+    f.runtime:select('player.quickslots', {a={}, c={}})
+    assert(f.calls[3] == 'b:detach:one' and f.calls[4] == 'a:attach:one:nil')
+    for _, call in ipairs(f.calls) do assert(call ~= 'c:detach:one') end
+    assert(f.runtime:attachments('c').one)
+end)
+
+test('a priority-unique template detaches only same-priority ones', function()
+    local f = fixture({a={'priority', 10}, b={'priority', 10}, c={'priority', 20}})
+    f.object('one')
+    f.runtime:select('player.quickslots', {a={}, c={}}); f.runtime:start()
+    assert(f.runtime:attachments('a').one and f.runtime:attachments('c').one)
+    assert(not pcall(function() f.runtime:select('player.quickslots', {a={},b={}}) end))
+    f.runtime:select('player.quickslots', {b={}, c={}})
+    local detachA, attachB
+    for index, call in ipairs(f.calls) do
+        assert(call ~= 'c:detach:one')
+        if call == 'a:detach:one' then detachA = index end
+        if call == 'b:attach:one:nil' then attachB = index end
+    end
+    assert(detachA and attachB and detachA < attachB)
+end)
+
+test('category-unique and priority-unique templates do not exclude each other', function()
+    local f = fixture({a='category', b={'priority', 100}})
+    f.object('one')
+    f.runtime:select('player.quickslots', {a={}, b={}}); f.runtime:start()
+    assert(f.runtime:attachments('a').one and f.runtime:attachments('b').one)
+end)
+
+test('uniqueBy accepts only false, category or priority', function()
+    assert(not pcall(fixture, {a='module'}))
+end)
+
+test('templates without uniqueBy attach together', function()
+    local f = fixture({a='category', b=false})
+    f.object('one')
+    f.runtime:select('player.quickslots', {a={}, b={}}); f.runtime:start()
+    assert(#f.calls == 2 and f.runtime:attachments('a').one and f.runtime:attachments('b').one)
 end)
 
 test('callback errors do not prevent other templates and retry only on an event', function()
@@ -189,7 +245,7 @@ test('callback-generated events do not retry a persistent failure in the same tu
     assert(attempts==2 and #f.errors==2)
 end)
 
-test('failed detach blocks single-category replacement and retries', function()
+test('failed detach blocks a category-unique replacement and retries', function()
     local f = fixture(true)
     local o = f.object('one')
     f.runtime:select('player.quickslots', {a={}}); f.runtime:start()

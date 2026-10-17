@@ -8,10 +8,10 @@ assert(paths.templates==root..'/Scripts/cache/templates.lua')
 
 -- The list holds every loaded template; a template its category selects is active.
 local templates={
-    {id='a',template={name='Wheels',category='player.quickslots',module='Fangdango'}},
-    {id='b',template={name='Double Sidebar',category='player.quickslots',module='Fangdango'}},
-    {id='c',template={name='Preymonition',category='npc.attacks',module='Preymonition'}},
-    {id='d',template={name='Built In "Quoted"',category='player.quickslots'}},
+    {id='a',template={label='Wheels',category='player.quickslots',module='Fangdango'}},
+    {id='b',template={label='Double Sidebar',category='player.quickslots',module='Fangdango'}},
+    {id='c',template={label='Preymonition',category='npc.attacks',module='Preymonition'}},
+    {id='d',template={label='Built In "Quoted"',category='player.quickslots'}},
 }
 local state={['player.quickslots']={settings={},selections={b={}}},['npc.attacks']={settings={},selections={}}}
 local categories={'npc.attacks','npc.intent','player.compass','player.quickslots'}
@@ -20,7 +20,7 @@ local file=assert(io.open(paths.templates,'wb'));file:write(text);file:close()
 local list=assert(load(text,'list','t',{}))()
 assert(list.slot=='controls:visuals' and #list.templates==4 and table.concat(list.categories,',')==table.concat(categories,','))
 assert(list.templates[2].active==true and list.templates[1].active==false and list.templates[3].active==false
-    and list.templates[4].module=='' and list.templates[4].name=='Built In "Quoted"')
+    and list.templates[4].module=='' and list.templates[4].label=='Built In "Quoted"')
 
 -- The hooks page has one group per module supplying templates, MCT's own first, and in it
 -- one subgroup per category the module supplies; each template reads active or blank.

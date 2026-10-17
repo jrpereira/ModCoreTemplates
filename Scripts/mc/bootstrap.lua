@@ -118,7 +118,7 @@ function M.new(options)
                 path..': invalid template definition')
             assert(template.loaded==nil or type(template.loaded)=='function',
                 path..': template.loaded must be a function')
-            ModuleMetadata.apply(template,path)
+            ModuleMetadata.apply(template,path,options.moduleId)
         end
         local function onCleanup(callback) own(file,callback) end
         for _,template in ipairs(entries) do

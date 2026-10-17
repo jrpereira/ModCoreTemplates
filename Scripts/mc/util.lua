@@ -19,15 +19,6 @@ function M.array(value, where)
     return count
 end
 
-function M.identity(template)
-    -- Length framing prevents delimiter collisions without changing user strings.
-    local out = {}
-    for _, value in ipairs({template.category, template.name}) do
-        out[#out + 1] = #value .. ':' .. value
-    end
-    return table.concat(out)
-end
-
 function M.copy(value, seen)
     if type(value) ~= 'table' then return value end
     seen = seen or {}

@@ -1,6 +1,5 @@
 return {
     id = "player.radial",
-    single = true,
     objects = {
         radial = { source = 'lookup', class = '/Game/_Dawnwalker/UI/_Unified/HUD/CombatFocus/WBP_Combat_Focus_QuickslotBindingsRadial.WBP_Combat_Focus_QuickslotBindingsRadial_C', attach = false },
         radial_left = { source = 'reference', from = 'radial', member = 'Left.Button' },

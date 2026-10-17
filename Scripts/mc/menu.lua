@@ -134,7 +134,7 @@ function M.generate(registry, options)
         assert(result ~= '', 'public menu name is empty')
         return result
     end
-    local rows, groups, selectors, multiSelectors = {}, {}, {}, {}
+    local rows, groups, selectors, multiSelectors, pickers = {}, {}, {}, {}, {}
     local groupSections, groupOrder = {}, {}
     local aggregateGroups, aggregateGroupOrder = {}, {}
     local aggregateRows, pageRows, categoryLabels, currentCategory, currentOwner = {}, {}, {}, nil, nil
@@ -194,7 +194,26 @@ function M.generate(registry, options)
         -- page: a None-only picker has nothing to choose.
         if available then
             currentCategory = category
-            local categorySingle = available[1].single == true
+            -- Templates with a uniqueBy key share one picker per key: one for 'category'
+            -- and one per priority for 'priority'. The others get an Enabled toggle each.
+            local byKey, keyOrder, hasMulti = {}, {}, false
+            for _, entry in ipairs(available) do
+                local unique = entry.unique
+                if unique then
+                    if not byKey[unique] then
+                        byKey[unique] = {}
+                        keyOrder[#keyOrder + 1] = unique
+                    end
+                    table.insert(byKey[unique], entry)
+                else
+                    hasMulti = true
+                end
+            end
+            -- The category picker first, then priority pickers, lowest priority first.
+            table.sort(keyOrder, function(a, b)
+                if a == 'category' or b == 'category' then return a == 'category' end
+                return byKey[a][1].priority < byKey[b][1].priority
+            end)
             -- A slot category is shown only in its slot, through its own hidden page.
             local slot = registry.categories:getCategory(category).slot
             local slotIds = {}
@@ -207,20 +226,7 @@ function M.generate(registry, options)
             end
             local aggregateCategory = not slot
             for _, entry in ipairs(available) do
-                assert((entry.single == true) == categorySingle,
-                    category .. ': templates disagree on single')
                 if entry.template.menu.target == 'module' then aggregateCategory = false end
-            end
-            assert(#available <= 63, category .. ': more than 63 templates exceeds picker capacity including None')
-            local selector
-            local values, list, byValue = {0}, {{value = 0, label = 'None'}}, {}
-            for _, entry in ipairs(available) do
-                local value = allocate({'template', entry.id})
-                values[#values + 1] = value
-                -- Each template choice notes its module, which ModCoreSettings names.
-                list[#list + 1] = {value = value, label = text(entry.template.name),
-                    module = entry.template.module}
-                byValue[value] = entry.id
             end
             local prefix, suffix = assert(category:match('^([^.]+)%.([^.]+)$'))
             local aggregateGroup = title(prefix)
@@ -228,19 +234,42 @@ function M.generate(registry, options)
                 aggregateGroups[aggregateGroup] = true
                 aggregateGroupOrder[#aggregateGroupOrder + 1] = aggregateGroup
             end
-            if categorySingle then
-                local selectorName = category == 'player.quickslots' and 'Template'
-                    or publicName(category) .. 'Template'
-                selector = namedId(selectorName, {'selector', category})
-                local isQuickslots = category == 'player.quickslots'
-                picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil)
+            local ownerPickers, categoryValues = {}, nil
+            for _, unique in ipairs(keyOrder) do
+                local members = byKey[unique]
+                assert(#members <= 63, category .. ': more than 63 templates in one uniqueBy picker'
+                    .. ' exceeds picker capacity including None')
+                local values, list, byValue = {0}, {{value = 0, label = 'None'}}, {}
+                for _, entry in ipairs(members) do
+                    local value = allocate({'template', entry.id})
+                    values[#values + 1] = value
+                    -- Each template choice notes its module, which ModCoreSettings names.
+                    list[#list + 1] = {value = value, label = text(entry.template.label),
+                        module = entry.template.module}
+                    byValue[value] = entry.id
+                end
+                local selector
+                if unique == 'category' then
+                    local selectorName = category == 'player.quickslots' and 'Template'
+                        or publicName(category) .. 'Template'
+                    selector = namedId(selectorName, {'selector', category})
+                    local isQuickslots = category == 'player.quickslots'
+                    picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil)
+                    selectors[category] = {id = selector, byValue = byValue}
+                    categoryValues = values
+                else
+                    local priority = members[1].priority
+                    selector = namedId(publicName(category) .. publicName('Priority ' .. priority) .. 'Template',
+                        {'selector', category, 'priority', priority})
+                    picker(selector, title(suffix) .. ' (priority ' .. priority .. ')', aggregateGroup, list)
+                end
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                 if slot then slotRow() end
-                selectors[category] = {id = selector, byValue = byValue}
-            else
-                multiSelectors[category] = {}
+                ownerPickers[unique] = selector
+                pickers[#pickers + 1] = {category = category, id = selector, byValue = byValue}
             end
+            if hasMulti then multiSelectors[category] = {} end
             decoded[category] = {}
             local categoryGroups, staticSettings, staticFormats = Provider.normalizeCategory(
                 registry.categories:getCategory(category).menu)
@@ -252,8 +281,10 @@ function M.generate(registry, options)
                 textIds[name] = settingId
                 textSettings[settingId] = {default=default, format=staticFormats[name]}
             end
-            -- Shared category fields show while any template is selected.
-            local selected = categorySingle and rule(selector, {table.unpack(values, 2)}) or nil
+            -- Shared category fields show while any template is selected; with more than
+            -- the category picker they always show.
+            local selected = #keyOrder == 1 and categoryValues and not hasMulti
+                and rule(ownerPickers.category, {table.unpack(categoryValues, 2)}) or nil
             for _, providerGroup in ipairs(categoryGroups) do
                 local groupId = group(key({category, 'category_provider', providerGroup.id}),
                     providerGroup.label, selected, providerGroup.level, hidden(providerGroup.heading),
@@ -272,26 +303,30 @@ function M.generate(registry, options)
                 local template, identity = entry.template, entry.id
                 currentOwner = identity
                 local value = allocate({'template', identity})
-                local templateScope
-                if not categorySingle then templateScope = publicName(template.name) end
-                local scopePrefix = templateScope and templateScope .. '_' or ''
+                -- Generated ids name the module and the template: MCT_<Provider>_<Id>_...
+                local templateScope = (template.providerId and publicName(template.providerId) .. '_' or '')
+                    .. publicName(template.id)
+                local scopePrefix = templateScope .. '_'
                 local definition = {id=entry.id,scope=templateScope,fields={},enabled=template.menu.enabled}
                 local providerGroups = Provider.normalize(template.menu)
                 definition.settings, definition.navigation = {}, {}
                 local providerFieldIds = {}
                 decoded[category][value] = definition
-                local ownerSelector, ownerValue = selector, value
-                if not categorySingle then
+                local ownerSelector, ownerValue = ownerPickers[entry.unique], value
+                local headingId
+                if not entry.unique then
                     ownerSelector = namedId(templateScope .. '_Enabled', {'template_enabled', identity})
                     ownerValue = 1
-                    -- The heading names the template whether or not it is enabled.
-                    local headingId = group(key({identity, 'template_heading'}), template.name,
-                        nil, nil, nil, templateScope)
-                    picker(ownerSelector, 'Enabled', headingId, choices({0, 1}, {'No', 'Yes'}), nil, nil, 0)
-                    rows[#rows]._control = true
+                    -- The toggle stands in for its group's heading: one heading-styled row
+                    -- names the template and turns it on or off.
+                    headingId = group(key({identity, 'template_heading'}), template.label,
+                        nil, nil, false, templateScope)
+                    picker(ownerSelector, template.label, headingId, choices({0, 1}, {'Disabled', 'Enabled'}), nil, nil, 0)
+                    rows[#rows]._control, rows[#rows].category, rows[#rows].onOff = true, true, true
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
                         id=ownerSelector, value=value, definition=definition}
+                    if slot then slotRow() end
                 end
                 local owned = rule(ownerSelector, {ownerValue})
                 for _, providerGroup in ipairs(providerGroups) do
@@ -306,6 +341,9 @@ function M.generate(registry, options)
                             providerGroup.label, groupVisible, providerGroup.level,
                             hidden(providerGroup.heading),
                             scopePrefix .. publicName(providerGroup.id))
+                        -- Under a template's on/off heading row its groups are subgroups,
+                        -- headed in ModCoreSettings' smaller subgroup style without a rule.
+                        groupSections[groupId].within = headingId
                         local settingId = namedId(scopePrefix .. publicName(source.id),
                             {'provider', identity, source.id})
                         local item = field(settingId, source, groupId)
@@ -377,8 +415,21 @@ function M.generate(registry, options)
                 menu.groups[#menu.groups + 1] = {id = groupId, heading = heading}
             end
         end
+        -- A subgroup goes in its heading group's groups, after that group's own rows.
+        local listed = {}
         for _, groupId in ipairs(groupOrder) do
-            if used[groupId] then menu.groups[#menu.groups + 1] = conditioned(U.copy(groupSections[groupId])) end
+            if used[groupId] then
+                local section = conditioned(U.copy(groupSections[groupId]))
+                local outer = listed[section.within]
+                section.within = nil
+                if outer then
+                    outer.groups = outer.groups or {}
+                    outer.groups[#outer.groups + 1] = section
+                else
+                    menu.groups[#menu.groups + 1] = section
+                end
+                listed[groupId] = section
+            end
         end
         for _, item in ipairs(selectedRows) do
             local stored = plain(item)
@@ -427,17 +478,26 @@ function M.generate(registry, options)
             end
             return selection
         end
-        for category, selector in pairs(selectors) do
+        -- Each category decodes to its selected templates: every picker's choice, then
+        -- every enabled toggle.
+        local function selectionsFor(category)
+            local selections = result[category] or {}
+            result[category] = selections
+            return selections
+        end
+        for _, selector in ipairs(pickers) do
+          local category = selector.category
           if not includedCategories or includedCategories[category] then
+            local selections = selectionsFor(category)
             local definition = decoded[category][effective[selector.id]]
-            if not owned or not definition or owned[definition.id] then
-                result[category] = readSelection(definition, category)
+            if definition and (not owned or owned[definition.id]) then
+                selections[#selections + 1] = readSelection(definition, category)
             end
           end
         end
         for category, templates in pairs(multiSelectors) do
           if not includedCategories or includedCategories[category] then
-            local selections = {}
+            local selections = selectionsFor(category)
             if owned then selections._partial, selections._known = true, {} end
             for _, item in ipairs(templates) do
                 if not owned or owned[item.definition.id] then
@@ -447,7 +507,6 @@ function M.generate(registry, options)
                 end
                 end
             end
-            result[category] = selections
           end
         end
         return result
@@ -455,7 +514,7 @@ function M.generate(registry, options)
     end
     local aggregateId = 'ModCoreTemplates'
     local aggregateMenu = providerMenu('ModCore Templates', aggregateRows, true)
-    local allCategories = {}; for category in pairs(selectors) do allCategories[category] = true end
+    local allCategories = {}; for _, selector in ipairs(pickers) do allCategories[selector.category] = true end
     for category in pairs(multiSelectors) do allCategories[category] = true end
     local aggregate = {id=aggregateId, name='ModCore Templates', menu=aggregateMenu, rows=aggregateRows,
         decode=makeDecoder(aggregateRows, allCategories)}
@@ -551,6 +610,8 @@ function M.generate(registry, options)
                 local stored = plain(item)
                 stored.group, stored.heading, stored.level = 'Slot', nil, nil
                 -- A slot row keeps its other rules and takes its slot's visibility.
+                -- Slot rows share one group, so no toggle stands in for its heading.
+                stored.category = nil
                 local conditions = stored.conditions or {}
                 conditions.visible = U.copy(item._slot.visible)
                 stored.conditions = next(conditions) and conditions or nil
@@ -631,9 +692,7 @@ function M.generate(registry, options)
                 for name, settingId in pairs(definition.settings) do own[name] = values[settingId] end
                 selections[selection.id] = own
             end
-            local selectionsForCategory = decodedSelections[category]
-            if selectors[category] then selected(selectionsForCategory)
-            else for _, selection in ipairs(selectionsForCategory) do selected(selection) end end
+            for _, selection in ipairs(decodedSelections[category]) do selected(selection) end
             state[category] = {settings=effectiveCategory, selections=selections}
         end
         return state
@@ -644,7 +703,7 @@ function M.generate(registry, options)
         end
     end
     return {menu = aggregateMenu, catalog = catalog, generated = generated,
-        rows = rows, selectors = selectors, multiSelectors=multiSelectors, definitions = decoded,
+        rows = rows, selectors = selectors, pickers = pickers, multiSelectors=multiSelectors, definitions = decoded,
         textSettings = textSettings, decodeState=decodeState, categorySettings=categorySettings,
         decode = decodeAll, aggregate=aggregate, pages=pages,
         pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}

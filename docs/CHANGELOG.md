@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.5.0
+
+- Requires ModCore Settings 1.4.0 or later, for module ids, on/off switches and subgroups.
+- Category `single` is replaced by template `uniqueBy`. `uniqueBy='category'` allows
+  one enabled template of that kind per category, as `single` did; `uniqueBy='priority'`
+  allows one per priority within the category. Enabling a template detaches the other
+  one in its group first; templates without `uniqueBy` attach alongside. Category-unique
+  templates share the Template picker, each priority gets its own picker, and the rest
+  get Enabled toggles, so one category can have all three. A category that declares
+  `uniqueBy` is rejected. Quickslots templates set `uniqueBy='category'`.
+- Templates declare `id` and `label` in place of `name`. `id` is required (a letter,
+  then letters, digits, `_` or `.`), is unique across modules and names the template's
+  settings; `label` is what the menu and the Templates page show, defaulting to `id`.
+  MCT no longer derives an id from the category and name.
+- Generated setting ids name the module, then the template: `MCT_<Module>_<Id>_...`,
+  such as `MCT_Fangdango_Wheels_Enabled`. When MCT loads a template file it asks
+  ModCoreSettings for the module id of that mod folder (`MCS_ModuleId_v1.<folder>`) and
+  sets the template's `providerId`; without one, the folder name stands in. Templates in
+  a Template picker are now named this way too.
+- A template's Enabled toggle is now its heading: one on/off row named for the
+  template (`mcType=onoff`, `mcCategory=1`), reading Disabled or Enabled, with its settings indented beneath. In a
+  slot it stays a plain row named for the template.
+- Under that heading the template's own groups are subgroups: headed in ModCore Settings'
+  smaller subgroup style, without a rule, their rows indented a step further.
+
 ## v1.4.2
 
 - Requires UE4SSLuaEventBridge 1.2.0 or later. Requirements follow minor versions

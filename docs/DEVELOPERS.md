@@ -33,14 +33,22 @@ is skipped without removing other valid templates.
 
 ## Declare objects and changes
 
-This complete `mc_nudge.lua` moves the ability wheel by 20 local units:
+This complete `mc_nudge.lua` moves the ability wheel by 20 local units. `id` is
+required: a letter, then letters, digits, `_` or `.`, unique across all modules. It
+names the template's settings together with the module id, which MCT asks ModCoreSettings
+for when it loads the file (the `id` in the module's `mod.json`, else the folder name):
+`MCT_<Module>_<Id>_...`, such as `MCT_Fangdango_Wheels_Enabled`. `label` is what the menu
+shows and defaults to `id`.
 
 ```lua
 local MC = require('mc')
 local Widget = MC('widget')
 local template = {
-    name = 'Small Nudge',
+    id = 'SmallNudge',
+    label = 'Small Nudge',
     category = 'player.quickslots',
+    -- Replaces the other category-unique quickslots template instead of joining it.
+    uniqueBy = 'category',
     objects = {abilities = {properties = {'position'}}},
 }
 

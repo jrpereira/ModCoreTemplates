@@ -49,6 +49,21 @@ function M.start(options, api)
         end
     end
     if configured.menuRoot then configured.menuShared = assert(api.ModRef, 'ModRef unavailable') end
+    -- ModCoreSettings publishes each mod folder's module id while it loads, before the
+    -- loop start at which MCT reads its templates.
+    if not configured.moduleId and api.ModRef then
+        local shared, warned = api.ModRef, {}
+        configured.moduleId = function(folder)
+            local ok, ready = pcall(shared.GetSharedVariable, shared, 'MCS_ModuleId_v1.ready')
+            local id = ok and ready and shared:GetSharedVariable('MCS_ModuleId_v1.' .. folder)
+            if type(id) == 'string' and id ~= '' then return id end
+            if configured.log and not warned[folder] then
+                warned[folder] = true
+                require('mc_log').wrap(configured.log).warn(ok and ready and ('no module id for ' .. folder)
+                    or 'ModCoreSettings module ids unavailable', '; using folder names')
+            end
+        end
+    end
     local bootstrap
     -- Game functions that fire MCT's signals. A hook reads neither context nor
     -- parameters and only queues the signal, which runs outside the hooked call.

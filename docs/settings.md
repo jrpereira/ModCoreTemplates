@@ -27,26 +27,33 @@ values fall back to the defaults and never block startup.
 ## Settings
 
 MCT generates these rows. Setting ids are prefixed `MCT_`; readable ids are kept where
-listed, and the rest are numbered (`MCT_<n>`) through the identity catalog.
+listed, and the rest are numbered (`MCT_<n>`) through the identity catalog. A template's
+rows are named `MCT_<Module>_<Id>_...`: `<Module>` is the module id ModCoreSettings gives
+for the template's mod folder (its `mod.json` `id`, else the folder name) and `<Id>` the
+template's `id`.
 
 ### Template picker
 
-One per category with `single = true` (only one template can be active).
+One per category that has templates with `uniqueBy = 'category'`, and one per priority
+for templates with `uniqueBy = 'priority'`. Only one template in each picker can be active.
 
 - **Template** (`MCT_Template`): which template is active for `player.quickslots`.
   Choose **None** to restore the original game state. It appears in ModCore Controls'
   Visuals section, not on an MCT page.
 - **`<Category>` Template** (`MCT_<Category>Template`, such as `MCT_PlayerRadialTemplate`):
-  the same choice for the other single categories: `player.radial`, `player.compass`,
-  `player.charges`, `player.self` and `player.stats`. Each choice notes the module
-  folder that supplies the template.
+  the same choice for category-unique templates in other categories, such as
+  `player.radial`, `player.compass`, `player.charges`, `player.self` and `player.stats`.
+  Each choice notes the module folder that supplies the template.
+- **`<Category>` (priority `<n>`)** (`MCT_<Category>Priority<n>Template`, such as
+  `MCT_NpcAttacksPriority10Template`): which of the priority-unique templates with
+  priority `<n>` is active in that category.
 
 ### Template enabled toggle
 
-One per template in a category that is not `single` (such as `npc.attacks`).
+One per template without `uniqueBy` (such as the `npc.attacks` templates).
 
-- **Enabled** (`MCT_<TemplateName>_Enabled`): No or Yes, under a heading naming the
-  template. A template that is not enabled stays in the menu but receives no lifecycle
+- **`<Label>`** (`MCT_<Module>_<Id>_Enabled`): an on/off switch (Disabled or
+  Enabled) that stands in for the template's heading, with the template's settings indented beneath it. A template that is not enabled stays in the menu but receives no lifecycle
   callbacks.
 
 ### Shared category fields

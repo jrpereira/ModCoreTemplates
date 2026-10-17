@@ -30,10 +30,9 @@ local function fixture(withDefer)
     local category={id='c',attachDelay=2000,objects={root={source='lookup',class='Root'}}}
     local templates={}
     for _,id in ipairs({'a','b'}) do
-        templates[#templates+1]={id=id,category='c',objects={'root'},
+        templates[#templates+1]={id=id,category='c',objects={'root'},uniqueBy='category',
             attach=function(_,_,saved) attaches=attaches+1; attachOpacity=root.opacity; return saved end}
     end
-    category.single=true
     local runtime=Runtime.new(host,{category},templates,nil,options)
     runtime:select('c',{a={}})
     return runtime,root,timers,function() return attaches end,function() return attachOpacity end

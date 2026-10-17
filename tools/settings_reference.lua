@@ -22,7 +22,7 @@ local Bootstrap = require('mc.bootstrap')
 local Model = require('mc.menu_model')
 local Menu = require('mc.menu')
 local Layout = require('mc.layout')
-local U = require('mc.util')
+local Runtime = require('mc.runtime')
 
 local function read(path)
     local file = io.open(path, 'rb')
@@ -39,6 +39,11 @@ local function title(value)
     return (value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end))
 end
 
+-- Installed folder names, as the release manifests give them.
+local moduleFolder = jsonString(moduleDir .. '/release-manifest.json', 'module') or moduleDir:match('([^/\\]+)$')
+-- The module id, as ModCoreSettings gives it from mod.json at load: generated ids include it.
+local function moduleId() return jsonString(moduleDir .. '/mod.json', 'id') or moduleFolder end
+
 -- Templates, in registration order.
 local paths = {}
 require('mc')._setTemplateRegistrar(function(path) paths[#paths + 1] = path; return true end)
@@ -47,7 +52,7 @@ local templates, locations = {}, {}
 for _, path in ipairs(paths) do
     local loaded = Bootstrap.executeTemplate(path)
     for _, template in ipairs(loaded.category and {loaded} or loaded) do
-        templates[#templates + 1] = Metadata.apply(Defaults.apply(template), path)
+        templates[#templates + 1] = Metadata.apply(Defaults.apply(template), path, moduleId)
         locations[#locations + 1] = path
     end
 end
@@ -62,9 +67,7 @@ local menu = Menu.generate(model.registry)
 local rows = {}
 for _, row in ipairs(menu.rows) do rows[row.id] = row end
 
--- Installed folder names, as the release manifests give them.
 local moduleName = jsonString(moduleDir .. '/mod.json', 'name') or moduleDir:match('([^/\\]+)$')
-local moduleFolder = jsonString(moduleDir .. '/release-manifest.json', 'module') or moduleDir:match('([^/\\]+)$')
 local mctFolder = jsonString(mct .. '/release-manifest.json', 'module') or '3_ModCore_Templates'
 
 local function cell(value)
@@ -149,16 +152,21 @@ for _, template in ipairs(templates) do
     local categoryName = title(template.category:gsub('%.', ' ')):gsub('^Npc ', 'NPC ')
     local definition
     for _, candidate in ipairs(menu.definitions[template.category] or {}) do
-        if candidate.id == U.identity(template) then definition = candidate end
+        if candidate.id == template.id then definition = candidate end
     end
-    assert(definition, template.name .. ': no generated settings')
-    local selector = menu.selectors[template.category] and menu.selectors[template.category].id
-    local owner = selector
+    assert(definition, template.label .. ': no generated settings')
+    -- A template is turned on by its uniqueBy picker or by its own Enabled toggle.
+    local selector, owner
+    for _, picker in ipairs(menu.pickers) do
+        for _, id in pairs(picker.byValue) do
+            if id == definition.id then selector = picker.id end
+        end
+    end
     for _, entry in ipairs(menu.multiSelectors[template.category] or {}) do
         if entry.definition.id == definition.id then owner = entry.id end
     end
     add()
-    add('### ' .. template.name)
+    add('### ' .. template.label)
     add()
     if template.description then add(template.description); add() end
     local where
@@ -175,12 +183,14 @@ for _, template in ipairs(templates) do
     end
     add(('- **Category:** %s. The settings appear %s.'):format(categoryName, where))
     if selector then
-        add(('- **Turn on:** choose %s in the %s template picker (`%s`). Only one template of this'
-            .. ' category is active at a time. The picker\'s numbers depend on which templates are'
-            .. ' installed, so choose it in the menu.'):format(template.name, categoryName, selector))
+        local scope = template.uniqueBy == 'priority'
+            and ('of this category with priority %s'):format(template.priority or Runtime.DEFAULT_PRIORITY) or 'of this category'
+        add(('- **Turn on:** choose %s in the %s template picker (`%s`). Only one template %s'
+            .. ' is active at a time. The picker\'s numbers depend on which templates are'
+            .. ' installed, so choose it in the menu.'):format(template.label, categoryName, selector, scope))
     else
-        add(('- **Turn on:** set Enabled (`%s`) to Yes (`1`).'):format(
-            assert(owner, template.name .. ': no Enabled toggle')))
+        add(('- **Turn on:** set %s (`%s`) to Enabled (`1`).'):format(template.label,
+            assert(owner, template.label .. ': no Enabled toggle')))
     end
     add('- **Saved in:** ' .. config .. ', section `[Templates]`.')
 
@@ -221,12 +231,12 @@ for _, template in ipairs(templates) do
     for _, section in ipairs(sections) do
         add()
         -- A group named after its template needs no heading of its own.
-        if section.label and section.label ~= template.name then add('#### ' .. section.label); add() end
+        if section.label and section.label ~= template.label then add('#### ' .. section.label); add() end
         if section.when then add(section.when); add() end
         add('| Setting | Options | Default | Key |')
         add('|---|---|---|---|')
         for _, name in ipairs(section.fields) do
-            local settingId = assert(definition.settings[name], template.name .. ': no setting for ' .. name)
+            local settingId = assert(definition.settings[name], template.label .. ': no setting for ' .. name)
             local row = assert(rows[settingId], settingId .. ': no generated row')
             local label = row.label
             local note = notes(row, owner)

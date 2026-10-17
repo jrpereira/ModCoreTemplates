@@ -2,8 +2,7 @@ package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 dofile('tests/support/lifetimes.lua').install()
 local Runtime=require('mc.runtime')
 local category=dofile('Scripts/categories/npc_attacks.lua')
-assert(category.id=='npc.attacks' and category.single==nil,
-    'notification templates chain instead of replacing each other')
+assert(category.id=='npc.attacks')
 local objects={}
 local function object(id,class)
     local value={id=id,class=class,children={},members={},opacity=1,

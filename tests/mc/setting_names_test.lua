@@ -8,7 +8,7 @@ local function category(name)
     return {id=name,objects={root={source='lookup',object='hud'}},settings={},menu={}}
 end
 local function template(categoryName)
-    return {name='Cue',module='Mod',category=categoryName,objects={'root'},managed=false,
+    return {id='Cue',module='Mod',category=categoryName,objects={'root'},managed=false,
         menu={{id='Main',label='Main',fields={{id='Size',label='Size',values={min=0,max=100,step=1},default=20}}}},
         attach=function() end,update=function() end,detach=function() end}
 end
@@ -17,7 +17,8 @@ local function generate(categoryName,catalog)
     local menu=Menu.generate(Model.build({category(categoryName)},{template(categoryName)},{location}).registry,
         {catalog=catalog})
     local ids={}
-    for _,row in ipairs(menu.pageByModule.Mod.rows) do ids[row.label]=row.id end
+    -- The Enabled toggle is labelled with the template's name.
+    for _,row in ipairs(menu.pageByModule.Mod.rows) do ids[row.label=='Cue' and 'Enabled' or row.label]=row.id end
     return menu,ids
 end
 
