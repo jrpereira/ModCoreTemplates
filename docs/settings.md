@@ -73,8 +73,13 @@ variation id (`style` becomes `Style`).
 Field types are inferred from `values`:
 
 - **Integer**: `{min=, max=, step=, suffix=}`, or `'percent'` for 0..100 with a `%` suffix.
+- **Range** (`type='range'`): `{min=, max=, step=, suffix=, delta=}` with
+  `default={low, high}`: a low and a high value on one track (ModCore Settings' range row).
+  `min`/`max` may be `{low marker's, high marker's}` pairs; `delta` bounds `high-low`.
+  Saved as `<low>|<high>`; the template reads `{low, high}`. Not in category settings or
+  slot categories.
 - **Picker**: a map of numbers to labels, optionally `{label=, note=, sound=}` per choice.
-  Up to 8 choices can show as tabs with `tab=true`.
+  `widget` shows it as `picker` (default), `tabs` (up to 8), `cycler` or `switch`.
 
 Conditions (`visible`, `label`, `dim`) change how a row is shown, not what is saved or
 delivered to the template.

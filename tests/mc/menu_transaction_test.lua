@@ -1,7 +1,7 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Files=require('mc.menu_files')
 local base=assert(os.getenv('MCT_TEST_DIR'),'MCT_TEST_DIR required')..'/transaction.ini'
-local row={id='X',range={min=0,max=10},default=1}
+local row={id='X',type='integer',values={min=0,max=10},default=1}
 local function write(path,value)
     local file=assert(io.open(path,'wb'))
     assert(file:write(value));assert(file:close())
@@ -15,7 +15,7 @@ write(base,'[Templates]\nX=8\n')
 assert(Files.ensureConfig(base,{row},{})==false)
 assert(Files.readConfigValues(base,{}, {row}).X==8)
 
-local extra={id='Y',range={min=0,max=10},default=2}
+local extra={id='Y',type='integer',values={min=0,max=10},default=2}
 local new,old=base..'.new',base..'.old'
 local originalRename,originalRemove,originalOpen=os.rename,os.remove,io.open
 -- A successful write keeps the previous version as <path>.old.

@@ -130,13 +130,13 @@ compatibility('copied manifests parse with actual DMM and ModCoreSettings', func
     end
 end)
 
-test('generated controls do not assign secondary levels or default tabs', function()
+test('generated controls do not assign styles or default tabs', function()
     for _, single in ipairs({true, false}) do
         local f=fixture(single)
         for _, provider in pairs(f.menu.providers) do
             for _, row in ipairs(provider.menu.fields) do
-                assert(row.level==nil, row.id .. ': unexpected level')
-                assert(not row.tabs, row.id .. ': unexpected tab')
+                assert(row.style==nil or row.style=='title' or row.style=='category', row.id .. ': unexpected style')
+                assert(row.widget~='tabs', row.id .. ': unexpected tab')
             end
         end
     end
@@ -224,10 +224,10 @@ test('multi-template toggles stand in for a heading named for the template', fun
         assert(row.label==name and row.group==scope and row.default==0)
         local menu=f.menu.pageByCategory['player.quickslots'].menu
         local heading=groupOf(menu,scope)
-        assert(heading.label==name and heading.conditions==nil and heading.heading==false)
+        assert(heading.label==name and heading.conditions==nil and heading.style=='none')
         local stored=fieldOf(menu,item.id)
-        assert(stored.category and stored.onOff, 'the toggle is an on/off heading row')
-        assert(stored.choices[1].label=='Disabled' and stored.choices[2].label=='Enabled')
+        assert(stored.style=='category' and stored.widget=='switch', 'the toggle is an on/off heading row')
+        assert(stored.values[1].label=='Disabled' and stored.values[2].label=='Enabled')
         -- The template's own groups, on the page holding its rows (Alpha's), are subgroups
         -- of its heading: smaller, without a rule.
         local sub=heading.groups and heading.groups[1]
@@ -630,8 +630,7 @@ test('a slot category moves to one hidden page with flattened visibility', funct
     for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value else beta=value end end
     assert(page.rows[1].id==selector.id,'Template comes first')
     local template=fieldOf(page.menu,selector.id)
-    assert(template.conditions==nil and template.group=='Slot' and template.level==nil
-        and template.heading==nil)
+    assert(template.conditions==nil and template.group=='Slot' and template.style==nil)
     local shared=fieldOf(page.menu,f.menu.categorySettings['player.quickslots'].fields.Size)
     assert(shown(shared)==selector.id..'='..alpha..'|'..beta or shown(shared)==selector.id..'='..beta..'|'..alpha)
     local size=fieldOf(page.menu,f.definitions.Alpha.settings.Size)
@@ -662,14 +661,14 @@ test('the template picker notes each choice with its module', function()
     local menu=generate()
     local selector=menu.selectors['player.quickslots']
     local page=menu.pageBySlot['player.quickslots']
-    for _,choice in ipairs(fieldOf(page.menu,selector.id).choices) do assert(choice.module==nil) end
+    for _,choice in ipairs(fieldOf(page.menu,selector.id).values) do assert(choice.module==nil) end
     f.a.module,f.b.module='Alpha','Beta'
     menu=generate()
     selector,page=menu.selectors['player.quickslots'],menu.pageBySlot['player.quickslots']
     local expected={}
     for value,id in pairs(selector.byValue) do expected[value]=id end
     local count=0
-    for _,choice in ipairs(fieldOf(page.menu,selector.id).choices) do
+    for _,choice in ipairs(fieldOf(page.menu,selector.id).values) do
         if choice.value==0 then assert(choice.module==nil,'None has no module')
         else
             assert(expected[choice.value]==choice.module,choice.value)
@@ -691,7 +690,7 @@ test('the template picker notes each choice with its module', function()
     menu=generate()
     local modules={}
     for _,choice in ipairs(fieldOf(menu.pageBySlot['player.quickslots'].menu,
-        menu.selectors['player.quickslots'].id).choices) do modules[#modules+1]=choice.module end
+        menu.selectors['player.quickslots'].id).values) do modules[#modules+1]=choice.module end
     assert(#modules==1 and modules[1]=='Alpha')
 end)
 
@@ -715,8 +714,8 @@ test('field conditions become row visibility and label rules', function()
     assert(rules(kv).label.field==ids.BarsA and rules(kv).label.values[5]=='Side Keys' and kv.label=='Vertical Keys')
     local a=fieldOf(page.menu,ids.BarsA)
     assert(a.conditions==nil,'fields without conditions are unchanged')
-    assert(kh.choices[2].note=='Under the bar' and kh.choices[2].sound=='/Game/Audio/Below'
-        and kh.choices[1].sound==nil and rules(kh).dim[1]==0,'choice notes, sounds and dim reach the menu data')
+    assert(kh.values[2].note=='Under the bar' and kh.values[2].sound=='/Game/Audio/Below'
+        and kh.values[1].sound==nil and rules(kh).dim[1]==0,'choice notes, sounds and dim reach the menu data')
     -- The template picker still gates the group through its rule.
     assert(rules(groupOf(page.menu,kh.group)).visible,'the group keeps its template-picker rule')
 end)
@@ -819,13 +818,13 @@ test('modules whose templates moved to a slot keep their page with a link to the
     assert(f.menu.providers[beta.id]==page and page.merged=='controls:visuals')
     local notice=fieldOf(page.menu,'MCT_MergedNotice')
     assert(page.rows[1].id=='MCT_MergedNotice' and notice.link=='controls:visuals'
-        and notice.action and notice.tabs and notice.level==5
-        and #notice.choices==1 and notice.choices[1].label=='Controls')
+        and notice.action and notice.widget=='tabs' and notice.style=='notice'
+        and #notice.values==1 and notice.values[1].label=='Controls')
     assert(notice.label=='These settings have been merged into Controls and can also be edited there')
     local selector=f.menu.selectors['player.quickslots']
     assert(fieldOf(page.menu,selector.id) and fieldOf(page.menu,f.definitions.Beta.settings.Size)
         and page.menu.storage.file=='Scripts/cache/config.ini','the page edits the slot rows in the central config')
-    assert(page.rows[2].id==selector.id and fieldOf(page.menu,selector.id).heading==nil,
+    assert(page.rows[2].id==selector.id and fieldOf(page.menu,selector.id).style==nil,
         'the template picker follows the notice as a plain row, not in the title row')
     assert(f.menu.selectors['player.quickslots'] and f.menu.pageBySlot['player.quickslots'].rows[1].id==selector.id)
     assert(not pcall(fieldOf,page.menu,f.definitions.Alpha.settings.Size),'only its own templates')
@@ -1009,7 +1008,7 @@ test('category-unique templates share a picker and the others get Enabled toggle
         local picked={}
         for _, r in ipairs(menu.rows) do
             if r.id==selector.id then
-                for _, choice in ipairs(r.choices) do picked[#picked+1]=choice.label end
+                for _, choice in ipairs(r.values) do picked[#picked+1]=choice.label end
             end
         end
         assert(table.concat(picked,',')=='None,Alpha,Beta', table.concat(picked,','))
@@ -1034,7 +1033,7 @@ test('category-unique templates share a picker and the others get Enabled toggle
             end
             assert(#labels==1 and labels[1]=='Gamma', 'a slotted toggle names its template')
             for _, item in ipairs(menu.pageBySlot['player.quickslots'].menu.fields) do
-                assert(not item.category, 'slot rows share one group, so none stands in for its heading')
+                assert(item.style==nil, 'slot rows share one group, so none stands in for its heading')
             end
         end
     end
@@ -1099,7 +1098,7 @@ test('id names a template and its settings; label is what the menu shows', funct
     local choices={}
     for _,r in ipairs(menu.rows) do
         if r.id==menu.selectors['player.stats'].id then
-            for _,choice in ipairs(r.choices) do choices[#choices+1]=choice.label end
+            for _,choice in ipairs(r.values) do choices[#choices+1]=choice.label end
         end
     end
     assert(table.concat(choices,',')=='None,Stats Bar')

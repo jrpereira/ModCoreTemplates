@@ -41,22 +41,22 @@ assert(table.concat(order,',')=='Module1:ModCore Templates[Module1_1:Player Quic
     ..'Module2:Preymonition[Module2_1:Npc Attacks],Module3:Quickslot Fangdango[Module3_1:Player Quickslots]',table.concat(order,','))
 local labels={}
 for _,item in ipairs(menu.fields) do
-    assert(item.readOnly and item.choices[1].note==nil,'rows are read-only, without notes')
+    assert(item.widget=='text' and item.values[1].note==nil,'rows are shown values, without notes')
     labels[#labels+1]=item.group..':'..item.id..':'..item.label
 end
 assert(table.concat(labels,',')=='Module1_1:MCT_Listed_4:Built In "Quoted",Module2_1:MCT_Listed_3:Preymonition,'
     ..'Module3_1:MCT_Listed_1:Wheels,Module3_1:MCT_Listed_2:Double Sidebar',table.concat(labels,','))
 local function row(label) for _,item in ipairs(menu.fields) do if item.label==label then return item end end end
 local blank='\u{A0}'
-assert(row('Double Sidebar').choices[1].label=='Active' and row('Wheels').choices[1].label==blank
-    and row('Preymonition').choices[1].label==blank,'only the selected template shows as active')
+assert(row('Double Sidebar').values[1].label=='Active' and row('Wheels').values[1].label==blank
+    and row('Preymonition').values[1].label==blank,'only the selected template shows as active')
 -- Without names the folders are shown as they are.
 local unnamed=hooks.menu({page='ModCoreTemplates',directory=root})
 assert(unnamed.groups[1].label=='TemplatesPage' and unnamed.groups[2].label=='Fangdango')
 
 -- Without a list (before MCT has run) the page says so instead of failing.
 local empty=hooks.menu({page='ModCoreTemplates',directory=root..'/Missing'})
-assert(empty.fields[1].choices[1].label=='Available once the game has loaded them')
+assert(empty.fields[1].values[1].label=='Available once the game has loaded them')
 
 -- ModCoreSettings builds it into a page DMM parses.
 local choicesPath,presentationPath=os.getenv('MCT_DMM_CHOICES'),os.getenv('MCT_PRESENTATION')

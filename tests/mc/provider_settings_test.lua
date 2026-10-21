@@ -17,22 +17,34 @@ assert(groups[3].id=='Wheels' and groups[3].variationSource=='Style')
 assert(groups[3].fields[1].id=='WheelsX')
 local size=groups[3].fields[2]
 assert(size.id=='WheelsSize' and size.values[1]==85 and size.labels[1]=='Small'
-    and size.values[3]==110 and size.default==100 and size.tab==nil)
-assert(groups[1].fields[1].tab==nil and groups[1].fields[1].level==nil)
-assert(groups[1].level==nil and groups[3].level==nil)
-assert(groups[2].fields[1].tab==nil)
+    and size.values[3]==110 and size.default==100 and size.type=='enum' and size.widget=='picker')
+assert(groups[1].fields[1].widget=='picker' and groups[1].fields[1].style==nil)
+assert(groups[1].style=='none' and groups[3].style==nil)
+assert(groups[2].fields[1].type=='integer' and groups[2].fields[1].widget=='slider')
 
 local _,dropdown=Provider.template({
-    {id='Display',label='Display',values={[0]='Off',[1]='On'},default=1,tab=false},
+    {id='Display',label='Display',values={[0]='Off',[1]='On'},default=1,widget='switch'},
 }, {})
-assert(#dropdown==1 and dropdown[1].fields[1].tab==false,'no empty Template group')
+assert(#dropdown==1 and dropdown[1].fields[1].widget=='switch','no empty Template group')
 
 local choices={}
 for value=1,9 do choices[value]='Choice '..value end
 local _,largePicker=Provider.template({
     {id='Choice',label='Choice',values=choices,default=1},
 }, {})
-assert(largePicker[1].fields[1].tab==nil)
+assert(largePicker[1].fields[1].widget=='picker')
+assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,widget='tabs'}},{}),
+    'tabs take at most eight values')
+assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,tab=true}},{}),
+    'tab is replaced by widget')
+assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,widget='slider'}},{}),
+    'an enum takes no slider')
+assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,type='integer'}},{}),
+    'a declared type must match its values')
+local _,declared=Provider.template({{id='Choice',label='Choice',values=choices,default=1,type='enum',
+    widget='cycler',style='category'}},{})
+assert(declared[1].fields[1].type=='enum' and declared[1].fields[1].widget=='cycler'
+    and declared[1].fields[1].style=='category','a declared type, widget and style are kept')
 
 local _,relativeGroups=Provider.template({
     {id='.Branch',label='Branch',variation={style=1},fields={

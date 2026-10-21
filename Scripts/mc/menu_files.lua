@@ -69,12 +69,13 @@ local function ensureConfig(path, rows, textSettings)
     local changes, missing = {}, {}
     for _, row in ipairs(rows) do
         if not row.action then
-            local default = string.format('%.17g', row.default)
+            local range = row.type == 'range'
+            local default = range and row.default or string.format('%.17g', row.default)
             assert(accepted(row, row.default), 'invalid default setting ' .. row.id)
             local entry = present[row.id]
             if not entry then
                 missing[#missing + 1] = {row.id, default}
-            elseif not accepted(row, tonumber(entry.value)) then
+            elseif not accepted(row, range and entry.value or tonumber(entry.value)) then
                 changes[#changes + 1] = {row.id, default}
             end
         end
@@ -108,6 +109,8 @@ local function readConfigValues(path, textSettings, rows)
         if textSettings and textSettings[key] then
             local ok, text = pcall(Provider.validateText, textSettings[key].format, entry.value)
             if ok then values[key] = text end
+        elseif known[key] ~= true and known[key].type == 'range' then
+            if accepted(known[key], entry.value) then values[key] = entry.value end
         else
             local value = tonumber(entry.value)
             local row = known[key]

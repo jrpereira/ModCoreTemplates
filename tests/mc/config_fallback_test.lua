@@ -9,8 +9,8 @@ end
 local function read()
     local file=assert(io.open(path,'rb'));local content=file:read('*a');file:close();return content
 end
-local rows={{id='Template',choices={{value=0,label='None'},{value=3,label='Wheels'}},default=0},
-    {id='Size',range={min=1,max=10},default=5}}
+local rows={{id='Template',type='enum',values={{value=0,label='None'},{value=3,label='Wheels'}},default=0},
+    {id='Size',type='integer',values={min=1,max=10},default=5}}
 local text={Label={default='Wheel',format=nil}}
 
 -- A selected template whose provider is gone, an out-of-range number and invalid text.

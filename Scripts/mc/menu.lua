@@ -4,7 +4,7 @@ local Provider = require('mc.provider_settings')
 local M = {}
 
 -- Pages are described as ModCoreSettings menu data (see its menu_data.lua): groups and
--- fields with choices or a range, visibility and label rules, and storage. ModCoreSettings
+-- fields with a type (enum, integer or range), values, widget and style, visibility and label rules, and storage. ModCoreSettings
 -- turns them into menu pages.
 
 local function text(value)
@@ -29,11 +29,6 @@ end
 local function rule(field, values)
     if field == nil then return nil end
     return {field=field, values=U.copy(values)}
-end
-
--- A group's heading flag: false hides the heading, otherwise it shows.
-local function hidden(heading)
-    if heading == false then return false end
 end
 
 -- Menu-data choices; notes and sounds (optional) are keyed by value.
@@ -147,32 +142,42 @@ function M.generate(registry, options)
         pageRows[currentCategory][#pageRows[currentCategory] + 1] = fields
         return fields.id
     end
-    local function picker(settingId, label, group, list, visible, heading, default)
-        return row({id = settingId, label = text(label), group = group, choices = list,
-            default = default == nil and list[1].value or default, visible = visible, heading = heading})
+    local function picker(settingId, label, group, list, visible, title, default)
+        return row({id = settingId, label = text(label), group = group, type = 'enum', values = list,
+            default = default == nil and list[1].value or default, visible = visible,
+            style = title and 'title' or nil})
     end
     -- A generated group is headed by its label and shown only by its visibility rule.
-    local function group(identity, label, visible, level, heading, publicId)
+    local function group(identity, label, visible, style, publicId)
         local groupId = publicId and namedId(publicId, {'group', identity}) or id({'group', identity})
         if not groups[groupId] then
             groups[groupId] = true
-            groupSections[groupId] = {id = groupId, label = text(label), visible = visible, level = level,
-                heading = heading}
+            groupSections[groupId] = {id = groupId, label = text(label), visible = visible,
+                style = style ~= 'category' and style or nil}
             groupOrder[#groupOrder + 1] = groupId
         end
         return groupId
     end
     local function field(settingId, source, groupId)
         local item = {id = settingId, label = source.label, group = groupId, default = source.default,
-            description = source.description, heading = source.heading, level = source.level}
-        if source.type == 'picker' or source.type == 'navigation' then
-            item.choices = choices(source.values, source.labels, source.notes, source.sounds)
+            description = source.description, style = source.style,
+            type = source.type == 'navigation' and 'enum' or source.type}
+        -- Default widgets are left out.
+        if source.widget ~= 'picker' and source.widget ~= 'slider' and source.widget ~= 'range' then
+            item.widget = source.widget
+        end
+        if source.type == 'enum' or source.type == 'navigation' then
+            item.values = choices(source.values, source.labels, source.notes, source.sounds)
             item.dim = source.dim and U.copy(source.dim) or nil
-            item.tabs = source.tab or nil
             item.action = source.type == 'navigation' or nil
             item.link = source.linkProvider
+        elseif source.type == 'range' then
+            item.values = {min = U.copy(source.min), max = U.copy(source.max), step = source.step,
+                suffix = source.suffix, delta = U.copy(source.delta)}
+            -- The canonical '<low>|<high>' is what the config holds; menu data takes {low, high}.
+            item._bounds = source.bounds
         else
-            item.range = {min = source.min, max = source.max, step = source.step, suffix = source.suffix}
+            item.values = {min = source.min, max = source.max, step = source.step, suffix = source.suffix}
         end
         return item
     end
@@ -220,6 +225,8 @@ function M.generate(registry, options)
             local function slotRow(visible)
                 local item = rows[#rows]
                 if item.action then return end
+                -- Slots copy DMM's own row types only.
+                assert(item.type ~= 'range', category .. ': slot row ' .. item.id .. ' cannot be a range')
                 assert(not visible or not visible.field or slotIds[visible.field],
                     category .. ': slot row ' .. item.id .. ' depends on a row outside the slot')
                 item._slot, slotIds[item.id] = {visible = visible}, true
@@ -287,7 +294,7 @@ function M.generate(registry, options)
                 and rule(ownerPickers.category, {table.unpack(categoryValues, 2)}) or nil
             for _, providerGroup in ipairs(categoryGroups) do
                 local groupId = group(key({category, 'category_provider', providerGroup.id}),
-                    providerGroup.label, selected, providerGroup.level, hidden(providerGroup.heading),
+                    providerGroup.label, selected, providerGroup.style,
                     publicName(category) .. publicName(providerGroup.id))
                 for _, source in ipairs(providerGroup.fields) do
                     local settingId = namedId(publicName(category) .. publicName(source.id),
@@ -320,9 +327,9 @@ function M.generate(registry, options)
                     -- The toggle stands in for its group's heading: one heading-styled row
                     -- names the template and turns it on or off.
                     headingId = group(key({identity, 'template_heading'}), template.label,
-                        nil, nil, false, templateScope)
+                        nil, 'none', templateScope)
                     picker(ownerSelector, template.label, headingId, choices({0, 1}, {'Disabled', 'Enabled'}), nil, nil, 0)
-                    rows[#rows]._control, rows[#rows].category, rows[#rows].onOff = true, true, true
+                    rows[#rows]._control, rows[#rows].style, rows[#rows].widget = true, 'category', 'switch'
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
                         id=ownerSelector, value=value, definition=definition}
@@ -338,8 +345,7 @@ function M.generate(registry, options)
                                 'group variation source must precede its group'), providerGroup.variationValues)
                         end
                         groupId = groupId or group(key({identity, 'provider', providerGroup.id}),
-                            providerGroup.label, groupVisible, providerGroup.level,
-                            hidden(providerGroup.heading),
+                            providerGroup.label, groupVisible, providerGroup.style,
                             scopePrefix .. publicName(providerGroup.id))
                         -- Under a template's on/off heading row its groups are subgroups,
                         -- headed in ModCoreSettings' smaller subgroup style without a rule.
@@ -393,6 +399,7 @@ function M.generate(registry, options)
         for name, value in pairs(item) do
             if name:sub(1, 1) ~= '_' then out[name] = U.copy(value) end
         end
+        if out.type == 'range' then out.default = Provider.rangePair(out.default) end
         return conditioned(out)
     end
     -- A page's menu data. Values are stored in configFile (the central config by default),
@@ -400,9 +407,9 @@ function M.generate(registry, options)
     local function providerMenu(providerName, selectedRows, aggregatePage, configFile)
         local titles = 0
         for _, item in ipairs(selectedRows) do
-            if item.heading then titles = titles + 1 end
+            if item.style == 'title' then titles = titles + 1 end
         end
-        assert(titles <= 1, providerName .. ': only one heading picker per page')
+        assert(titles <= 1, providerName .. ': only one title row per page')
         local used = {}
         for _, item in ipairs(selectedRows) do used[item.group] = true end
         local menu = {storage = {file = configFile or Layout.configFile, section = 'Templates'},
@@ -410,9 +417,7 @@ function M.generate(registry, options)
         -- Category groups head the aggregate's sections; other pages have one category.
         for _, groupId in ipairs(aggregateGroupOrder) do
             if used[groupId] then
-                local heading
-                if not aggregatePage then heading = false end
-                menu.groups[#menu.groups + 1] = {id = groupId, heading = heading}
+                menu.groups[#menu.groups + 1] = {id = groupId, style = not aggregatePage and 'none' or nil}
             end
         end
         -- A subgroup goes in its heading group's groups, after that group's own rows.
@@ -434,13 +439,19 @@ function M.generate(registry, options)
         for _, item in ipairs(selectedRows) do
             local stored = plain(item)
             -- The aggregate lists several categories, so none takes the title row.
-            if aggregatePage and stored.heading then stored.heading, stored.level = nil, 2 end
+            if aggregatePage and stored.style == 'title' then stored.style = nil end
             menu.fields[#menu.fields + 1] = stored
         end
         return menu
     end
     local schema = {}
     for _, r in ipairs(rows) do schema[r.id] = r end
+    -- A template reads a range as {low, high}; every other value as stored.
+    local function exposed(settingId, value)
+        local r = schema[settingId]
+        if r and r.type == 'range' and type(value) == 'string' then return Provider.rangePair(value) end
+        return value
+    end
     local function makeDecoder(requiredRows, includedCategories, owned)
       return function(values)
         assert(type(values) == 'table', 'Apply values must be a table')
@@ -450,8 +461,8 @@ function M.generate(registry, options)
             local settingId = r.id
             local value = values[settingId]
             if value == nil and r.action then value = r.default end
-            assert(type(value) == 'number' and value == value, 'missing/invalid setting ' .. settingId)
-            assert(M.accepts(r, value), (r.range and 'invalid integer ' or 'invalid choice ') .. settingId)
+            assert(value ~= nil, 'missing/invalid setting ' .. settingId)
+            assert(M.accepts(r, value), 'invalid ' .. r.type .. ' ' .. settingId)
             effective[settingId] = value
         end
         local result = {}
@@ -473,7 +484,7 @@ function M.generate(registry, options)
             end
             if definition.settings then
                 for name, settingId in pairs(definition.settings) do
-                    config[name] = effective[settingId]
+                    config[name] = exposed(settingId, effective[settingId])
                 end
             end
             return selection
@@ -529,7 +540,7 @@ function M.generate(registry, options)
                 if item._control or (item._owner and owned[item._owner]) then
                     if item.id == headerSelector then
                         local header = U.copy(item)
-                        header.heading = true
+                        header.style = 'title'
                         selected[#selected + 1] = header
                     else
                         selected[#selected + 1] = item
@@ -542,7 +553,7 @@ function M.generate(registry, options)
             and selectors['player.quickslots'].id
         local otherHeader = false
         for _, item in ipairs(selected) do
-            if item.heading and item.id ~= quickslotsSelector then
+            if item.style == 'title' and item.id ~= quickslotsSelector then
                 otherHeader = true
                 break
             end
@@ -551,7 +562,7 @@ function M.generate(registry, options)
             for index, item in ipairs(selected) do
                 if item.id == quickslotsSelector then
                     local selectorRow = U.copy(item)
-                    selectorRow.heading = nil
+                    selectorRow.style = nil
                     selected[index] = selectorRow
                 end
             end
@@ -608,10 +619,9 @@ function M.generate(registry, options)
                 groups = {{id = 'Slot'}}, fields = {}}
             for _, item in ipairs(selectedRows) do
                 local stored = plain(item)
-                stored.group, stored.heading, stored.level = 'Slot', nil, nil
                 -- A slot row keeps its other rules and takes its slot's visibility.
-                -- Slot rows share one group, so no toggle stands in for its heading.
-                stored.category = nil
+                -- Slot rows share one group, so no row takes the title or stands in for its heading.
+                stored.group, stored.style = 'Slot', nil
                 local conditions = stored.conditions or {}
                 conditions.visible = U.copy(item._slot.visible)
                 stored.conditions = next(conditions) and conditions or nil
@@ -650,16 +660,17 @@ function M.generate(registry, options)
         -- The template picker sits below the notice as in the slot, not in the title row.
         local selectedRows = {}
         for _, item in ipairs(routedRows(entry.categories, entry.owned)) do
-            if item.heading then
+            if item.style == 'title' then
                 item = U.copy(item)
-                item.heading = nil
+                item.style = nil
             end
             if not item.action then selectedRows[#selectedRows + 1] = item end
         end
         local host = title(entry.slot:match('^[^:]+'))
         table.insert(selectedRows, 1, {id='MCT_MergedNotice', group=selectedRows[1].group,
             label='These settings have been merged into ' .. host .. ' and can also be edited there',
-            choices={{value=0, label=host}}, default=0, action=true, tabs=true, link=entry.slot, level=5})
+            type='enum', values={{value=0, label=host}}, default=0, action=true, widget='tabs', link=entry.slot,
+            style='notice'})
         local page = {id=providerId, name=module, merged=entry.slot, moduleRoot=entry.root, rows=selectedRows,
             menu=providerMenu(module, selectedRows, false)}
         page.decode = makeDecoder(page.rows, entry.categories, entry.owned)
@@ -689,7 +700,7 @@ function M.generate(registry, options)
                 end
                 if not definition.enabled then return end
                 local own = {}
-                for name, settingId in pairs(definition.settings) do own[name] = values[settingId] end
+                for name, settingId in pairs(definition.settings) do own[name] = exposed(settingId, values[settingId]) end
                 selections[selection.id] = own
             end
             for _, selection in ipairs(decodedSelections[category]) do selected(selection) end
@@ -709,11 +720,13 @@ function M.generate(registry, options)
         pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}
 end
 
--- Whether a row accepts a value: one of its choices, or a whole number in its range.
+-- Whether a row accepts a value: one of an enum's values, a whole number within an
+-- integer's, or a range's canonical '<low>|<high>'.
 function M.accepts(r, value)
+    if r.type == 'range' then return type(value) == 'string' and Provider.rangeText(r._bounds, value) == value end
     if type(value) ~= 'number' or value ~= value then return false end
-    if r.range then return value >= r.range.min and value <= r.range.max and value % 1 == 0 end
-    for _, choice in ipairs(r.choices) do if choice.value == value then return true end end
+    if r.type == 'integer' then return value >= r.values.min and value <= r.values.max and value % 1 == 0 end
+    for _, choice in ipairs(r.values) do if choice.value == value then return true end end
     return false
 end
 

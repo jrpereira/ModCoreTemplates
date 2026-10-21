@@ -55,6 +55,10 @@ function M.new(menu, runtime, options)
         local supplied = U.copy(event.values)
         local persisted = options.readValues and options.readValues() or {}
         for id in pairs(menu.textSettings) do supplied[id] = persisted[id] or values[id] end
+        -- Apply notifications carry numbers only; a range is read back from its config.
+        for _, row in ipairs(provider.rows) do
+            if row.type == 'range' then supplied[row.id] = persisted[row.id] or values[row.id] end
+        end
         provider.decode(supplied)
         local nextValues = U.copy(values)
         for _, row in ipairs(provider.rows) do

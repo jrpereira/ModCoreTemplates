@@ -86,7 +86,7 @@ Each template choice notes its module folder; ModCoreSettings shows the module's
 on a second line under the template's label. `None` and templates without a module have
 no note. Every other template gets an `Enabled` toggle (`mcType=onoff`), saved as
 `MCT_<Module>_<Id>_Enabled`. The toggle is labelled with the template's label and stands
-in for its group's heading (`category=true` on the row, `heading=false` on the group),
+in for its group's heading (`style='category'` on the row, `style='none'` on the group),
 so the heading row itself turns the template on or off. A category can have both. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
@@ -130,14 +130,26 @@ The leading dot makes a child ID relative and is removed when IDs are composed:
 is left unchanged. A group under a variation may likewise use a relative ID, but
 an absolute group ID is usually clearer and preserves existing keys.
 
-`values` defines the field domain and `default` remains a separate, explicit field
-property. A range table such as `{min=-1000,max=1000,step=10}` produces an integer.
-A numeric-keyed label map such as `{[85]='Small',[100]='Medium'}` produces a picker,
-ordered by numeric value. A named internal domain such as `values='percent'`
-expands to the validated 0..100 integer range with a `%` suffix. Pickers use DMM's
-arrow selector by default; set `tab=true` for a picker with up to eight choices.
-MCT infers the field type; templates do not declare `type` or
-parallel `labels`.
+A field declares what it holds (`type`) separately from how it shows (`widget`), with
+`values` the domain and `default` a separate, explicit property. `type` may be left out
+when `values` says it:
+
+| `type` | `values` | `default` | `widget` (first is the default) |
+|---|---|---|---|
+| `enum` | a numeric-keyed label map such as `{[85]='Small',[100]='Medium'}`, ordered by value | a value | `picker` (DMM's arrows), `tabs` (up to 8), `cycler`, `switch` (values 0 and 1) |
+| `integer` | `{min=-1000,max=1000,step=10,suffix=}`, or `'percent'` (0..100 with `%`) | a number | `slider` |
+| `range` | `{min=0,max=100,step=10,suffix='%',delta={10}}` | `{low,high}` | `range` |
+
+A range is always declared (`type='range'`): a low and a high value on one track that the
+template reads as `{low, high}`, saved as `<low>|<high>`. `min` and `max` are its edges, or
+`{low marker's, high marker's}` bounds, such as `min={0,60}, max={40,100}`; `delta` is the
+smallest and largest `high-low`, `{min,max}`, `{min}` or one number for both. `step`
+divides the track into 1 to 40 steps. Category settings and slot categories take no range.
+
+`style` makes a row stand out: `'title'` puts an enum in the page title row,
+`'category'` lets it stand in for its group's heading, `'notice'` sets it small and
+muted. A menu group's `style='none'` hides its heading. Sizes otherwise follow a row's
+place on the page.
 
 A picker choice is its label, or a ModCore Settings menu-data choice without its
 value: `{label=, note=, sound=}`. `note` is shown small under the choice (at most 64

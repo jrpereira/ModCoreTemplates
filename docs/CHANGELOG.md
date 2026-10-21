@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.6.0
+
+- Template fields declare what they hold and how they show, as ModCore Settings menu data
+  does: `type` (`enum`, `integer` or `range`, inferred from `values` when left out),
+  `widget` (`picker`, `tabs`, `cycler` or `switch` for an enum) and `style` (`title`,
+  `category` or `notice`). `tab=true` becomes `widget='tabs'`; a menu group's `heading=false`
+  becomes `style='none'`; `level` is removed. Generated menu data uses the same keys.
+- Range fields: `type='range'`, `values={min=,max=,step=,suffix=,delta=}` and
+  `default={low, high}`. `min` and `max` are edges or per-marker pairs, `delta` bounds
+  `high-low`. Saved in the config as `<low>|<high>`, read back after each Apply, and given
+  to the template as `{low, high}`; a saved value the range cannot hold is rewritten with
+  the default. Category settings and slot categories take no range.
+- Requires ModCore Settings 1.5.0. `tools/settings_reference.lua` describes ranges.
+
 ## v1.5.0
 
 - Requires ModCore Settings 1.4.0 or later, for module ids, on/off switches and subgroups.

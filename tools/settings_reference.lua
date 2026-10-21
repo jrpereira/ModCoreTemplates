@@ -74,22 +74,39 @@ local function cell(value)
     return (tostring(value):gsub('|', '\\|'):gsub('\n', ' '))
 end
 local function choiceLabel(row, value)
-    for _, choice in ipairs(row.choices or {}) do
+    for _, choice in ipairs(row.type == 'enum' and row.values or {}) do
         if choice.value == value then return choice.label end
     end
     return tostring(value)
 end
 local function options(row)
-    if row.range then
-        local suffix = row.range.suffix or ''
-        return ('%d%s to %d%s, in steps of %d'):format(row.range.min, suffix, row.range.max, suffix, row.range.step)
+    if row.type == 'integer' then
+        local values, suffix = row.values, row.values.suffix or ''
+        return ('%d%s to %d%s, in steps of %d'):format(values.min, suffix, values.max, suffix, values.step)
+    end
+    if row.type == 'range' then
+        local b, suffix = row._bounds, row.values.suffix or ''
+        local text = ('A low and a high value from %d%s to %d%s, in steps of %d'):format(b.lowMin, suffix,
+            b.highMax, suffix, b.step)
+        local limits = {}
+        if b.lowMax < b.highMax then limits[#limits + 1] = ('low at most %d%s'):format(b.lowMax, suffix) end
+        if b.highMin > b.lowMin then limits[#limits + 1] = ('high at least %d%s'):format(b.highMin, suffix) end
+        if b.deltaMin > 0 then limits[#limits + 1] = ('at least %d%s apart'):format(b.deltaMin, suffix) end
+        if b.deltaMax < b.highMax - b.lowMin then limits[#limits + 1] = ('at most %d%s apart'):format(b.deltaMax, suffix) end
+        if #limits > 0 then text = text .. '; ' .. table.concat(limits, ', ') end
+        return text
     end
     local out = {}
-    for _, choice in ipairs(row.choices) do out[#out + 1] = ('%s (`%d`)'):format(choice.label, choice.value) end
+    for _, choice in ipairs(row.values) do out[#out + 1] = ('%s (`%d`)'):format(choice.label, choice.value) end
     return table.concat(out, ', ')
 end
 local function default(row)
-    if row.range then return tostring(row.default) .. (row.range.suffix or '') end
+    if row.type == 'integer' then return tostring(row.default) .. (row.values.suffix or '') end
+    if row.type == 'range' then
+        local suffix = row.values.suffix or ''
+        local low, high = row.default:match('^(.-)|(.-)$')
+        return low .. suffix .. ' to ' .. high .. suffix
+    end
     return choiceLabel(row, row.default)
 end
 local function either(list)

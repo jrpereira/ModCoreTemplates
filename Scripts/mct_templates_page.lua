@@ -30,12 +30,12 @@ end
 local function menu(context)
     local groups, fields = {}, {}
     local function display(id, group, label, value)
-        fields[#fields + 1] = {id=id, group=group, label=clean(label), default=0, readOnly=true,
-            choices={{value=0, label=value}}}
+        fields[#fields + 1] = {id=id, group=group, label=clean(label), default=0, widget='text',
+            values={{value=0, label=value}}}
     end
     local list = read(context.directory)
     if not list then
-        groups[1] = {id='Templates', heading=false}
+        groups[1] = {id='Templates', style='none'}
         display('MCT_Listed_None', 'Templates', 'Templates', 'Available once the game has loaded them')
         return {groups=groups, fields=fields}
     end
