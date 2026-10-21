@@ -63,9 +63,14 @@ local field
 for _,item in ipairs(page.menu.fields) do if item.id==growId then field=item end end
 assert(field and field.type=='range' and field.values.min==0 and field.values.delta[1]==10 and field.values.suffix=='%'
     and field.default[1]==20 and field.default[2]==60 and field.widget==nil,'the page carries a range field')
--- ModCoreSettings compiles it.
-local manifest=require('menu_data').manifest(page.menu)
-assert(manifest:find('Type=range',1,true) and manifest:find('Default=20|60',1,true),'ModCoreSettings takes the range')
+-- ModCoreSettings compiles it, when its Scripts are on LUA_PATH (not in CI).
+local hasMenuData,MenuData=pcall(require,'menu_data')
+if hasMenuData then
+    local manifest=MenuData.manifest(page.menu)
+    assert(manifest:find('Type=range',1,true) and manifest:find('Default=20|60',1,true),'ModCoreSettings takes the range')
+else
+    print('SKIP: ModCoreSettings menu_data not on LUA_PATH')
+end
 
 local selectorId=preview.selectors[category.id].id
 local saved=assert(io.open(moduleRoot..'/config.ini','wb'))
