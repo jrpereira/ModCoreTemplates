@@ -41,6 +41,7 @@ local function read(object,name)
     if name=='position' then return Widget.translation(object) end
     if name=='size' then return Widget.scale(object) end
     if name=='opacity' then return Widget.opacity(object) end
+    if name=='color' then return Widget.color(object) end
     error('unsupported target property '..tostring(name))
 end
 
@@ -56,6 +57,7 @@ local function write(object,name,value)
     if name=='position' then Widget.setTranslation(object,value.X,value.Y); return end
     if name=='size' then Widget.setScale(object,value.X,value.Y); return end
     if name=='opacity' then Widget.setOpacity(object,value); return end
+    if name=='color' then Widget.setColor(object,value); return end
     error('unsupported target property '..tostring(name))
 end
 

@@ -40,6 +40,8 @@ local function widget(name)
     function object:SetRenderScale(value) self.RenderTransform.Scale=value end
     function object:GetRenderOpacity() return self.opacity end
     function object:SetRenderOpacity(value) self.opacity=value end
+    object.ColorAndOpacity={R=1,G=1,B=1,A=1}
+    function object:SetColorAndOpacity(value) self.ColorAndOpacity=value end
     return object
 end
 
@@ -155,4 +157,16 @@ do
     assert(not ok,'unknown slot must not be silently rebuilt')
     assert(unknown:GetChildAt(0)==a and unknown:GetChildAt(1)==c
         and a.Slot.UncapturedState==42)
+end
+
+-- color: a widget's own tint and opacity, restored as a whole.
+do
+    local tinted=widget('tinted')
+    local specs={tinted={'color'}}
+    local saved=State.capture({tinted=tinted},specs,{'tinted'})
+    tinted:SetColorAndOpacity({R=0.6,G=0.65,B=0.9,A=0.7})
+    State.restore({tinted=tinted},specs,{'tinted'},saved)
+    local c=tinted.ColorAndOpacity
+    assert(c.R==1 and c.G==1 and c.B==1 and c.A==1,'color must restore every channel')
+    print('PASS: color capture and restore')
 end

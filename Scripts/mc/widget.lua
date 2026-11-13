@@ -64,6 +64,27 @@ function M.setOpacity(widget, value)
     if M.opacity(widget) ~= value then widget:SetRenderOpacity(value) end
 end
 
+-- A user widget's own colour and opacity, which tints everything it draws.
+function M.color(widget)
+    local value = widget.ColorAndOpacity
+    local color = {}
+    for _, channel in ipairs({'R', 'G', 'B', 'A'}) do
+        local component = tonumber(value and value[channel])
+        assert(component and component == component and math.abs(component) < math.huge,
+            'unavailable color and opacity')
+        color[channel] = component
+    end
+    return color
+end
+
+function M.setColor(widget, value)
+    local current = M.color(widget)
+    if current.R ~= value.R or current.G ~= value.G or current.B ~= value.B
+        or current.A ~= value.A then
+        widget:SetColorAndOpacity({R=value.R, G=value.G, B=value.B, A=value.A})
+    end
+end
+
 function M.prepareLayout(widget)
     widget:ForceLayoutPrepass()
 end
