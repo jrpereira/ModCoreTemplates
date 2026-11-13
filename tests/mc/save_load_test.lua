@@ -8,6 +8,7 @@ local Source=require('mc.widget_source')
 local References=require('mc.lua_references')
 local Runtime=require('mc.runtime')
 local Objects=require('mc.objects')
+local ClassChain=dofile('tests/support/class_chain.lua')
 
 local HUD='/Game/HUD/WBP_Hud.WBP_Hud_C'
 local reads,states,everything={}, setmetatable({}, {__mode='k'}), {}
@@ -28,7 +29,7 @@ local methods={
     GetParent=function(self) return states[self].parent end,
     GetWorld=function() return nil end,
     IsInViewport=function() return true end,
-    IsA=function(self,class) return states[self].classes[(class:gsub('^Class ',''))]==true end,
+    GetClass=function(self) return ClassChain(states[self].classes) end,
     GetChildrenCount=function(self) return #states[self].children end,
     GetChildAt=function(self,index) return states[self].children[index+1] end,
     GetRenderOpacity=function(self) return states[self].opacity end,
@@ -147,12 +148,11 @@ local function wrap(value) return {get=function() return value end} end
 local category={id='hud',objects={
     hud={source='lookup',class=HUD},
     wheel={source='reference',from='hud',member='Wheel'},
-    out={source='create',class='/Script/UMG.CanvasPanel',outer='hud',parent='hud',layout='fill'},
-    bait={source='create',class='/Script/UMG.Overlay',outer='hud',parent='hud',
-        reparent='wheel',destination='out',reparentLayout='canvas'},
+    out={source='create',class='/Script/UMG.CanvasPanel',outer='hud',parent='hud',layout='fill',
+        adopt={'wheel'},adoptLayout='canvas'},
 }}
 local cleanups,touched=0,0
-local template={id='t',category='hud',objects={'out','bait'},
+local template={id='t',category='hud',objects={'out'},
     attach=function(objects,params,original)
         -- A template keeps what its cleanup touches as a weak handle.
         local kept=assert(Objects.hold(objects.out))
@@ -173,7 +173,7 @@ runtime:select('hud',{t={}})
 runtime:start()
 drain()
 local attachments=runtime:attachments('t')
-assert(next(attachments) and made==2, 'the template attaches to the first HUD')
+assert(next(attachments) and made==1, 'the template attaches to the first HUD')
 assert(states[firstWheel].parent and states[states[firstWheel].parent].full:find('Created_1',1,true),
     'the wheel is moved into the created panel')
 assert(hooks['/Script/UMG.UserWidget:AddToViewport'], 'a live HUD arms the widget hooks')
@@ -200,7 +200,7 @@ for _,reference in pairs(current) do
     count=count+1
     assert(host.unwrap(reference)==second, 'only the new HUD is attached')
 end
-assert(count==1 and made==4, 'the template attaches to the new HUD with new created objects')
+assert(count==1 and made==2, 'the template attaches to the new HUD with new created objects')
 assert(service.held>0)
 runtime:stop()
 source.stop()

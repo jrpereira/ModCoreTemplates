@@ -5,7 +5,45 @@ local copy = require('mc.util').copy
 local TemplateTargets = require('mc.template_targets')
 local M = {}
 
-function M.new(template,specs,order,createdSpecs)
+-- Created objects that share a parent stack in template order, (priority, id), as a
+-- full attach would leave them, whatever order they attach in. Keyed by address:
+-- every lookup returns a new wrapper.
+local layers = {}
+local function address(object)
+    local ok, value = pcall(function() return object:GetAddress() end)
+    return ok and value or nil
+end
+local function later(left, right)
+    if left.priority ~= right.priority then return left.priority > right.priority end
+    return left.id > right.id
+end
+-- Moves every sibling layer that belongs above `object` after it, keeping their order.
+local function stack(parent, object, layer)
+    local own = address(object)
+    if not own then return end
+    layers[own] = {priority=layer.priority, id=layer.id, handle=Objects.hold(object)}
+    local above = {}
+    for index = 0, parent:GetChildrenCount() - 1 do
+        local child = parent:GetChildAt(index)
+        local key = address(child)
+        local entry = key and layers[key]
+        if entry and key ~= own then
+            if not Objects.get(entry.handle) then layers[key] = nil
+            elseif later(entry, layer) then above[#above + 1] = child end
+        end
+    end
+    for _, child in ipairs(above) do
+        local saved = Widget.snapshotSlot(child, true)
+        assert(parent:RemoveChild(child) ~= false, 'could not reorder created layer')
+        local slot = parent:AddChild(child)
+        assert(Objects.valid(slot), 'could not restore created layer')
+        Widget.rememberSlot(child, slot)
+        Widget.restoreSlot(child, saved)
+    end
+end
+
+function M.new(template,specs,order,createdSpecs,layer)
+    layer=layer or {priority=template.priority or 100,id=template.id or ""}
     assert(type(template.attach)=='function', 'managed template requires attach')
     assert(template.requiredTargets==nil, 'use template.objects instead of requiredTargets')
     local tree=specs.children and specs or nil
@@ -25,6 +63,8 @@ function M.new(template,specs,order,createdSpecs)
         for _,handle in pairs(created and created.objects or {}) do
             local object=Objects.get(handle)
             if object then
+                local key=address(object)
+                if key then layers[key]=nil end
                 local parent=Objects.parent(object)
                 if parent then
                     local ok,why=pcall(function()
@@ -36,7 +76,7 @@ function M.new(template,specs,order,createdSpecs)
             end
         end
         if failure then error(failure,0) end
-        -- Remove placeholders before restoring native sibling order and slots.
+        -- Created objects are gone; adopted objects return to their saved places.
         local targets,specs,saved,order={},{},{},{}
         for index,move in ipairs(created and created.moves or {}) do
             local object=Objects.get(move.object)
@@ -64,6 +104,10 @@ function M.new(template,specs,order,createdSpecs)
         assert(Objects.valid(slot),spec.name..' could not be attached to '..spec.parent)
         Widget.rememberSlot(object,slot)
         return slot
+    end
+    local function stackCreated(spec,object,targets,dependencies)
+        if not spec.parent then return end
+        stack(target(spec.parent,targets,dependencies),object,layer)
     end
     local function configureSlot(object,layout,slot)
         if not layout then return end
@@ -97,19 +141,19 @@ function M.new(template,specs,order,createdSpecs)
         if spec.opacity~=nil then Widget.setOpacity(object,spec.opacity) end
         if spec.brushColor then object:SetBrushColor(spec.brushColor) end
     end
-    local function reparentCreated(created,targets,dependencies)
+    -- A created object adopts existing objects: they move in as its children and go
+    -- back to their saved parent, order and slot when it is released.
+    local function adoptInto(created,targets,dependencies)
         local moves={}
         -- Capture every source before moving any sibling; otherwise later
         -- sources would save indices already shifted by earlier removals.
         for _,spec in ipairs(createdSpecs) do
-            local sourceName=spec.reparent
-            if sourceName then
+            for _,sourceName in ipairs(spec.adopt or {}) do
                 local object=readyObject(target(sourceName,targets,dependencies),sourceName)
-                local destination=readyObject(target(spec.destination,targets,dependencies),
-                    spec.destination)
+                local destination=readyObject(target(spec.name,targets,dependencies),spec.name)
                 local parent=readyObject(Objects.parent(object),sourceName..' parent')
                 local properties={'parent','order','slot'}
-                if spec.reparentOpacity~=nil then properties[#properties+1]='opacity' end
+                if spec.adoptOpacity~=nil then properties[#properties+1]='opacity' end
                 local saved=State.capture({source=object},{source=properties},{'source'}).source
                 moves[#moves+1]={object=object,parent=parent,destination=destination,
                     spec=spec,sourceName=sourceName,properties=properties,saved=saved}
@@ -123,12 +167,11 @@ function M.new(template,specs,order,createdSpecs)
             created.moves[#created.moves+1]={object=kept,properties=move.properties,
                 saved=move.saved}
             local slot=move.destination:AddChild(object)
-            assert(Objects.valid(slot),move.sourceName..' could not be attached to '
-                ..(spec.destination or spec.name))
+            assert(Objects.valid(slot),move.sourceName..' could not be attached to '..spec.name)
             Widget.rememberSlot(object,slot)
-            configureSlot(object,spec.reparentLayout,slot)
-            if spec.reparentOpacity~=nil then
-                Widget.setOpacity(object,spec.reparentOpacity)
+            configureSlot(object,spec.adoptLayout,slot)
+            if spec.adoptOpacity~=nil then
+                Widget.setOpacity(object,spec.adoptOpacity)
             end
         end
     end
@@ -150,8 +193,9 @@ function M.new(template,specs,order,createdSpecs)
                 TemplateTargets.assign(tree,targets,spec.name,object)
                 local slot=attachCreated(spec,object,targets,dependencies)
                 configureCreated(spec,object,slot)
+                stackCreated(spec,object,targets,dependencies)
             end
-            reparentCreated(created,targets,dependencies)
+            adoptInto(created,targets,dependencies)
             for _,spec in ipairs(createdSpecs) do
                 if spec.prepass then
                     Widget.prepareLayout(dependencies[spec.name])
@@ -253,7 +297,7 @@ function M.new(template,specs,order,createdSpecs)
                     local slot=attachCreated(spec,object,targets,dependencies)
                     configureCreated(spec,object,slot)
                 end
-                reparentCreated(created,targets,dependencies)
+                adoptInto(created,targets,dependencies)
                 for _,spec in ipairs(createdSpecs) do
                     if spec.prepass then Widget.prepareLayout(objects[spec.name]) end
                 end

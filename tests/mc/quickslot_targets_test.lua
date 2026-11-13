@@ -105,9 +105,12 @@ directions(hubRadial,'hub')
 switcher.outer=object('switcherOuter','WidgetTree')
 FName=function(value) return value end
 StaticFindObject=function(path) return {path=path} end
+-- Each constructed object has its own full name, as in the game.
+local constructed=0
 StaticConstructObject=function(class,outer)
     assert(outer==switcher.outer)
-    return object(class.path,class.path:match('([^%.]+)$'))
+    constructed=constructed+1
+    return object(class.path..'_'..constructed,class.path:match('([^%.]+)$'))
 end
 local host={}
 host.valid=function(value) return value~=nil end
@@ -210,6 +213,9 @@ assert(#calls==2 and calls[2]=='update',
     'HUD-owned wheel targets remain resolvable after category reparenting')
 runtime:event({kind='changed',object=switcher,epoch=runtime.epoch})
 assert(#calls==2, 'unchanged wheel identities must not reattach')
+-- Moved out, the switcher keeps only its unrelated sibling: no placeholders.
+assert(switcher:GetChildrenCount()==1 and switcher:GetChildAt(0)==sibling,
+    'moving the wheels out leaves nothing of MCT in the switcher')
 runtime:stop()
 assert(#calls==3 and calls[3]=='detach')
 assert(ability:GetParent()==switcher and consumable:GetParent()==switcher,
@@ -221,3 +227,4 @@ assert(ability.Slot.Padding.Left==11 and ability.Slot.Padding.Bottom==14
     and ability.Slot.HorizontalAlignment==2 and consumable.Slot.VerticalAlignment==2,
     'shared hosts must restore native wheel slot settings')
 print('PASS: separate quickslot and radial targets, two radials, one attachment')
+

@@ -183,16 +183,16 @@ function M.new(host, definitions, templates, state, options)
             local selector=graph.byName[name]
             if selector.create and not (externallyCreated and externallyCreated[name]) then
                 created[#created+1]={name=name,class=selector.class,from=selector.from,
-                    parent=selector.parent,reparent=selector.reparent,
-                    destination=selector.destination,
+                    parent=selector.parent,adopt=selector.adopt,
                     layout=selector.layout,
                     opacity=selector.opacity,brushColor=selector.brushColor,
                     prepass=selector.prepass,
-                    reparentLayout=selector.reparentLayout,
-                    reparentOpacity=selector.reparentOpacity}
+                    adoptLayout=selector.adoptLayout,
+                    adoptOpacity=selector.adoptOpacity}
             end
         end
-        return ManagedTemplate.new(definition,specs,graph.order,created)
+        return ManagedTemplate.new(definition,specs,graph.order,created,
+            {priority=definition.priority or M.DEFAULT_PRIORITY,id=definition.id})
     end
     for _, definition in ipairs(definitions) do
         assert(type(definition.id) == 'string' and not categories[definition.id], 'duplicate/invalid category')

@@ -23,25 +23,22 @@ local category = {
     -- ModCore Controls' Visuals section instead of an MCT or module page.
     slot = { provider = 'controls', slot = 'visuals' },
     -- MCT moves both wheels into its canvas and restores the native hierarchy
-    -- when no quickslot template is selected. The baits keep the wheels'
-    -- switcher slots as compatibility placeholders for native selection calls.
+    -- when no quickslot template is selected. The game's own state picks the
+    -- active wheel wherever the wheels sit, so nothing stays in the switcher.
     -- Created objects cannot declare required; sharedObjects makes their
     -- successful creation a prerequisite for every enabled quickslot template.
-    sharedObjects = {'actions','bait1','bait2'},
+    sharedObjects = {'actions'},
     objects = {
         switcher = {  object = "WidgetSwitcher /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher", source = 'lookup',
             required = true },
         hud_root = { member = '@owner.WidgetTree.RootWidget',
             required = true, source = 'reference', from = 'switcher' },
         actions = { class = '/Script/UMG.CanvasPanel', source = 'create',
-            outer = 'switcher', parent = 'hud_root', layout = 'fill', prepass = true },
-        bait1 = { source = 'create', class = '/Script/UMG.Overlay', outer = 'switcher', parent = 'switcher',
-            opacity = 0, reparent = 'abilities', destination = 'actions', reparentLayout = 'canvas' },
-        bait2 = { source = 'create', class = '/Script/UMG.Overlay', outer = 'switcher', parent = 'switcher',
-            opacity = 0, reparent = 'consumables', destination = 'actions', reparentLayout = 'canvas' },
+            outer = 'switcher', parent = 'hud_root', layout = 'fill', prepass = true,
+            adopt = {'abilities','consumables'}, adoptLayout = 'canvas' },
 
-        -- Resolve through the owning HUD so the baits can move both wheels
-        -- without losing their category targets.
+        -- Resolve through the owning HUD so moving both wheels keeps their
+        -- category targets.
         abilities = { from = 'switcher', member = '@owner.WBP_AA_Quickslots', class = 'WBP_AA_Quickslots_C', source = 'reference' },
         consumables = { from = 'switcher', member = '@owner.WBP_HUD_Quickslots', class = 'WBP_HUD_Quickslots_C', source = 'reference' },
         change_prompt = { source = 'reference', from = 'switcher',

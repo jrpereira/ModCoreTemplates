@@ -103,31 +103,24 @@ local layoutDeclarations={
     root={source='lookup',object='layout-root',required=true},
     wheel={source='reference',from='root',member='Wheel'},
     out={source='create',class='/Script/UMG.CanvasPanel',outer='root',parent='root',
-        layout='fill',prepass=true},
-    bait={source='create',class='/Script/UMG.Overlay',outer='root',parent='root',
-        opacity=0,reparent='wheel',destination='out',
-        reparentLayout='canvas',reparentOpacity=1},
+        layout='fill',prepass=true,adopt={'wheel'},adoptLayout='canvas',adoptOpacity=1},
 }
 local layoutGraph=Selectors.compile(layoutDeclarations)
-local layoutTemplate={objects={'out','bait'},attach=function(values,_,original)
+local layoutTemplate={objects={'out'},attach=function(values,_,original)
     assert(values.root==nil and values.wheel==nil,
         'source dependencies must not be exposed to the template')
-    assert(values.out:GetChildAt(0)==wheel and values.bait:GetParent()==layoutRoot,
-        'bait source must reparent its widget into the output panel')
+    assert(values.out:GetChildAt(0)==wheel and layoutRoot:GetChildrenCount()==1,
+        'the output panel must adopt the wheel, leaving nothing in its old parent')
     assert(values.out.Slot.layout.Anchors.Maximum.X==1 and values.out.Slot.autoSize==false
-        and values.out.prepassed and values.bait.opacity==0,
-        'source must prepare the output panel and hide its bait before attach')
+        and values.out.prepassed,'source must prepare the output panel before attach')
     assert(wheel.Slot.autoSize==true and wheel.opacity==1,
-        'source must prepare the reparented canvas child before attach')
+        'source must prepare the adopted canvas child before attach')
     return original
 end}
 local layoutManager=Manager.new(layoutTemplate,(Targets.compile(layoutGraph,layoutTemplate.objects)),
     layoutGraph.order,{
         {name='out',class='/Script/UMG.CanvasPanel',from='root',parent='root',
-            layout='fill',prepass=true},
-        {name='bait',class='/Script/UMG.Overlay',from='root',parent='root',
-            opacity=0,reparent='wheel',destination='out',
-            reparentLayout='canvas',reparentOpacity=1},
+            layout='fill',prepass=true,adopt={'wheel'},adoptLayout='canvas',adoptOpacity=1},
     })
 StaticFindObject=function(path) return {path=path} end
 StaticConstructObject=function(class,owner)
@@ -138,7 +131,7 @@ local values={}
 assert(layoutManager:attach(layoutRoot,values,{settings={}},{root=layoutRoot,wheel=wheel}))
 assert(layoutManager:detach(layoutRoot))
 assert(layoutRoot:GetChildrenCount()==1 and layoutRoot:GetChildAt(0)==wheel,
-    'detaching source-owned baits must restore the reparented widget')
+    'detaching must return the adopted widget to its parent')
 assert(wheel.opacity==0.4 and wheel.Slot.Padding.Left==7 and wheel.Slot.Padding.Bottom==10,
-    'detaching source-owned baits must restore source opacity and slot settings')
-print('PASS: created objects attach, reparent source targets, and restore lifecycle state')
+    'detaching must restore the adopted widget\'s opacity and slot settings')
+print('PASS: created objects attach, adopt source targets, and restore lifecycle state')
