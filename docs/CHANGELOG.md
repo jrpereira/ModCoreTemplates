@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.8.0
+
+- MCT publishes `templates.layout.changed` (`{category="player.quickslots"}`) once after
+  each pass that may move, show or hide the quickslot key indicators, so ModCore
+  Controls can keep its Hold underlines under the keys. Categories opt in with
+  `layoutEvent = true`. A template's own callback for the event does not publish
+  another.
+- Vendors the ModCore Controls event transport with `controls.slots.global` and
+  `templates.layout.changed`.
+
 ## v1.7.1
 
 - Requires ModCore Settings 1.7.0. No change to templates.

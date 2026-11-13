@@ -25,6 +25,9 @@ available objects; a **template** selects objects and changes their appearance o
   declared slot such as Controls' quickslot visuals area.
 - **React to declared events:** active templates receive game-thread callbacks,
   with one shared subscription per event and isolated callback failures.
+- **Keep companion widgets in place:** MCT announces `templates.layout.changed`
+  after each pass that may move, show or hide the quickslot key indicators, so
+  ModCore Controls can keep its Hold underlines under the keys.
 
 ## Choose the right module
 
