@@ -16,6 +16,12 @@
 --   unblockable  path, indicator, active: the unblockable skull showed (true) or went
 -- direction follows ARROWS: 1 top, 2 bottom, 3 left, 4 right. indicator is the
 -- live object, valid only during the event; path names it for later.
+--
+-- arrow, critical and unblockable (active) may carry stub: the attacking
+-- enemy's DogwoodAIStub path, for consumers that read the attack themselves.
+-- It comes from the attack task (LTT_Attack) the game begins in the same frame
+-- as the icon or the one before; a critical reuses its arrow's stub. stub is nil
+-- when no task pairs with the icon, or when two enemies' tasks do.
 local Objects = require('mc.objects')
 
 local M = {}
@@ -26,6 +32,14 @@ M.ICON = '/Game/_Dawnwalker/UI/_Unified/Combat/WBP_CombatTargetIndicator.WBP_Com
 -- Its 1-4 as ARROWS indices.
 local DIRECTIONS = {[1]=3, [2]=4, [3]=1, [4]=2}
 local UNBLOCKABLE = 9
+-- The attack task an enemy begins as it decides to attack; its object is
+-- <stub>.LTT_Attack_C_N.
+M.ATTACK_TASK = '/Game/_Dawnwalker/AI/LogicTree/Tasks/LTT_Attack.LTT_Attack_C:OnBeginExecute'
+
+-- The attacking stub's path from an attack task's path, or nil.
+function M.stubOf(taskPath)
+    return type(taskPath) == 'string' and taskPath:match('^(.+)%.LTT_Attack_C_%d+$') or nil
+end
 
 local function call(object, method, ...) return Objects.call(object, method, ...) end
 local valid = Objects.valid
@@ -57,11 +71,13 @@ end
 function M.new(api, emit, log)
     assert(type(emit) == 'function', 'emit required')
     local self = {active = false}
-    -- Per indicator path, the attack it shows: {direction, critical}.
+    -- Per indicator path, the attack it shows: {direction, critical, stub}.
     local attacks = {}
     -- The indicator showing the unblockable skull, if any.
     local skullSource
-    local handle
+    local handle, taskHandle
+    -- Recent attack tasks, oldest first: {stub = path, frame = n}.
+    local tasks = {}
     local delivered, sequence = 0, 0
     local failures = {}
 
@@ -77,7 +93,30 @@ function M.new(api, emit, log)
         if not ok then fail('emit', why) end
     end
 
-    local function onIcon(path, icon)
+    local function onTask(stub, frame)
+        local kept = {}
+        for _, task in ipairs(tasks) do
+            if task.frame >= frame - 1 then kept[#kept + 1] = task end
+        end
+        kept[#kept + 1] = {stub = stub, frame = frame}
+        tasks = kept
+    end
+
+    -- The stub whose attack task began in this icon's frame or the one before,
+    -- or nil when none did or different stubs did.
+    local function stubAt(frame)
+        if type(frame) ~= 'number' then return nil end
+        local found
+        for _, task in ipairs(tasks) do
+            if task.frame == frame or task.frame == frame - 1 then
+                if found and found ~= task.stub then return nil end
+                found = task.stub
+            end
+        end
+        return found
+    end
+
+    local function onIcon(path, icon, frame)
         local find = api.StaticFindObject or rawget(_G, 'StaticFindObject')
         local indicator = find(path)
         if not valid(indicator) then
@@ -107,20 +146,23 @@ function M.new(api, emit, log)
         local direction, window = M.attackOf(icon)
         if direction then
             if not (attack and attack.direction == direction) then
-                attack = {direction = direction}
+                attack = {direction = direction, stub = stubAt(frame)}
                 attacks[path] = attack
-                send({kind = 'arrow', direction = direction, path = path, indicator = indicator})
+                send({kind = 'arrow', direction = direction, path = path, indicator = indicator,
+                    stub = attack.stub})
             end
             if window and not attack.critical then
                 attack.critical = true
-                send({kind = 'critical', direction = direction, path = path, indicator = indicator})
+                send({kind = 'critical', direction = direction, path = path, indicator = indicator,
+                    stub = attack.stub})
             end
             return
         end
         if icon == UNBLOCKABLE then
             if skullSource == nil then
                 skullSource = path
-                send({kind = 'unblockable', active = true, path = path, indicator = indicator})
+                send({kind = 'unblockable', active = true, path = path, indicator = indicator,
+                    stub = stubAt(frame)})
             end
             return
         end
@@ -139,9 +181,18 @@ function M.new(api, emit, log)
             local icon = params and params.IconType
             icon = type(icon) == 'table' and icon.value or icon
             local path = object and object.path
-            if type(path) == 'string' and type(icon) == 'number' then onIcon(path, icon) end
+            if type(path) == 'string' and type(icon) == 'number' then onIcon(path, icon, hooked.frame) end
         end)
         if not ok then fail('icon', why) end
+    end
+
+    local function deliverTask(hooked)
+        if not self.active then return end
+        local ok, why = pcall(function()
+            local stub = M.stubOf(hooked.object and hooked.object.path)
+            if stub and type(hooked.frame) == 'number' then onTask(stub, hooked.frame) end
+        end)
+        if not ok then fail('attack task', why) end
     end
 
     local function bridge() return api.UE4SSLuaEventBridge or rawget(_G, 'UE4SSLuaEventBridge') end
@@ -167,7 +218,15 @@ function M.new(api, emit, log)
             return false
         end
         handle = hooked
-        attacks, skullSource = {}, nil
+        -- The attack task only adds stub; without it the events still flow.
+        local taskOk, task, taskWhy = pcall(hooks.Hook, M.ATTACK_TASK,
+            {pre = deliverTask, object_paths = true})
+        if taskOk and task then
+            taskHandle = task
+        elseif log then
+            log.warn('MC_NPCAttackIndicator without stub: ', taskOk and taskWhy or task)
+        end
+        attacks, skullSource, tasks = {}, nil, {}
         delivered = 0
         self.active = true
         if log then log.debug('MC_NPCAttackIndicator hooked') end
@@ -179,8 +238,9 @@ function M.new(api, emit, log)
         if not self.active then return end
         self.active = false
         if handle then pcall(handle.Unhook, handle) end
-        handle = nil
-        attacks, skullSource = {}, nil
+        if taskHandle then pcall(taskHandle.Unhook, taskHandle) end
+        handle, taskHandle = nil, nil
+        attacks, skullSource, tasks = {}, nil, {}
         if log then
             log.debug('MC_NPCAttackIndicator unhooked after ', delivered, ' icon changes')
             for kind, count in pairs(failures) do

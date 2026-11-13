@@ -27,7 +27,9 @@ local hooked,unhooked,caps={},0,{hooks=true,hooks_bp=true}
 local bridge={
     GetCapabilities=function() return caps end,
     Hooks={Hook=function(path,options)
-        assert(options.pre and options.params[1]=='IconType' and options.object_paths)
+        assert(options.pre and options.object_paths)
+        if path==Attacks.ICON then assert(options.params[1]=='IconType')
+        else assert(path==Attacks.ATTACK_TASK and options.params==nil,'the attack task has no params') end
         local handle={}
         function handle:Unhook() hooked[path]=nil; unhooked=unhooked+1; return true end
         hooked[path]=options
@@ -54,12 +56,19 @@ local function take()
     return table.concat(parts,', ')
 end
 -- The bridge delivering one icon change, as it copies it: an enum as value and name.
-local function icon(path,value)
-    hooked[Attacks.ICON].pre({phase='pre',object={address=1,path=path},params={IconType={value=value,name='x'}}})
+local frame=100
+local function icon(path,value,at)
+    hooked[Attacks.ICON].pre({phase='pre',object={address=1,path=path},params={IconType={value=value,name='x'}},
+        frame=at or frame})
+end
+local STUB_A='/Game/Map.ActorStubSystemImpl_0.Guard_A'
+local STUB_B='/Game/Map.ActorStubSystemImpl_0.Guard_B'
+local function task(stub,at,n)
+    hooked[Attacks.ATTACK_TASK].pre({phase='pre',object={address=2,path=stub..'.LTT_Attack_C_'..(n or 0)},frame=at or frame})
 end
 
 assert(next(hooked)==nil,'nothing is hooked before start')
-assert(source:start() and hooked[Attacks.ICON],'start hooks the icon change')
+assert(source:start() and hooked[Attacks.ICON] and hooked[Attacks.ATTACK_TASK],'start hooks the icon change and the attack task')
 assert(source:start(),'a second start keeps the hook')
 
 -- An attack from the left: shown, then its parry window, then resolved.
@@ -121,6 +130,45 @@ icon(MAIN,0)
 assert(take()=='','a missing indicator emits nothing')
 objects[MAIN]=main
 
+-- stub: the attack task begun in the icon's frame or the one before.
+assert(Attacks.stubOf(STUB_A..'.LTT_Attack_C_12')==STUB_A and Attacks.stubOf(STUB_A)==nil)
+icon(MAIN,0) take()
+frame=200
+task(STUB_A,200)
+icon(MAIN,1,200)
+assert(events[1].stub==STUB_A and take()=='arrow 3 main','an arrow in the task\'s frame carries its stub')
+icon(MAIN,5,260)
+assert(events[1].stub==STUB_A and take()=='critical 3 main','a later critical reuses its arrow\'s stub')
+icon(MAIN,0,261) take()
+task(STUB_A,300)
+icon(MAIN,2,301)
+assert(events[1].stub==STUB_A,'the next frame still pairs') take()
+icon(MAIN,0,302) take()
+task(STUB_A,400)
+icon(MAIN,3,402)
+assert(events[1].kind=='arrow' and events[1].stub==nil,'two frames later nothing pairs') take()
+icon(MAIN,0,403) take()
+-- Two enemies' tasks in the window: no guess. The same enemy twice is fine.
+task(STUB_A,500) task(STUB_B,501)
+icon(MAIN,4,501)
+assert(events[1].stub==nil,'two stubs in the window give none') take()
+icon(MAIN,0,502) take()
+task(STUB_A,600) task(STUB_A,600,1)
+icon(MAIN,1,600)
+assert(events[1].stub==STUB_A,'one stub twice still pairs') take()
+icon(MAIN,0,601) take()
+-- The latest task wins over one long before it.
+task(STUB_B,700) task(STUB_A,742)
+icon(MAIN,9,742)
+assert(events[1].kind=='unblockable' and events[1].stub==STUB_A,'the skull carries the latest stub') take()
+icon(MAIN,0,743) take()
+-- A delivery without a frame pairs nothing.
+task(STUB_A,800)
+hooked[Attacks.ICON].pre({object={path=MAIN},params={IconType={value=1}}})
+assert(events[1].kind=='arrow' and events[1].stub==nil) take()
+icon(MAIN,0) take()
+frame=100
+
 -- Malformed deliveries and a failing receiver never escape; one error per kind.
 hooked[Attacks.ICON].pre({object={path=MAIN},params={}})
 assert(take()=='','a call without an icon is ignored')
@@ -137,9 +185,9 @@ for _,line in ipairs(logged) do if line:match('^warn') and line:match('2 more ti
 assert(warned==1,'repeated faults are counted at stop')
 
 -- Stop unhooks and forgets: after a new start the same state is a new attack.
-assert(next(hooked)==nil and unhooked==2,'stop removes the hook')
+assert(next(hooked)==nil and unhooked==4,'stop removes both hooks')
 source:stop()
-assert(unhooked==2,'a second stop has nothing to remove')
+assert(unhooked==4,'a second stop has nothing to remove')
 events={}
 source:start()
 icon(MAIN,2)
@@ -156,4 +204,21 @@ local refusing=Attacks.new(api,function() end,log)
 assert(refusing:start()==false and not refusing.active,'no bridge hooks, no source')
 assert(logged[#logged]:match('Hooks disabled'),'the bridge reason is logged')
 
-print('PASS: attack indicator source emits arrow, critical, resolve and unblockable events from the icon')
+-- An attack task hook the bridge refuses leaves the events without stub.
+caps={hooks=true,hooks_bp=true}
+local realHook=bridge.Hooks.Hook
+bridge.Hooks.Hook=function(path,options)
+    if path==Attacks.ATTACK_TASK then return nil,'no task' end
+    return realHook(path,options)
+end
+local stubless=Attacks.new(api,function(event) events[#events+1]=event end,log)
+assert(stubless:start() and hooked[Attacks.ICON] and not hooked[Attacks.ATTACK_TASK],'the icon hook stands alone')
+local refused=false
+for _,line in ipairs(logged) do refused=refused or (line:match('^warn') and line:match('no task')~=nil) end
+assert(refused,'the refusal is logged')
+icon(MAIN,1)
+assert(take()=='arrow 3 main')
+stubless:stop()
+bridge.Hooks.Hook=realHook
+
+print('PASS: attack indicator source emits arrow, critical, resolve and unblockable events from the icon, with the attacker\'s stub')
