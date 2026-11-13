@@ -182,7 +182,13 @@ function M.generate(registry, options)
         return item
     end
     local entries = {}; for _, entry in ipairs(registry.templates) do entries[#entries + 1] = entry end
-    table.sort(entries, function(a, b) return a.id < b.id end)
+    -- A category's templates show in registration order, independent of priority;
+    -- entries without a registration index follow, by id.
+    table.sort(entries, function(a, b)
+        local x, y = a.order or math.huge, b.order or math.huge
+        if x ~= y then return x < y end
+        return a.id < b.id
+    end)
     local perCategory = {}
     for _, entry in ipairs(entries) do
         local category = entry.template.category

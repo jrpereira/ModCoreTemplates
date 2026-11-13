@@ -1074,6 +1074,25 @@ test('priority-unique templates get one picker per priority', function()
     end
 end)
 
+test('a category page lists its templates in registration order, not by priority', function()
+    local function template(id, priority)
+        return {id=id,category='npc.attacks',objects={'root'},managed=false,priority=priority,
+            menu={{id='Main',label='Main',fields={field('Size',20)}}}}
+    end
+    -- Preymonition registers Background last but stacks it lowest.
+    local templates={template('Omens',10),template('Edges',11),template('Countdown',12),
+        template('Background',9)}
+    local locations={}
+    for n in ipairs(templates) do locations[n]='/Mods/Mod/Scripts/t'..n..'.lua' end
+    local menu=Menu.generate(Model.build({{id='npc.attacks'}},templates,locations).registry)
+    local order={}
+    for _,r in ipairs(menu.rows) do
+        local id=r.id:match('^MCT_(%w+)_Enabled$')
+        if id then order[#order+1]=id end
+    end
+    assert(table.concat(order,',')=='Omens,Edges,Countdown,Background',table.concat(order,','))
+end)
+
 test('id names a template and its settings; label is what the menu shows', function()
     local function build(templates)
         local locations={}

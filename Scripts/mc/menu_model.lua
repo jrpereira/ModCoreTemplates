@@ -88,7 +88,7 @@ function M.build(definitions, templates, locations)
         local metadata = {id=template.id, providerId=template.providerId, label=template.label, category=template.category,
             module=template.module, menu=declaration}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
-            unique=unique, priority=template.priority or Runtime.DEFAULT_PRIORITY, location=assert(locations[index], 'template source path required')}
+            unique=unique, priority=template.priority or Runtime.DEFAULT_PRIORITY, order=index, location=assert(locations[index], 'template source path required')}
     end
     -- A category without templates has nothing to attach, so the runtime and object
     -- source never watch its objects.
