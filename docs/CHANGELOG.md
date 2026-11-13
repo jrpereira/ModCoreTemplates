@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.7.0
+
+- `MC_NPCAttackIndicator` `arrow`, `critical` and `unblockable` (shown) events may carry
+  `stub`: the attacking enemy's `DogwoodAIStub` path. MCT also hooks the enemy's attack
+  task (`LTT_Attack_C:OnBeginExecute`) while the source runs and pairs it with an icon
+  change in the same frame or the next; a `critical` reuses its arrow's stub. `stub` is
+  nil when nothing pairs or two enemies' tasks do. Uses the hook frame from
+  UE4SS Lua Event Bridge 1.2.0. Consumers that ignore `stub` see no change.
+- A quickslot template no longer leaves placeholders in the native switcher: the
+  game picks its active wheel wherever the wheels sit, so MCT's canvas simply takes
+  both wheels and gives them back on detach.
+- Targets can save and restore `color`, a widget's own colour and opacity
+  (`ColorAndOpacity`), which tints everything the widget draws.
+- Created objects declare `adopt`, a list of objects they take in as children (with
+  `adoptLayout` and `adoptOpacity`), in place of a placeholder per moved object
+  with `reparent`, `destination`, `reparentLayout` and `reparentOpacity`.
+- A category's templates show on the settings page in the order their module registers
+  them (`MC.registerTemplate`), instead of by id. Priority does not affect this order.
+- Created objects that share a parent stack in template order, priority then id, as a
+  full attach leaves them. A template enabled while others are already shown slots its
+  layers in beneath those that come after it, instead of on top of all of them.
+- A signal reconciles only the categories whose hooks name it or its opposite.
+  Combat start and end no longer re-check quickslot templates, which cost a
+  visible frame on the first hit with a quickslot template enabled.
+- A captured object is checked as live through its weak handle alone, instead of
+  re-reading its full name on every check.
+- Class checks walk the object's own class chain, read once per class, instead of
+  UE4SS `IsA` with a class path: that form runs `StaticFindObject`, a walk over
+  every object costing about 30 ms a call in Dawnwalker, several times per reconcile.
+
 ## v1.6.0
 
 - Template fields declare what they hold and how they show, as ModCore Settings menu data

@@ -13,7 +13,9 @@ changes reevaluate cached candidates.
 
 ## Path matching
 
-`mc.object_selector` interprets class selectors with `IsA` and resolves
+`mc.object_selector` matches class selectors against the object's own class chain,
+read once per class (UE4SS `IsA` with a class path runs `StaticFindObject`, a walk
+over every object), and resolves
 `WidgetTree` object selectors against a live widget's outer chain. The
 QuickslotsSwitcher selector must have the requested widget class and name,
 its immediate outer must be a live `WidgetTree` instance (`WidgetTree` or

@@ -79,6 +79,9 @@ category page rather than its module page.
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
+A category's templates appear in the order their modules register them
+(`MC.registerTemplate`); priority does not affect this order.
+
 Templates with `uniqueBy = 'category'` share one template picker per category, with
 `None`. Templates with `uniqueBy = 'priority'` share one picker per priority, labelled
 `<Category> (priority <n>)`, after the category picker and lowest priority first.

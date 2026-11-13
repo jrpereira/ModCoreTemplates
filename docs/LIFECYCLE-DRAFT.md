@@ -50,14 +50,20 @@ are passed to callbacks. A created target must be explicitly included to receive
 Groups preserve structure, for example `objects={buttons={'ability_left','ability_right'}}`.
 
 Declare captured properties on category targets or template targets/groups.
-For example, `abilities={properties={'position'}}` captures translation.
+For example, `abilities={properties={'position'}}` captures translation. Properties are
+`parent`, `order`, `slot`, `position`, `size`, `opacity` and `color` (the widget's own
+`ColorAndOpacity`, which tints everything it draws).
 A category's `required=true` targets must be ready; its `sharedObjects` are
 prepared before template attachment and restored after template detachment.
 A template does not need to request shared objects just to activate that preparation.
 
 Created objects require managed lifecycle. MCT attaches them to the declared
 parent before calling `attach`, reuses them during updates and removes them on
-cleanup. Templates own visual layout. See [Object source](OBJECT-SOURCE.md) for
+cleanup. Created objects that share a parent stack in template order (priority, then
+id), whatever order the templates attach in. A created object may `adopt` a list of
+existing objects: they move in as its children, optionally with `adoptLayout='canvas'`
+and `adoptOpacity`, and return to their saved parent, order and slot when it is
+released. Templates own visual layout. See [Object source](OBJECT-SOURCE.md) for
 native lookup and identity limits.
 
 ## Managed callbacks (default)
