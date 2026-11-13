@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.1
+
+- Requires ModCore Settings 1.7.0. No change to templates.
+
 ## v1.7.0
 
 - Requires ModCore Settings 1.6.0.
