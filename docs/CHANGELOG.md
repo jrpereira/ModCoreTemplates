@@ -2,6 +2,7 @@
 
 ## v1.7.0
 
+- Requires ModCore Settings 1.6.0.
 - `MC_NPCAttackIndicator` `arrow`, `critical` and `unblockable` (shown) events may carry
   `stub`: the attacking enemy's `DogwoodAIStub` path. MCT also hooks the enemy's attack
   task (`LTT_Attack_C:OnBeginExecute`) while the source runs and pairs it with an icon
