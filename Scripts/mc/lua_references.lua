@@ -13,10 +13,12 @@ function M.new(source)
     local wrappers = setmetatable({}, {__mode='k'})
     local byIdentity = setmetatable({}, {__mode='v'})
     local holdFailureReported = false
+    -- Capture has already passed source.valid, so a held object only has to be
+    -- alive: its handle carries the lifetime, and its name cannot change into a
+    -- default or reinstanced one. This runs several times per target per pass.
     local function live(reference)
         local record = records[reference]
-        local object = record and Objects.get(record.handle)
-        if object ~= nil and source.valid(object) == true then return object end
+        return record and Objects.get(record.handle) or nil
     end
     function host.valid(reference)
         return live(reference) ~= nil

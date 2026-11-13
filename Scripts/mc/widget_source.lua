@@ -9,7 +9,7 @@ local M = {}
 local safe = Objects.call
 local unwrap = Widget.unwrap
 local function isa(object, class)
-    return safe(object, 'IsA', class) == true or safe(object, 'IsA', 'Class ' .. class) == true
+    return Objects.isA(object, class)
 end
 local function eventClass(selector)
     local class = ObjectSelector.className(selector)

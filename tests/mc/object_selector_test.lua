@@ -7,7 +7,7 @@ local function object(address, full, class, outer)
     function o:GetFullName() return self.full end
     function o:GetClass() return self.class end
     function o:GetOuter() return self.outer end
-    function o:IsA(name) return name==self.class.full or name==self.class.full:match('^%S+%s+(.+)$') end
+    function o:GetSuperStruct() return nil end
     return o
 end
 local class=object(1,'WidgetBlueprintGeneratedClass /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C')

@@ -2,6 +2,7 @@ package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Source=require('mc.widget_source')
 local References=require('mc.lua_references')
 local Runtime=require('mc.runtime')
+local ClassChain=dofile('tests/support/class_chain.lua')
 local objectPath='WidgetSwitcher /Game/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher'
 local classPath='/Game/HUD/WBP_GameHUD.WBP_GameHUD_C'
 local all,created,hooks,finds={}, {}, {}, 0
@@ -14,11 +15,14 @@ local function obj(address,full,classes,outer)
     function o:IsValid() return self.alive end
     function o:GetFullName() return self.full end
     function o:GetOuter() return self.outer end
-    function o:GetClass() return self.class end
+    function o:GetSuperStruct() return nil end
+    function o:GetClass()
+        if self.class and next(self.classes)==nil then return self.class end
+        return ClassChain(self.classes,self.class and self.class.full)
+    end
     function o:GetParent() return self.parent end
     function o:GetWorld() return self.world end
     function o:IsInViewport() return self.inViewport==true end
-    function o:IsA(class) return self.classes[class:gsub('^Class ','')] == true end
     all[#all+1]=o
     return o
 end

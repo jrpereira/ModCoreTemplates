@@ -11,7 +11,10 @@ local function fixture(hooks,options)
     function root:IsValid() return self.valid end
     local errors={}
     local host={
-        valid=function(v) return v~=nil and v.valid~=false end,
+        valid=function(v)
+            if options and options.checks then options.checks.n=options.checks.n+1 end
+            return v~=nil and v.valid~=false
+        end,
         identity=function(v) return v.id end,
         ready=function() return true end,
         matches=function(v,s) return v.class==s.class end,
@@ -59,6 +62,28 @@ local function fixture(hooks,options)
     return runtime,take,errors
 end
 local FOCUS={name='controls.group.focus',group={from=1,to=2}}
+
+do
+    -- A signal reconciles only the categories whose hooks name it or its opposite:
+    -- a full pass costs a frame, and other categories cannot change on it.
+    local checks={n=0}
+    local runtime,take=fixture({wake='MC_PlayerReady'},{checks=checks})
+    runtime:start()
+    runtime:signal('MC_PlayerReady')
+    assert(take()=='a:attach, a:wake MC_PlayerReady')
+    local function cost(signal)
+        checks.n=0
+        runtime:signal(signal)
+        return checks.n
+    end
+    -- With no category to reconcile, nothing is checked at all.
+    assert(cost('MC_CombatStart')==0,'combat does not reconcile a ready-timed category')
+    assert(cost('MC_CombatEnd')==0)
+    assert(take()=='')
+    assert(cost('MC_PlayerUnready')>1,'the opposite of its hook reconciles it')
+    assert(take()=='a:sleep MC_PlayerUnready')
+    runtime:stop()
+end
 
 do
     -- npc.attacks: attach on ready, awake during combat.

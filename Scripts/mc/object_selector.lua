@@ -30,8 +30,7 @@ function M.owner(object)
         local address = call(outer, 'GetAddress')
         if not address or seen[address] then return nil end
         seen[address] = true
-        local widgetClass = call(outer, 'IsA', '/Script/UMG.UserWidget')
-        if widgetClass == true then
+        if Objects.isA(outer, '/Script/UMG.UserWidget') then
             return outer
         end
         outer = call(outer, 'GetOuter')
@@ -68,10 +67,7 @@ function M.matches(object, selector)
             local full = call(object, 'GetFullName')
             return type(full) == 'string' and full:match('^(%S+)') == selector.class
         end
-        local ok, match = pcall(function() return object:IsA(selector.class) end)
-        if ok and match then return true end
-        ok, match = pcall(function() return object:IsA('Class ' .. selector.class) end)
-        return ok and match == true
+        return Objects.isA(object, selector.class)
     end
     if M.widgetOwner(object, selector) then return true end
     local full = call(object, 'GetFullName')

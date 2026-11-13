@@ -24,6 +24,39 @@ function M.same(a, b)
     return type(name) == 'string' and name ~= '' and name == M.call(b, 'GetFullName')
 end
 
+-- Whether object is an instance of the class at path ('/Script/UMG.Widget'; a
+-- leading 'Class ' is ignored). UE4SS's IsA(string) finds the class with
+-- StaticFindObject, which walks every object in Dawnwalker (~30 ms a call), so
+-- this walks the object's own class chain instead. A class's ancestry never
+-- changes: it is read once per class.
+local ancestry = {}
+function M.isA(object, path)
+    path = path:gsub('^Class ', '')
+    local class = M.valid(object) and M.call(object, 'GetClass')
+    if not M.valid(class) then return false end
+    local name = M.call(class, 'GetFullName')
+    if type(name) ~= 'string' then return false end
+    local paths = ancestry[name]
+    if paths == nil then
+        paths = {}
+        local current, depth = class, 0
+        while M.valid(current) and depth < 64 do
+            local full = M.call(current, 'GetFullName')
+            local own = type(full) == 'string' and full:match('^%S+%s+(.+)$')
+            if own then paths[own] = true end
+            local ok, super = pcall(invoke, current, 'GetSuperStruct')
+            -- Without GetSuperStruct the chain cannot be read: fall back to IsA.
+            if not ok then paths = false; break end
+            current, depth = super, depth + 1
+        end
+        ancestry[name] = paths
+    end
+    if paths == false then
+        return M.call(object, 'IsA', path) == true or M.call(object, 'IsA', 'Class ' .. path) == true
+    end
+    return paths[path] == true
+end
+
 -- UMG panel parent, not UObject outer ownership.
 function M.parent(object)
     if not M.valid(object) then return nil end

@@ -435,11 +435,12 @@ function M.new(host, definitions, templates, state, options)
         host.watch(roots)
         discover()
     end
-    function reconcile()
+    -- names limits the pass to those categories, in order; all of them when nil.
+    function reconcile(names)
         for id, object in pairs(candidates) do
             if not host.valid(object) then candidates[id] = nil end
         end
-        for _, name in ipairs(keys(categories)) do
+        for _, name in ipairs(names or keys(categories)) do
             local category = categories[name]
             local resolved,allObjects={},{}
             local function exposeSharedTargets(record,bundles,sharedAttached)
@@ -777,8 +778,9 @@ function M.new(host, definitions, templates, state, options)
             end
         end)
     end
-    -- Records an MCT signal (M.SIGNALS) and reconciles, so categories whose hooks
-    -- name it attach, wake or sleep their templates.
+    -- Records an MCT signal (M.SIGNALS) and reconciles the categories whose hooks
+    -- name it or its opposite, so they attach, wake or sleep their templates. The
+    -- others cannot change on it and are left alone: a full pass costs a frame.
     function self:signal(name)
         assert(M.SIGNALS[name] ~= nil, 'unknown signal: '..tostring(name))
         if unavailable[name] then return end
@@ -787,8 +789,21 @@ function M.new(host, definitions, templates, state, options)
             fired[name] = firings
             if log then log.debug('signal ', name) end
             if self.phase ~= 'running' then return end
+            local affected = {}
+            for _, categoryName in ipairs(keys(categories)) do
+                local hooks = categories[categoryName].hooks
+                if hooks then
+                    for _, hook in ipairs({hooks.attach or false, hooks.wake or false, hooks.sleep or false}) do
+                        if hook == name or hook == M.SIGNALS[name] then
+                            affected[#affected + 1] = categoryName
+                            break
+                        end
+                    end
+                end
+            end
+            if #affected == 0 then return end
             currentSignal = name
-            local ok, why = pcall(reconcile)
+            local ok, why = pcall(reconcile, affected)
             currentSignal = nil
             if not ok then error(why, 0) end
         end)
