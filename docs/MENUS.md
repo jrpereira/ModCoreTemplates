@@ -278,7 +278,11 @@ committed config on Apply. Subscription teardown ignores already-queued events;
 MCT also subscribes to category-independent ModCore events through
 `Scripts/vendor/mc_events.lua`, copied unchanged from ModCoreControls. The latest `controls.group.focus` transition is owned by
 MCT as `bootstrap.state.controls.group = {from=<number>,to=<number>}`; it is empty
-(`{}`) until ModCore Controls reports a focus. Template
+(`{}`) until ModCore Controls reports a focus. The latest `controls.slots.global` set is
+`bootstrap.state.controls.global = {[1]={bool x4},[2]={bool x4}}`: wheel 1 abilities,
+wheel 2 consumables, slots Left, Top, Right, Bottom; a slot is `true` while its Global
+key fires regardless of focus, and every slot is `false` until ModCore Controls
+reports. The event carries the same table as `event.global`. Template
 callbacks receive a copied snapshot at `params.state`. A transition never calls
 `attach` or `update`: those run only when a template must be rebuilt (settings,
 selection or target changes), and then read the current state. The callback copy

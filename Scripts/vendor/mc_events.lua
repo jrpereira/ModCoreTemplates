@@ -5,11 +5,8 @@
 -- Failures are written through api.log, the caller's mc_log logger (or a plain
 -- function(message)), so they follow its log_level.txt. Without one, a WARN-level
 -- mc_log logger is used.
-local M={focus='controls.group.focus'}
-local definitions={
-    [M.focus]={command='MCC_Controls_GroupFocus_v1',data='MCC.Controls.GroupFocus.v1.data',
-        initial={group={}}},
-}
+local M={focus='controls.group.focus',global='controls.slots.global'}
+local definitions
 
 local function logger(api)
     local ok,Log=pcall(require,'mc_log')
@@ -38,34 +35,97 @@ local function transition(payload)
         'invalid control group transition')
     return from,to
 end
-local function decode(payload)
+-- Slots with a working Global key: [wheel][slot], wheel 1 abilities, 2 consumables,
+-- slots Left, Top, Right, Bottom. Encoded as 8 bits, wheel 1 first.
+local function slots(payload)
+    local global=assert(payload and type(payload.global)=='table' and payload.global,
+        'global slots payload required')
+    local result={}
+    for wheel=1,2 do
+        local row=assert(type(global[wheel])=='table' and global[wheel],'global slots wheel required')
+        result[wheel]={}
+        for slot=1,4 do
+            assert(row[slot]==nil or type(row[slot])=='boolean','global slot flags must be booleans')
+            result[wheel][slot]=row[slot]==true
+        end
+    end
+    return result
+end
+local function none() return {{false,false,false,false},{false,false,false,false}} end
+
+definitions={
+    [M.focus]={command='MCC_Controls_GroupFocus_v1',data='MCC.Controls.GroupFocus.v1.data',
+        initial={group={}},
+        encode=function(payload)
+            local from,to=transition(payload)
+            return string.format('%s %d',from and tostring(from) or '-',to)
+        end,
+        decode=function(body)
+            local from,to=body:match('^([12%-]) ([12])$')
+            from,to=tonumber(from),tonumber(to)
+            transition({group={from=from,to=to}})
+            return {group={from=from,to=to}}
+        end,
+        json=function(payload)
+            local from,to=transition(payload)
+            if from==nil then return string.format('{"group":{"to":%d}}',to) end
+            return string.format('{"group":{"from":%d,"to":%d}}',from,to)
+        end,
+        apply=function(state,event)
+            state.revision=event.revision
+            state.controls.group.from=event.group.from
+            state.controls.group.to=event.group.to
+        end},
+    [M.global]={command='MCC_Controls_SlotsGlobal_v1',data='MCC.Controls.SlotsGlobal.v1.data',
+        initial={global=none()},
+        encode=function(payload)
+            local bits={}
+            for wheel,row in ipairs(slots(payload)) do
+                for slot=1,4 do bits[#bits+1]=row[slot] and '1' or '0' end
+            end
+            return table.concat(bits)
+        end,
+        decode=function(body)
+            assert(body:match('^[01]+$') and #body==8,'invalid global slots')
+            local global={{},{}}
+            for index=1,8 do global[(index-1)//4+1][(index-1)%4+1]=body:sub(index,index)=='1' end
+            return {global=global}
+        end,
+        json=function(payload)
+            local rows={}
+            for wheel,row in ipairs(slots(payload)) do
+                rows[wheel]='['..table.concat({tostring(row[1]),tostring(row[2]),
+                    tostring(row[3]),tostring(row[4])},',')..']'
+            end
+            return '{"global":['..table.concat(rows,',')..']}'
+        end,
+        apply=function(state,event) state.controls.global=copy(event.global) end},
+}
+
+local function decode(definition,payload)
     assert(type(payload)=='string' and #payload<=64,'invalid event payload')
-    local revision,from,to=payload:match('^(%d+) ([12%-]) ([12])$')
-    revision,from,to=tonumber(revision),tonumber(from),tonumber(to)
+    local revision,body=payload:match('^(%d+) (.+)$')
+    revision=tonumber(revision)
     assert(revision and revision>=1 and revision<=9007199254740991,'invalid event revision')
-    transition({group={from=from,to=to}})
-    return revision,{group={from=from,to=to}}
+    return revision,definition.decode(body)
 end
 local function revision(payload)
     return type(payload)=='string' and tonumber(payload:match('^(%d+) ')) or 0
 end
 
 function M.format(name,payload)
-    assert(definitions[name],'unsupported event')
-    local from,to=transition(payload)
-    if from==nil then return string.format('%s {"group":{"to":%d}}',name,to) end
-    return string.format('%s {"group":{"from":%d,"to":%d}}',name,from,to)
+    local definition=assert(definitions[name],'unsupported event')
+    return name..' '..definition.json(payload)
 end
 
 function M.publisher(shared)
     return function(name,payload,owner)
         if not shared then return true end
         local definition=assert(definitions[name],'unsupported event')
-        local from,to=transition(payload)
+        local body=definition.encode(payload)
         local previous=revision(shared:GetSharedVariable(definition.data))
         assert(previous>=0 and previous<9007199254740991,'event revision exhausted')
-        shared:SetSharedVariable(definition.data,
-            string.format('%.0f %s %d',previous+1,from and tostring(from) or '-',to))
+        shared:SetSharedVariable(definition.data,string.format('%.0f %s',previous+1,body))
         local controller=owner and owner.controller
         local player=owner and owner.player
         local viewport=player and player.ViewportClient
@@ -86,10 +146,14 @@ function M.subscribe(api,name,onChange)
     local log=logger(api)
     local function receive()
         if not active then return false end
-        local nextRevision,payload=decode(api.ModRef:GetSharedVariable(definition.data))
+        local nextRevision,payload=decode(definition,api.ModRef:GetSharedVariable(definition.data))
         if nextRevision<=state.revision then return false end
         state.revision,state.payload=nextRevision,payload
-        if onChange then onChange({name=name,revision=nextRevision,group=copy(payload.group)},state) end
+        if onChange then
+            local event=copy(payload)
+            event.name,event.revision=name,nextRevision
+            onChange(event,state)
+        end
         return true
     end
     -- An unreadable event is reported and skipped; the next valid one still arrives.
@@ -110,17 +174,16 @@ function M.hub(api,state,onEvent)
     assert(type(state)=='table','event state required')
     assert(onEvent==nil or type(onEvent)=='function','event sink must be a function')
     state.events=state.events or {}
-    state.controls=state.controls or {group={}}
+    state.controls=state.controls or {}
+    state.controls.group=state.controls.group or {}
+    -- No slot has a Global key until ModCore Controls reports otherwise.
+    state.controls.global=state.controls.global or none()
     local subscriptions,interest,active={},{},true
     local hub={}
     local function receive(event,current)
         if not active or (interest[event.name] or 0)==0 then return end
         state.events[event.name]={revision=current.revision,payload=copy(current.payload)}
-        if event.name==M.focus then
-            state.revision=event.revision
-            state.controls.group.from=event.group.from
-            state.controls.group.to=event.group.to
-        end
+        definitions[event.name].apply(state,event)
         if onEvent then onEvent(event,state) end
     end
     function hub:register(template)
