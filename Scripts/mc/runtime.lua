@@ -21,6 +21,8 @@ M.UPDATES = {MC_NPCAttackIndicator=true}
 -- per attachment: wake starts the template's event intake, sleep ends it, and
 -- update carries an update event.
 M.TEMPLATE_EVENTS = {wake=true, sleep=true, update=true}
+-- MCT's own event, published after a turn touches a layoutEvent category.
+M.LAYOUT_EVENT = 'templates.layout.changed'
 -- category.hooks names the signals that time its templates:
 --   attach   new attachments wait until it holds
 --   wake     templates are awake, receiving events, while it holds; defaults to attach
@@ -115,6 +117,10 @@ function M.new(host, definitions, templates, state, options)
     -- awakeChanged(runtime) runs after templates wake or sleep, e.g. so an
     -- update source watches the game only while someone listens.
     local awakeChanged = options.awakeChanged
+    -- layoutChanged(categoryIds) runs once at the end of a serialized turn that ran
+    -- any template or shared-object callback, or revealed a root, in a category
+    -- declaring layoutEvent=true; ids are sorted. Turns that touched none stay silent.
+    local layoutChanged = options.layoutChanged
     -- Lifecycle decisions at TRACE; each subject logs only when its message changes.
     local log = host.log and require('mc_log').wrap(host.log) or nil
     local traced = {}
@@ -131,6 +137,7 @@ function M.new(host, definitions, templates, state, options)
     end
     assert(defer == nil or type(defer) == 'function', 'defer must be a function')
     assert(awakeChanged == nil or type(awakeChanged) == 'function', 'awakeChanged must be a function')
+    assert(layoutChanged == nil or type(layoutChanged) == 'function', 'layoutChanged must be a function')
     for _, name in ipairs({'valid','identity','ready','matches','parent','find','watch','screen','subscribe','onError'}) do
         assert(type(host[name]) == 'function', 'host requires ' .. name)
     end
@@ -204,7 +211,10 @@ function M.new(host, definitions, templates, state, options)
         end
         local category = {settings=copy(definition.settings or {}), graph=graph,
             requiredGraph=Selectors.project(graph,mandatory),
-            templates={}, objects={}}
+            templates={}, objects={}, id=definition.id}
+        assert(definition.layoutEvent == nil or type(definition.layoutEvent) == 'boolean',
+            definition.id..'.layoutEvent must be a boolean')
+        category.layoutEvent = definition.layoutEvent == true
         if definition.sharedObjects ~= nil then
             assert(array(definition.sharedObjects,definition.id..'.sharedObjects')>0,
                 definition.id..'.sharedObjects must not be empty')
@@ -218,7 +228,7 @@ function M.new(host, definitions, templates, state, options)
             category.shared={definition=sharedDefinition,graph=sharedGraph,
                 targetTree=TemplateTargets.compile(graph,definition.sharedObjects),
                 manager=managedRecord(sharedDefinition,sharedGraph,definition.sharedObjects),
-                attached={},exposed={}}
+                attached={},exposed={},category=category}
         end
         -- attachDelay (ms): the game may create a root before filling its content.
         -- A newly found root attaches this long after it first could.
@@ -272,7 +282,7 @@ function M.new(host, definitions, templates, state, options)
             overrides={}, settings={}, revision=0, attached={}, pending={}, waiting={},
             manager=manager, graph=graph,
             targetTree=targetTree,sharedTargets=sharedTargets,
-            priority=template.priority or M.DEFAULT_PRIORITY}
+            priority=template.priority or M.DEFAULT_PRIORITY, category=category}
         byId[template.id], category.templates[template.id] = record, record
     end
     local function report(stage, id, message)
@@ -281,18 +291,28 @@ function M.new(host, definitions, templates, state, options)
         -- A diagnostic failure must not break another template's lifecycle.
         pcall(host.onError, error)
     end
+    -- Categories with layoutEvent whose widgets callbacks may have changed this turn.
+    local touched = nil
+    local function touch(category)
+        if touched and category and category.layoutEvent then touched[category.id] = true end
+    end
     local function serialize(operation)
         queue[#queue + 1] = operation
         if busy then return end
         busy = true
-        failedInTurn = {}
+        failedInTurn, touched = {}, {}
         local index = 1
         while index <= #queue do
             local ok, why = pcall(queue[index])
             if not ok then report('runtime', nil, why) end
             index = index + 1
         end
-        queue, busy, failedInTurn = {}, false, nil
+        local changed = keys(touched)
+        queue, busy, failedInTurn, touched = {}, false, nil, nil
+        if layoutChanged and #changed > 0 then
+            local ok, why = pcall(layoutChanged, changed)
+            if not ok then report('layout', nil, why) end
+        end
     end
     local function refreshSettings(category, record)
         record.settings = overlay(category.settings, overlay(record.defaults, record.overrides))
@@ -305,6 +325,7 @@ function M.new(host, definitions, templates, state, options)
     end
     local function invoke(record, operation, object, settings, targets, oldScreen)
         settings = settings or record.settings
+        touch(record.category)
         -- Publish the same effective values for callbacks using template.settings.
         record.definition.settings = copy(settings)
         local screen,named
@@ -358,6 +379,7 @@ function M.new(host, definitions, templates, state, options)
                 trace(id, name, currentSignal and ' on '..currentSignal or '')
                 local callback = record.definition.events and record.definition.events[name]
                 if callback then
+                    touch(category)
                     local ok, why = pcall(function() return mutate(function()
                         return callback({settings=copy(record.settings), state=copy(state)},
                             {name=name, signal=currentSignal})
@@ -373,8 +395,9 @@ function M.new(host, definitions, templates, state, options)
     end
     local reconcile
     -- Restores a root hidden while its attachDelay ran; a dead root is not touched.
-    local function revealRoot(rootState)
+    local function revealRoot(rootState, category)
         if type(rootState)~='table' or not rootState.hidden then return end
+        touch(category)
         local live=Objects.get(rootState.hidden)
         if live then pcall(function() live:SetRenderOpacity(rootState.opacity) end) end
         Objects.release(rootState.hidden)
@@ -479,12 +502,12 @@ function M.new(host, definitions, templates, state, options)
                 local ok,why=pcall(defer,delay.ms,function()
                     if delay.roots[token]~=rootState or rootState.generation~=generation then return end
                     delay.roots[token]='settled'
-                    revealRoot(rootState)
+                    revealRoot(rootState,category)
                     if self.phase=='running' then serialize(function() reconcile() end) end
                 end)
                 if not ok then
                     delay.roots[token],settledThisTurn[token]='settled',true
-                    revealRoot(rootState)
+                    revealRoot(rootState,category)
                     report('attach delay',nil,why)
                     return true
                 end
@@ -497,7 +520,7 @@ function M.new(host, definitions, templates, state, options)
                 for token,rootState in pairs(category.attachDelay.roots) do
                     if not candidates[token] then
                         category.attachDelay.roots[token]=nil
-                        revealRoot(rootState)
+                        revealRoot(rootState,category)
                     end
                 end
             end
@@ -553,6 +576,7 @@ function M.new(host, definitions, templates, state, options)
                 local bundles=resolved[id] and resolved[id].bundles or {}
                 for _, token in ipairs(keys(record.pending)) do
                     local pending=record.pending[token]
+                    touch(category)
                     local ok,why=pcall(function() return mutate(function()
                         if host.valid(pending.object) and targetsValid(pending.targets,host) then
                             assert(record.manager:detach(pending.root))
@@ -767,6 +791,9 @@ function M.new(host, definitions, templates, state, options)
                             if not (host.valid(attached.object) and targetsValid(attached.targets,host)) then
                                 return
                             end
+                            -- A callback answering MCT's own layout event must not
+                            -- publish another, or the two would feed each other.
+                            if event.name~=M.LAYOUT_EVENT then touch(record.category) end
                             local params={settings=copy(attached.settings),screen=attached.screen,
                                 state=copy(state)}
                             return callback(params,copy(event),TemplateTargets.arrange(record.targetTree,
@@ -817,7 +844,7 @@ function M.new(host, definitions, templates, state, options)
                     for token,rootState in pairs(category.attachDelay.roots) do
                         if type(rootState)=='table' then
                             category.attachDelay.roots[token]='settled'
-                            revealRoot(rootState)
+                            revealRoot(rootState,category)
                             pending=true
                         end
                     end
@@ -923,7 +950,7 @@ function M.new(host, definitions, templates, state, options)
             candidates,activeRoots,searchSignature = {},{},nil
             for _,category in pairs(categories) do
                 if category.attachDelay then
-                    for _,rootState in pairs(category.attachDelay.roots) do revealRoot(rootState) end
+                    for _,rootState in pairs(category.attachDelay.roots) do revealRoot(rootState,category) end
                     category.attachDelay.roots={}
                 end
             end

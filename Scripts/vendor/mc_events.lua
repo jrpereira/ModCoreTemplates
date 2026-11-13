@@ -5,7 +5,7 @@
 -- Failures are written through api.log, the caller's mc_log logger (or a plain
 -- function(message)), so they follow its log_level.txt. Without one, a WARN-level
 -- mc_log logger is used.
-local M={focus='controls.group.focus',global='controls.slots.global'}
+local M={focus='controls.group.focus',global='controls.slots.global',layout='templates.layout.changed'}
 local definitions
 
 local function logger(api)
@@ -100,6 +100,29 @@ definitions={
             return '{"global":['..table.concat(rows,',')..']}'
         end,
         apply=function(state,event) state.controls.global=copy(event.global) end},
+    -- ModCore Templates ran a pass that may have moved, shown, hidden or faded a
+    -- category's widgets. Published by MCT, one per pass and category.
+    [M.layout]={command='MCT_Templates_LayoutChanged_v1',data='MCT.Templates.LayoutChanged.v1.data',
+        initial={},
+        encode=function(payload)
+            local category=payload and payload.category
+            assert(type(category)=='string' and #category<=40 and category:match('^[%w_%.]+$'),
+                'invalid layout category')
+            return category
+        end,
+        decode=function(body)
+            assert(#body<=40 and body:match('^[%w_%.]+$'),'invalid layout category')
+            return {category=body}
+        end,
+        json=function(payload)
+            local category=payload and payload.category
+            assert(type(category)=='string' and category:match('^[%w_%.]+$'),'invalid layout category')
+            return '{"category":"'..category..'"}'
+        end,
+        apply=function(state,event)
+            state.layout=state.layout or {}
+            state.layout[event.category]=event.revision
+        end},
 }
 
 local function decode(definition,payload)

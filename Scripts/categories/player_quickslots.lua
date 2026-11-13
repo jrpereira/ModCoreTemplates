@@ -28,6 +28,9 @@ local category = {
     -- Created objects cannot declare required; sharedObjects makes their
     -- successful creation a prerequisite for every enabled quickslot template.
     sharedObjects = {'actions'},
+    -- Every pass that may move, show or hide the key indicators publishes
+    -- templates.layout.changed, so ModCore Controls re-copies their layout.
+    layoutEvent = true,
     objects = {
         switcher = {  object = "WidgetSwitcher /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher", source = 'lookup',
             required = true },

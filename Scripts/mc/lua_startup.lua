@@ -145,6 +145,31 @@ function M.start(options, api)
         end)
         configured.closeState=function() return configured.events:stop() end
     end
+    -- Tells other mods, e.g. ModCore Controls, that a pass may have moved, shown or
+    -- hidden widgets in a layoutEvent category, so they re-read them.
+    if not configured.layoutChanged and api.ModRef then
+        local publish=Events.publisher(api.ModRef)
+        local log=configured.log and require('mc_log').wrap(configured.log) or nil
+        configured.layoutChanged=function(categoryIds)
+            local owner
+            if type(api.FindFirstOf)=='function' then
+                pcall(function()
+                    local controller=api.FindFirstOf('PlayerController')
+                    if controller and controller:IsValid() then
+                        owner={controller=controller,player=controller.Player}
+                    end
+                end)
+            end
+            for _,id in ipairs(categoryIds) do
+                local ok,why=pcall(publish,Events.layout,{category=id},owner)
+                if not ok or why==false then
+                    if log then log.warn('layout event publication failed: ',id,': ',tostring(why)) end
+                elseif log then
+                    log.debug('published ',Events.layout,' ',id,owner and '' or ' (no player to notify)')
+                end
+            end
+        end
+    end
     bootstrap=Bootstrap.new(configured)
     return bootstrap
 end

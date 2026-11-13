@@ -310,6 +310,18 @@ is not called. Callback failures are isolated and reported.
 Managed templates restore the captured originals on detach or rebuild, so
 in-place changes to declared properties need no cleanup.
 
+MCT publishes one event of its own, `templates.layout.changed`, for categories that
+declare `layoutEvent = true` (today `player.quickslots`). Its payload is
+`{category=<id>}`. It goes out once at the end of each runtime turn that may have
+moved, shown or hidden that category's widgets: any template or shared-object
+attach, update or detach (failed ones included), wake or sleep callback, event
+callback on a live attachment, or attachDelay reveal. One turn sends at most one
+event per category, never one per widget, and a turn that ran no callback sends
+none. Other mods that place widgets beside the category's own, such as ModCore
+Controls' Hold underlines, re-read the layout when it arrives. Per-frame update events
+(`runtime:emit`) do not publish it, and neither does a template's own callback for
+`templates.layout.changed`, so the event cannot feed itself.
+
 Use menu values/config as the selection authority when `settingsApi` is supplied.
 The bootstrap's direct `selections` / `categorySettings` options remain available for
 standalone runtime fixtures and hosts without menu subscriptions. Do not mix direct

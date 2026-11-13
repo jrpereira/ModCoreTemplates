@@ -56,6 +56,9 @@ For example, `abilities={properties={'position'}}` captures translation. Propert
 A category's `required=true` targets must be ready; its `sharedObjects` are
 prepared before template attachment and restored after template detachment.
 A template does not need to request shared objects just to activate that preparation.
+A category declaring `layoutEvent=true` has MCT publish `templates.layout.changed`
+after each turn that may have moved, shown or hidden its widgets; see
+[Template menus](MENUS.md).
 
 Created objects require managed lifecycle. MCT attaches them to the declared
 parent before calling `attach`, reuses them during updates and removes them on
