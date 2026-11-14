@@ -136,8 +136,9 @@ params.onCleanup(function()
     local live = Objects.get(kept)
     if live then Widget.setOpacity(live, opacity) end
 end)
-``` Prefer declared [event callbacks](MENUS.md#apply-behavior)
-when reacting to wheel focus.
+```
+
+Prefer declared [event callbacks](MENUS.md#apply-behavior) when reacting to wheel focus.
 
 Managed templates need only `attach`. With `managed=false`, all three callbacks
 are required: `attach(root, params, objects)`, `update(root, params, objects)` and
