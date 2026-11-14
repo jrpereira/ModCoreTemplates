@@ -34,6 +34,9 @@
   `template` and `provider`.
 - When MCT fails to start, it logs one CRITICAL line and closes template registration,
   so providers that load later are told registration is not open.
+- A root waiting out its category's `attachDelay` attaches at the latest three delays
+  after it was first found (6 seconds for quickslots), even while lifecycle events keep
+  restarting its timer.
 
 ## v1.8.0
 

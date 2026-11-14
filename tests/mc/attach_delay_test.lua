@@ -25,7 +25,11 @@ local function fixture(withDefer)
     }
     local timers={}
     local options={}
-    if withDefer then options.defer=function(ms,callback) timers[#timers+1]={ms=ms,run=callback} end end
+    -- The deadline timer, set once per root, is kept apart from the restartable ones.
+    if withDefer then options.defer=function(ms,callback)
+        if ms==2000*Runtime.ATTACH_DEADLINE then timers.deadline={ms=ms,run=callback}
+        else timers[#timers+1]={ms=ms,run=callback} end
+    end end
     local attaches,attachOpacity=0,nil
     local category={id='c',attachDelay=2000,objects={root={source='lookup',class='Root'}}}
     local templates={}
@@ -88,6 +92,20 @@ do
     assert(attaches()==1, 'the superseded timer does nothing after settle')
     runtime:settle()
     assert(attaches()==1, 'settle with nothing waiting does nothing')
+    runtime:stop()
+end
+
+do
+    -- A root that keeps being reached settles at the deadline from first sighting.
+    local runtime,root,timers,attaches,attachOpacity=fixture(true)
+    runtime:start()
+    assert(timers.deadline and timers.deadline.ms==6000, 'first sighting sets a deadline')
+    for _=1,5 do runtime:event({kind='changed',object=root,epoch=runtime.epoch}) end
+    assert(attaches()==0 and #timers==6 and root.opacity==0)
+    timers.deadline.run()
+    assert(attaches()==1 and attachOpacity()==0.8, 'the deadline attaches the root, revealed')
+    timers[#timers].run()
+    assert(attaches()==1, 'a pending restart timer does nothing once settled')
     runtime:stop()
 end
 

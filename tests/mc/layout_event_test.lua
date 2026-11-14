@@ -159,7 +159,7 @@ test('an attachDelay reveal publishes even when nothing attaches', function()
         nil, {layoutChanged=function(ids) passes[#passes + 1] = table.concat(ids, ',') end,
               defer=function(_, callback) timers[#timers + 1] = callback end})
     runtime:select('player.quickslots', {bars={}}); runtime:start()
-    assert(root.opacity == 0 and #timers == 1, 'the root waits hidden')
+    assert(root.opacity == 0 and #timers == 2, 'the root waits hidden, with a deadline and a delay timer')
     runtime:select('player.quickslots', {})
     local before = #passes
     timers[#timers]()

@@ -56,6 +56,8 @@ local function keys(values)
 end
 -- A template's priority when it declares none: after those that do.
 M.DEFAULT_PRIORITY = 100
+-- A waiting root settles at the latest this many attachDelays after it was first found.
+M.ATTACH_DEADLINE = 3
 -- The group of templates in a category of which at most one is enabled or attached,
 -- from template.uniqueBy: 'category' (one per category), 'priority' (one per priority
 -- within the category) or false/nil (no limit, returns nil).
@@ -231,7 +233,8 @@ function M.new(host, definitions, templates, state, options)
                 attached={},exposed={},category=category}
         end
         -- attachDelay (ms): the game may create a root before filling its content.
-        -- A newly found root attaches this long after it first could.
+        -- A newly found root attaches this long after the last reconcile reached it,
+        -- and at most ATTACH_DEADLINE times this long after it was first found.
         if definition.attachDelay ~= nil then
             assert(type(definition.attachDelay) == 'number' and definition.attachDelay > 0,
                 definition.id..'.attachDelay must be a positive number of milliseconds')
@@ -475,8 +478,9 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
             -- Whether a root's attachDelay has passed. A root waits until no reconcile
-            -- has reached it for delay.ms; each one restarts its timer. Once settled, a
-            -- root attaches without waiting, so a later menu selection does not wait.
+            -- has reached it for delay.ms; each one restarts its timer, up to a deadline of
+            -- DEADLINE times the delay from first sighting. Once settled, a root attaches
+            -- without waiting, so a later menu selection does not wait.
             -- While it waits the root is hidden, so its unfinished native content never
             -- shows; it is revealed in the same game-thread call that attaches it.
             local settledThisTurn={}
@@ -496,18 +500,25 @@ function M.new(host, definitions, templates, state, options)
                         rootState.hidden,rootState.opacity=handle,tonumber(opacity)
                     elseif handle then Objects.release(handle) end
                 end
+                -- Settles the root when it fires, unless the root is gone or settled, or
+                -- a later reconcile restarted its timer (generation; nil for the deadline).
+                local function settleAfter(ms,generation)
+                    return pcall(defer,ms,function()
+                        -- Reveal inside a turn, so the reveal publishes the layout event.
+                        serialize(function()
+                            if delay.roots[token]~=rootState
+                                or generation and rootState.generation~=generation then return end
+                            delay.roots[token]='settled'
+                            revealRoot(rootState,category)
+                            if self.phase=='running' then reconcile() end
+                        end)
+                    end)
+                end
+                local ok,why=true,nil
+                if rootState.generation==0 then ok,why=settleAfter(delay.ms*M.ATTACH_DEADLINE) end
                 rootState.generation=rootState.generation+1
                 delay.roots[token]=rootState
-                local generation=rootState.generation
-                local ok,why=pcall(defer,delay.ms,function()
-                    -- Reveal inside a turn, so the reveal publishes the layout event.
-                    serialize(function()
-                        if delay.roots[token]~=rootState or rootState.generation~=generation then return end
-                        delay.roots[token]='settled'
-                        revealRoot(rootState,category)
-                        if self.phase=='running' then reconcile() end
-                    end)
-                end)
+                if ok then ok,why=settleAfter(delay.ms,rootState.generation) end
                 if not ok then
                     delay.roots[token],settledThisTurn[token]='settled',true
                     revealRoot(rootState,category)
