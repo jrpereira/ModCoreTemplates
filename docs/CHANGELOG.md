@@ -6,6 +6,18 @@
   hooks with `Hooks.Request`, which waits for the indicator's class to load
   without polling, and removes them with `Remove()`. With an older bridge the
   indicator logs that it is unavailable. No change for templates.
+- Requires ModCore Settings 1.8.0. Template pickers are keyed: the config saves the
+  template's id, such as `MCT_Template=Fangdango_SingleUnderbar`, and `None` for no
+  template. Saved template choices from earlier versions reset to their default once.
+- Template ids are unique within a module: loading prefixes each with its module id
+  (`<Module>_<Id>`), so two modules can use the same id. `template.localId` keeps the
+  declared id. Two templates whose setting names would match are not both loaded; the
+  later provider file is rejected.
+- Setting ids are derived, not stored: `Scripts/cache/identity-catalog.lua` is no longer
+  written or read and can be deleted.
+- Apply notifications use ModCore Settings' settings_api v2, which carries ranges as
+  text, so MCT no longer re-reads ranges from the config after an Apply.
+- A config file saved with a UTF-8 byte order mark keeps its first setting.
 
 ## v1.8.0
 

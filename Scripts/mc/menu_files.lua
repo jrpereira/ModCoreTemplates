@@ -1,4 +1,3 @@
-local Layout = require('mc.layout')
 local Menu = require('mc.menu')
 local Provider = require('mc.provider_settings')
 local SafeFile = require('safe_file')
@@ -12,36 +11,13 @@ local function writeChanged(path, content)
     return SafeFile.write(path, content)
 end
 
-local function catalogSource(catalog)
-    local lines = {'return {version=1,next=' .. catalog.next .. ',entries={'}
-    local keys = {}
-    for key in pairs(catalog.entries) do keys[#keys + 1] = key end
-    table.sort(keys)
-    for _, key in ipairs(keys) do
-        lines[#lines + 1] = string.format('[%q]=%d,', key, catalog.entries[key])
-    end
-    lines[#lines + 1] = '},names={'
-    keys = {}
-    for key in pairs(catalog.names or {}) do keys[#keys + 1] = key end
-    table.sort(keys)
-    for _, key in ipairs(keys) do
-        lines[#lines + 1] = string.format('[%q]=%q,', key, catalog.names[key])
-    end
-    lines[#lines + 1] = '}}\n'
-    return table.concat(lines, '\n')
-end
-
-function M.readCatalog(root)
-    local path = Layout.prepare(root).catalog
-    return read(path) and assert(loadfile(path, 't', {}))() or nil
-end
-
-function M.publish(root, menu)
-    -- Reserve IDs durably before any manifest using them is published.
-    writeChanged(Layout.prepare(root).catalog, catalogSource(menu.catalog))
-end
-
 local accepted = Menu.accepts
+
+-- A config value as its row reads it: ranges and keyed enums as text, others as numbers.
+local function parsed(row, text)
+    if row.type == 'range' or Menu.keyed(row) then return text end
+    return tonumber(text)
+end
 
 local function validText(spec, value)
     return value ~= nil and (pcall(Provider.validateText, spec.format, value))
@@ -69,13 +45,12 @@ local function ensureConfig(path, rows, textSettings)
     local changes, missing = {}, {}
     for _, row in ipairs(rows) do
         if not row.action then
-            local range = row.type == 'range'
-            local default = range and row.default or string.format('%.17g', row.default)
+            local default = type(row.default) == 'string' and row.default or string.format('%.17g', row.default)
             assert(accepted(row, row.default), 'invalid default setting ' .. row.id)
             local entry = present[row.id]
             if not entry then
                 missing[#missing + 1] = {row.id, default}
-            elseif not accepted(row, range and entry.value or tonumber(entry.value)) then
+            elseif not accepted(row, parsed(row, entry.value)) then
                 changes[#changes + 1] = {row.id, default}
             end
         end
@@ -109,7 +84,7 @@ local function readConfigValues(path, textSettings, rows)
         if textSettings and textSettings[key] then
             local ok, text = pcall(Provider.validateText, textSettings[key].format, entry.value)
             if ok then values[key] = text end
-        elseif known[key] ~= true and known[key].type == 'range' then
+        elseif known[key] ~= true and (known[key].type == 'range' or Menu.keyed(known[key])) then
             if accepted(known[key], entry.value) then values[key] = entry.value end
         else
             local value = tonumber(entry.value)

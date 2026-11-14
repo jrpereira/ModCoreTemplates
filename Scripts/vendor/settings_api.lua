@@ -1,10 +1,12 @@
 -- Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
--- Public, game-agnostic client for durable DMM Apply notifications. Consumers copy this
--- file unchanged into their Scripts/vendor folder; the transport is private to DMM.
-local M={version=1}
+-- Public, game-agnostic client for durable Apply notifications. Consumers copy this file
+-- unchanged into their Scripts/vendor folder; ModCoreSettings publishes the transport.
+-- Version 2: a value is a number, or text (a keyed picker's key, a range's 'low|high', a
+-- keybind) exactly as the page stores it.
+local M={version=2}
 local subscriptions={}
 local owner=tostring({}):gsub('%W','')
-local prefix='DMM_SettingsApplied_v1_'
+local prefix='MC_SettingsApplied_v2_'
 
 local function hex(value)
     assert(type(value)=='string' and #value>0 and #value<=128,'invalid provider Id')
@@ -17,6 +19,17 @@ end
 local function finite(value)
     return type(value)=='number' and value==value and math.abs(value)<=1000000000
 end
+-- 'n<number>' or 's<hex text>'.
+local function decode(value)
+    local kind,body=value:sub(1,1),value:sub(2)
+    if kind=='n' then
+        local number=tonumber(body)
+        assert(finite(number),'invalid notification value')
+        return number
+    end
+    assert(kind=='s' and #body<=2048 and #body%2==0 and not body:find('[^%da-f]'),'invalid notification value')
+    return (body:gsub('..',function(c) return string.char(tonumber(c,16)) end))
+end
 local function revision(payload)
     return type(payload)=='string' and tonumber(payload:match('^(%d+)\n')) or 0
 end
@@ -28,8 +41,8 @@ local function read(providerId,payload)
     for line in payload:sub(assert(payload:find('\n',1,true))+1):gmatch('[^\n]+') do
         local key,old,new=line:match('^(%x+) ([^ ]+) ([^ ]+)$')
         assert(key,'invalid settings notification row')
-        key=unhex(key);old,new=tonumber(old),tonumber(new)
-        assert(finite(old) and finite(new) and values[key]==nil,'invalid notification value')
+        key=unhex(key);old,new=decode(old),decode(new)
+        assert(values[key]==nil,'invalid notification value')
         count=count+1;assert(count<=256,'too many notification values')
         values[key]=new
         if old~=new then changes[key]={old=old,new=new} end

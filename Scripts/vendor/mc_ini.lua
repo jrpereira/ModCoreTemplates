@@ -3,14 +3,16 @@
 -- '#' comment lines. Parsing records byte offsets, so an edit splices the original text and
 -- every other byte, line ending and comment stays as it was. Policies (repeated keys, which
 -- lines are errors, inline comments in values) belong to the caller.
-local M={version=1}
+local M={version=2}
+local BOM='\239\187\191'
 local function trim(s) return (s or ''):match('^%s*(.-)%s*$') end
 M.trim=trim
 
 -- Returns doc:
 --   text      the parsed text
 --   newline   '\r\n' when the text uses it anywhere, else '\n'
---   lines     each line: text (without its line ending), start (byte offset), finish (the
+--   lines     each line: text (without its line ending, and for the first line without a
+--             leading UTF-8 BOM, which stays in doc.text), start (byte offset), finish (the
 --             offset after its line ending); a text ending in a line ending has no empty
 --             last line
 --   sections  in order; sections[1] is the global section (name '', no header) holding the
@@ -31,7 +33,10 @@ function M.parse(text)
     while start<=#text do
         local stop=text:find('\n',start,true)
         local finish=stop and stop+1 or #text+1
-        local line=text:sub(start,(stop or #text+1)-1):gsub('\r$','')
+        -- A leading BOM is not part of the first line, so a header there still matches; the
+        -- offsets keep counting it, so edits splice the original bytes.
+        local skip=start==1 and text:sub(1,3)==BOM and 3 or 0
+        local line=text:sub(start+skip,(stop or #text+1)-1):gsub('\r$','')
         local n=#doc.lines+1
         doc.lines[n]={text=line,start=start,finish=finish}
         local clean=trim(line)
@@ -47,7 +52,7 @@ function M.parse(text)
                 if key and trim(key)~='' then
                     local before,value=raw:match('^(%s*)([^;#]*)')
                     value=value:gsub('%s+$','')
-                    local first=start+#line-#raw+#before
+                    local first=start+skip+#line-#raw+#before
                     current.entries[#current.entries+1]={key=trim(key),raw=raw,value=value,line=n,
                         section=current,valueFirst=first,valueLast=first+#value-1}
                 else

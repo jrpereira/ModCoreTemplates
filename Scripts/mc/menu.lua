@@ -57,69 +57,21 @@ local function moduleRoot(location)
 end
 M.moduleRoot = moduleRoot
 
--- The returned catalog must be persisted alongside the published pages before startup.
--- Removed mappings remain reserved, preventing saved numeric choices from changing meaning.
+-- Ids are derived, not stored: a template picker's choice keys are the templates' full
+-- ids (keyed enum, stored as text by ModCoreSettings), and generated setting and group
+-- ids are readable names. A name two templates would share fails the menu, so startup
+-- rejects the later provider file.
 -- options.version is the release from VERSION; pages omit their version without it.
 function M.generate(registry, options)
     options = options or {}
-    -- The readable ids this registry generates, from a run that changes no
-    -- holder: only a holder outside it gives its id up (see namedId).
-    local live = options.live
-    if live == nil then
-        local dry = U.copy(options)
-        dry.live = false
-        live = M.generate(registry, dry).generated
-    end
     assert(options.version == nil or type(options.version) == 'string' and options.version:match('^%d+%.%d+%.%d+$'),
         'invalid menu version')
-    local catalog = U.copy(options.catalog or {version = 1, next = 1, entries = {}})
-    assert(catalog.version == 1 and type(catalog.entries) == 'table', 'invalid identity catalog')
-    assert(type(catalog.next) == 'number' and catalog.next >= 1 and catalog.next % 1 == 0
-        and catalog.next <= 1000000001, 'invalid catalog counter')
-    local occupied = {}
-    for name, value in pairs(catalog.entries) do
-        assert(type(name) == 'string' and type(value) == 'number' and value >= 1
-            and value % 1 == 0 and value <= 1000000000 and value < catalog.next and not occupied[value], 'invalid catalog entry')
-        occupied[value] = true
-    end
-    local function allocate(parts)
-        local name = key(parts)
-        if not catalog.entries[name] then
-            assert(catalog.next <= 1000000000, 'identity catalog exhausted')
-            catalog.entries[name] = catalog.next
-            catalog.next = catalog.next + 1
-        end
-        return catalog.entries[name]
-    end
-    local function id(parts) return 'MCT_' .. allocate(parts) end
-    catalog.names = catalog.names or {}
-    assert(type(catalog.names) == 'table', 'invalid named setting catalog')
-    -- Each public id's holder, and the identities generated in this run.
-    local holders, generated = {}, {}
-    for key, name in pairs(catalog.names) do
-        assert(type(key) == 'string' and type(name) == 'string' and name:match('^MCT_[%w_]+$')
-            and not holders[name], 'invalid/duplicate named setting catalog entry')
-        holders[name] = key
-    end
-    -- A setting takes its readable id unless a setting this registry still
-    -- generates holds it, so a template that moves category keeps its ids and
-    -- saved values, while a live holder always keeps its own. Holders no longer
-    -- generated are dropped at the end of the run.
-    local function namedId(name, fallback)
-        local identity = key(fallback)
-        generated[identity] = true
-        local wanted, kept = 'MCT_' .. name, catalog.names[identity]
-        local holder = holders[wanted]
-        local settingId
-        if holder == nil or holder == identity or (live and not live[holder]) then
-            settingId = wanted
-            if holder and holder ~= identity then catalog.names[holder] = nil end
-            if kept and kept ~= wanted then holders[kept] = nil end
-        else
-            settingId = kept or id(fallback)
-        end
+    -- Each public id's holder: one identity may name an id more than once.
+    local holders = {}
+    local function namedId(name, identityParts)
+        local identity, settingId = key(identityParts), 'MCT_' .. name
+        assert(holders[settingId] == nil or holders[settingId] == identity, 'menu id clash: ' .. settingId)
         holders[settingId] = identity
-        catalog.names[identity] = settingId
         return settingId
     end
     local function publicName(value)
@@ -144,12 +96,12 @@ function M.generate(registry, options)
     end
     local function picker(settingId, label, group, list, visible, title, default)
         return row({id = settingId, label = text(label), group = group, type = 'enum', values = list,
-            default = default == nil and list[1].value or default, visible = visible,
+            default = default == nil and (list[1].key or list[1].value) or default, visible = visible,
             style = title and 'title' or nil})
     end
     -- A generated group is headed by its label and shown only by its visibility rule.
     local function group(identity, label, visible, style, publicId)
-        local groupId = publicId and namedId(publicId, {'group', identity}) or id({'group', identity})
+        local groupId = namedId(publicId, {'group', identity})
         if not groups[groupId] then
             groups[groupId] = true
             groupSections[groupId] = {id = groupId, label = text(label), visible = visible,
@@ -252,12 +204,13 @@ function M.generate(registry, options)
                 local members = byKey[unique]
                 assert(#members <= 63, category .. ': more than 63 templates in one uniqueBy picker'
                     .. ' exceeds picker capacity including None')
-                local values, list, byValue = {0}, {{value = 0, label = 'None'}}, {}
+                local values, list, byValue = {M.NONE}, {{key = M.NONE, label = 'None'}}, {}
                 for _, entry in ipairs(members) do
-                    local value = allocate({'template', entry.id})
+                    local value = entry.id
+                    assert(value ~= M.NONE, category .. ': template id ' .. M.NONE .. ' is reserved')
                     values[#values + 1] = value
                     -- Each template choice notes its module, which ModCoreSettings names.
-                    list[#list + 1] = {value = value, label = text(entry.template.label),
+                    list[#list + 1] = {key = value, label = text(entry.template.label),
                         module = entry.template.module}
                     byValue[value] = entry.id
                 end
@@ -315,10 +268,10 @@ function M.generate(registry, options)
             for _, entry in ipairs(available) do
                 local template, identity = entry.template, entry.id
                 currentOwner = identity
-                local value = allocate({'template', identity})
-                -- Generated ids name the module and the template: MCT_<Provider>_<Id>_...
+                local value = identity
+                -- Generated ids name the module and the template: MCT_<Module>_<Template>_...
                 local templateScope = (template.providerId and publicName(template.providerId) .. '_' or '')
-                    .. publicName(template.id)
+                    .. publicName(template.localId or template.id)
                 local scopePrefix = templateScope .. '_'
                 local definition = {id=entry.id,scope=templateScope,fields={},enabled=template.menu.enabled}
                 local providerGroups = Provider.normalize(template.menu)
@@ -714,22 +667,30 @@ function M.generate(registry, options)
         end
         return state
     end
-    if live then
-        for identity in pairs(catalog.names) do
-            if not generated[identity] then catalog.names[identity] = nil end
-        end
-    end
-    return {menu = aggregateMenu, catalog = catalog, generated = generated,
+    return {menu = aggregateMenu,
         rows = rows, selectors = selectors, pickers = pickers, multiSelectors=multiSelectors, definitions = decoded,
         textSettings = textSettings, decodeState=decodeState, categorySettings=categorySettings,
         decode = decodeAll, aggregate=aggregate, pages=pages,
         pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}
 end
 
+-- The key of a template picker's None choice. A loaded template's id holds an '_', so
+-- none can take it; a template id 'None' is refused.
+M.NONE = 'None'
+
+-- Whether a row is a keyed enum: its choices carry text keys, stored as text.
+function M.keyed(r)
+    return r.type == 'enum' and type(r.values) == 'table' and r.values[1] ~= nil and r.values[1].key ~= nil
+end
+
 -- Whether a row accepts a value: one of an enum's values, a whole number within an
 -- integer's, or a range's canonical '<low>|<high>'.
 function M.accepts(r, value)
     if r.type == 'range' then return type(value) == 'string' and Provider.rangeText(r._bounds, value) == value end
+    if M.keyed(r) then
+        for _, choice in ipairs(r.values) do if choice.key == value then return true end end
+        return false
+    end
     if type(value) ~= 'number' or value ~= value then return false end
     if r.type == 'integer' then return value >= r.values.min and value <= r.values.max and value % 1 == 0 end
     for _, choice in ipairs(r.values) do if choice.value == value then return true end end

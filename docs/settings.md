@@ -18,7 +18,6 @@ a manifest. Leftover `mod_settings.ini` files from older builds are ignored.
 |---|---|
 | `Scripts/cache/config.ini` (MCT root) | Category selections, shared category fields and the settings of templates on category or slot pages |
 | `<Provider>/config.ini` (the template's module root) | Settings of templates whose page is the module page (the default) |
-| `Scripts/cache/identity-catalog.lua` | Numbered setting ids, so saved values survive regeneration |
 | `log_level.txt` (MCT root) | Optional log level |
 
 Keep all of these when updating. Unknown or retired keys are ignored. Invalid saved
@@ -26,11 +25,11 @@ values fall back to the defaults and never block startup.
 
 ## Settings
 
-MCT generates these rows. Setting ids are prefixed `MCT_`; readable ids are kept where
-listed, and the rest are numbered (`MCT_<n>`) through the identity catalog. A template's
-rows are named `MCT_<Module>_<Id>_...`: `<Module>` is the module id ModCoreSettings gives
-for the template's mod folder (its `mod.json` `id`, else the folder name) and `<Id>` the
-template's `id`.
+MCT generates these rows. Every id is derived from the category, module and template,
+so nothing is stored to keep it, and it is prefixed `MCT_`. A template's rows are named
+`MCT_<Module>_<Id>_...`: `<Module>` is the module id ModCoreSettings gives for the
+template's mod folder (its `mod.json` `id`, else the folder name) and `<Id>` the
+template's declared `id`.
 
 ### Template picker
 

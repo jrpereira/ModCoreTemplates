@@ -6,7 +6,7 @@ function M.paths(root)
     root = root:gsub('[/\\]+$', '')
     return {root=root, categories=root .. '/Scripts/categories',
         cache=root .. '/Scripts/cache', config=root .. '/' .. M.configFile,
-        catalog=root .. '/Scripts/cache/identity-catalog.lua', version=root .. '/VERSION',
+        version=root .. '/VERSION',
         templates=root .. '/Scripts/cache/templates.lua'}
 end
 -- The release version from VERSION at the mod root, or nil when absent or invalid.

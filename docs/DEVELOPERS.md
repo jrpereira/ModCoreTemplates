@@ -34,11 +34,14 @@ is skipped without removing other valid templates.
 ## Declare objects and changes
 
 This complete `mc_nudge.lua` moves the ability wheel by 20 local units. `id` is
-required: a letter, then letters, digits, `_` or `.`, unique across all modules. It
-names the template's settings together with the module id, which MCT asks ModCoreSettings
-for when it loads the file (the `id` in the module's `mod.json`, else the folder name):
-`MCT_<Module>_<Id>_...`, such as `MCT_Fangdango_Wheels_Enabled`. `label` is what the menu
-shows and defaults to `id`.
+required: a letter, then letters, digits, `_` or `.`, unique within its module. When
+MCT loads the file it prefixes `id` with the module id, which it asks ModCoreSettings for
+(the `id` in the module's `mod.json`, else the folder name): from then on `template.id` is
+`<Module>_<Id>`, such as `Fangdango_Wheels`, and `template.localId` keeps the declared `id`.
+The template's settings are named `MCT_<Module>_<Id>_...`, such as
+`MCT_Fangdango_Wheels_Enabled`, and a template picker saves the full id. Two templates
+whose names would match are not both loaded: the later provider file is rejected.
+`label` is what the menu shows and defaults to the declared `id`.
 
 ```lua
 local MC = require('mc')

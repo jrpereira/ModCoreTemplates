@@ -9,6 +9,12 @@ local Contributions = require('menu_contributions')
 local Bootstrap = require('mc.bootstrap')
 local Layout = require('mc.layout')
 local U = require('mc.util')
+local Ini=require('mc_ini')
+-- A key's first value in a config section, as mc_ini reads it.
+local function iniValue(content,section,key)
+    local entry=Ini.entries(Ini.parse(content),section,key)[1]
+    return entry and entry.value
+end
 -- MCT reaches the menu through ModCoreSettings. The real DMM parser and MCS
 -- presentation are optional compatibility checks, run only when both are given.
 local choicesPath, presentationPath = os.getenv('MCT_DMM_CHOICES'), os.getenv('MCT_PRESENTATION')
@@ -94,7 +100,7 @@ local function fixture(unique, alphaTarget, betaTarget, locationBase)
         if unique then
             local selector=menu.selectors[category.id]
             for value, identity in pairs(selector.byValue) do
-                if identity==id then values[selector.id]=enabled and value or 0 end
+                if identity==id then values[selector.id]=enabled and value or Menu.NONE end
             end
         else
             for _, item in ipairs(menu.multiSelectors[category.id]) do
@@ -292,13 +298,32 @@ test('template switch detaches with old settings before attaching new selection'
     assert(f.calls[3].operation=='attach' and f.calls[3].id=='Beta')
 end)
 
-test('identity catalog preserves existing template choice and field IDs', function()
+test('template choices are keyed by template id, so a rebuild keeps them', function()
     local f=fixture(true)
-    local rebuilt=Menu.generate(f.model.registry,{catalog=f.menu.catalog})
-    assert(rebuilt.selectors['player.quickslots'].id==f.menu.selectors['player.quickslots'].id)
+    local rebuilt=Menu.generate(f.model.registry)
+    local selector=f.menu.selectors['player.quickslots']
+    assert(rebuilt.selectors['player.quickslots'].id==selector.id)
     for value,definition in pairs(f.menu.definitions['player.quickslots']) do
+        assert(value==definition.id,'a choice key is its template id')
         assert(rebuilt.definitions['player.quickslots'][value].settings.Size==definition.settings.Size)
     end
+    local row
+    for _,item in ipairs(f.menu.rows) do if item.id==selector.id then row=item end end
+    assert(Menu.keyed(row) and row.default==Menu.NONE and row.values[1].key==Menu.NONE and row.values[1].value==nil,
+        'the picker is a keyed enum defaulting to None')
+    assert(Menu.accepts(row,'Alpha') and Menu.accepts(row,'None') and not Menu.accepts(row,0)
+        and not Menu.accepts(row,'Gamma'),'only offered keys are accepted')
+end)
+
+test('two templates generating the same setting id fail the menu', function()
+    local f=fixture(true)
+    local extra=U.copy(f.model.registry.templates[1])
+    extra.id,extra.template.id='Alpha2','Alpha2'
+    extra.template.localId=f.model.registry.templates[1].template.localId or 'Alpha'
+    extra.template.providerId=f.model.registry.templates[1].template.providerId
+    table.insert(f.model.registry.templates,extra)
+    local ok,why=pcall(Menu.generate,f.model.registry)
+    assert(not ok and tostring(why):find('menu id clash',1,true),tostring(why))
 end)
 
 test('menu metadata in runtime settings is rejected', function()
@@ -333,19 +358,16 @@ test('templates get no automatic Control Layout link', function()
     for _,row in ipairs(f.menu.rows) do assert(row.label~='Control Layout',row.id) end
 end)
 
-test('published menus and catalog can be reloaded; user config is preserved', function()
+test('config is prepared once and keeps user keys', function()
     local f=fixture(true)
     local config=Layout.prepare(testRoot).config
     local out=assert(io.open(config,'w')); out:write('[Other]\nKeep=42\n[Templates]\nUnknown=55\n'); out:close()
-    Files.publish(testRoot,f.menu)
     assert(Files.ensureConfig(config,f.menu.rows,f.menu.textSettings))
     assert(not Files.ensureConfig(config,f.menu.rows,f.menu.textSettings))
-    local catalog=Files.readCatalog(testRoot)
-    assert(catalog.next==f.menu.catalog.next)
     local values=Files.readConfigValues(config,f.menu.textSettings,f.menu.rows)
     assert(values[f.definitions.Alpha.settings.Size]==20)
     local input=assert(io.open(config)); local content=input:read('*a'); input:close()
-    assert(content:find('Keep=42',1,true) and content:find('Unknown=55',1,true))
+    assert(iniValue(content,'Other','Keep')=='42' and iniValue(content,'Templates','Unknown')=='55')
 end)
 
 test('queued Apply is ignored after unsubscribe', function()
@@ -375,7 +397,9 @@ test('bootstrap generates menus at barrier and routes committed Apply to runtime
     local f=fixture(true)
     local barrier,callbacks=nil,{}
     local definitions={category=f.category, [f.locations[1]]=f.a,[f.locations[2]]=f.b}
-    local values=f.controller:values(); f.choose(values,'Alpha',true)
+    -- Loading prefixes each template id with its module (here the folder Alpha).
+    local values=f.controller:values()
+    values[f.menu.selectors['player.quickslots'].id]='Alpha_Alpha'
     local boot=Bootstrap.new({host=f.host,categories={f.category},
         execute=function(path) return definitions[path] end,menuValues=values,
         settingsApi={subscribe=function(id,cb) callbacks[id]=cb; return function() end end},queue=function(fn) fn() end,
@@ -387,7 +411,7 @@ test('bootstrap generates menus at barrier and routes committed Apply to runtime
     -- Loaded templates' generated ids name their module (here the folder: no ModCoreSettings).
     local size
     for _,definition in pairs(boot.menu.definitions['player.quickslots']) do
-        if definition.id=='Alpha' then size=definition.settings.Size end
+        if definition.id=='Alpha_Alpha' then size=definition.settings.Size end
     end
     assert(size=='MCT_Alpha_Alpha_Size',tostring(size))
     values=boot.menuController:values(); values[size]=75
@@ -396,23 +420,21 @@ test('bootstrap generates menus at barrier and routes committed Apply to runtime
     boot:stop(); assert(f.calls[3].operation=='detach')
 end)
 
-test('adding an earlier template cannot steal an existing saved field ID', function()
+test('adding an earlier template changes no existing choice or field ID', function()
     local f=fixture(true)
     local previous=f.definitions.Alpha.settings.Size
+    local before={}
+    for value,definition in pairs(f.menu.definitions['player.quickslots']) do before[definition.id]=value end
     local extra=U.copy(f.model.registry.templates[1])
     extra.id,extra.template.id,extra.template.label='AAA','AAA','Earlier'
     table.insert(f.model.registry.templates,1,extra)
-    local rebuilt=Menu.generate(f.model.registry,{catalog=f.menu.catalog})
+    local rebuilt=Menu.generate(f.model.registry)
     local found
-    for _,definition in pairs(rebuilt.definitions['player.quickslots']) do
+    for value,definition in pairs(rebuilt.definitions['player.quickslots']) do
         if definition.id=='Alpha' then found=definition.settings.Size end
+        if before[definition.id] then assert(before[definition.id]==value,definition.id) end
     end
     assert(found==previous)
-    Files.publish(testRoot,rebuilt)
-    local restored=Menu.generate(f.model.registry,{catalog=Files.readCatalog(testRoot)})
-    for value,definition in pairs(rebuilt.definitions['player.quickslots']) do
-        assert(restored.definitions['player.quickslots'][value].settings.Size==definition.settings.Size)
-    end
 end)
 
 test('category text settings inherit and refresh from committed config', function()
@@ -464,21 +486,33 @@ test('generated data goes into Scripts/cache', function()
     local f=fixture(true,'templates','templates')
     local root=testRoot..'/new-layout'
     local paths=Layout.prepare(root)
-    Files.publish(root,f.menu)
-    Files.ensureConfig(paths.config,f.menu.rows,f.menu.textSettings)
     assert(f.menu.aggregate.menu.storage.file=='Scripts/cache/config.ini'
         and f.menu.aggregate.menu.storage.section=='Templates')
     if Choices then
         -- ModCoreSettings resolves the storage file against configDirectory as DMM does for
         -- mod_settings.ini.
+        -- DMM sees a keyed enum as choice positions, which ModCoreSettings' storage
+        -- translates; a config holding positions stands in for that translation here.
+        Files.ensureConfig(paths.config,f.menu.rows,f.menu.textSettings)
+        local input=assert(io.open(paths.config,'rb')); local content=input:read('a'); input:close()
+        for _,row in ipairs(f.menu.rows) do
+            if Menu.keyed(row) then
+                for index,choice in ipairs(row.values) do
+                    if iniValue(content,'Templates',row.id)==choice.key then
+                        content=Ini.set(content,'Templates',row.id,tostring(index))
+                    end
+                end
+            end
+        end
+        local output=assert(io.open(paths.config,'wb')); output:write(content); output:close()
         local choices=Choices.parse(compiled(f.menu.aggregate.menu))
         local model=Choices.open({id='layout-check',path=root..'/mod_settings.ini',choices=choices,testOnly=false})
         assert(not model.error,model.error)
         assert(model.path==paths.config,'DMM resolves the nested config')
     end
+    Files.ensureConfig(paths.config,f.menu.rows,f.menu.textSettings)
     assert(io.open(root..'/identity-catalog.lua')==nil and io.open(root..'/menu-pages.lua')==nil
         and io.open(root..'/config.ini')==nil and io.open(root..'/mod_settings.ini')==nil)
-    assert(Files.readCatalog(root).next==f.menu.catalog.next)
 end)
 
 test('module settings are initialized in each template module folder', function()
@@ -496,15 +530,17 @@ test('module settings are initialized in each template module folder', function(
     for _,location in ipairs(f.locations) do boot:registerTemplate(location) end
     barrier()
     assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
-    -- Loaded templates' ids name their module folder.
+    -- Loaded template ids are prefixed with their module folder.
     local sizes={}
     for _,definition in pairs(boot.menu.definitions['player.quickslots']) do
         sizes[definition.id]=definition.settings.Size
     end
+    assert(sizes.Alpha_Alpha and sizes.Beta_Beta,'loading prefixes template ids with their module')
+    sizes.Alpha,sizes.Beta=sizes.Alpha_Alpha,sizes.Beta_Beta
     for _,name in ipairs({'Alpha','Beta'}) do
         local input=assert(io.open(modules..'/'..name..'/config.ini','rb'))
         local content=input:read('*a');input:close()
-        assert(content:find('[Templates]',1,true) and content:find(sizes[name]..'=',1,true))
+        assert(iniValue(content,'Templates',sizes[name]),content)
     end
     local central=io.open(menuRoot..'/Scripts/cache/config.ini','rb')
     local centralContent=central and central:read('*a') or ''
@@ -669,10 +705,10 @@ test('the template picker notes each choice with its module', function()
     for value,id in pairs(selector.byValue) do expected[value]=id end
     local count=0
     for _,choice in ipairs(fieldOf(page.menu,selector.id).values) do
-        if choice.value==0 then assert(choice.module==nil,'None has no module')
+        if choice.key==Menu.NONE then assert(choice.module==nil,'None has no module')
         else
-            assert(expected[choice.value]==choice.module,choice.value)
-            expected[choice.value]=nil;count=count+1
+            assert(expected[choice.key]==choice.module,choice.key)
+            expected[choice.key]=nil;count=count+1
         end
     end
     assert(count==2 and next(expected)==nil)
@@ -738,9 +774,10 @@ compatibility('field conditions hide and relabel rows live in DMM', function()
     assert(checked,'the keys row is on the page')
     local index={}
     for i,setting in ipairs(model.items) do index[setting.id]=i end
-    local alpha
-    for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value end end
-    if index[selector.id] then model:set(index[selector.id],alpha) end
+    -- DMM holds a keyed picker as choice positions.
+    local position={}
+    for at,choice in ipairs(fieldOf(page.menu,selector.id).values) do position[choice.key]=at end
+    if index[selector.id] then model:set(index[selector.id],position.Alpha) end
     local visible=model:visibility()
     assert(visible[index[ids.BarsKH]] and not visible[index[ids.BarsKV]],'Horizontal shows KH')
     model:set(index[ids.BarsA],5)
@@ -749,7 +786,7 @@ compatibility('field conditions hide and relabel rows live in DMM', function()
     local rule=model.items[index[ids.BarsKV]].mcLabelRule
     assert(rule and rule.values[5]=='Side Keys' and rule.values[7]==nil)
     if index[selector.id] then
-        model:set(index[selector.id],0)
+        model:set(index[selector.id],position[Menu.NONE])
         visible=model:visibility()
         assert(not visible[index[ids.BarsA]] and not visible[index[ids.BarsKV]],'None hides the template')
     end
@@ -871,8 +908,8 @@ test('slot values are stored in the central config', function()
     Layout.prepare(modules..'/Alpha'); Layout.prepare(modules..'/Beta')
     local f=slotFixture(modules)
     local selector=f.menu.selectors['player.quickslots']
-    local beta
-    for value,id in pairs(selector.byValue) do if id=='Beta' then beta=value end end
+    -- Loading prefixes the template id with its module folder: Beta_Beta.
+    local beta='Beta_Beta'
     local betaSize,alphaSize=f.definitions.Beta.settings.Size,f.definitions.Alpha.settings.Size
     local function read(path)
         local input=assert(io.open(path,'rb')); local content=input:read('*a'); input:close()
@@ -894,7 +931,7 @@ test('slot values are stored in the central config', function()
     barrier()
     assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
     local central=read(centralPath)
-    assert(central:find(betaSize..'=20',1,true),'invalid saved values fall back to defaults')
+    assert(iniValue(central,'Templates',betaSize)=='20','invalid saved values fall back to defaults')
     assert(io.open(modules..'/Alpha/config.ini')==nil and io.open(modules..'/Beta/config.ini')==nil,
         'slot templates keep no module config')
     assert(boot.menuController:values()[selector.id]==beta and boot.menuController:values()[alphaSize]==33)
@@ -906,11 +943,13 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     local scripts=assert(presentationPath:match('^(.*)[/\\][^/\\]+$'))
     local savedPath=package.path
     package.path=scripts..'/?.lua;'..package.path
-    local Navigation,Slots=require('navigation'),require('menu_slots')
+    local Navigation,Slots,Hooks=require('navigation'),require('menu_slots'),require('page_hooks')
     package.path=savedPath
     local choices=dofile(choicesPath)
     assert(Navigation.install(choices))
     local logs={}
+    -- ModCoreSettings' storage translates the keyed Template picker between key and position.
+    assert(Hooks.install(choices,function(e,d) logs[#logs+1]=e..' '..tostring(d) end))
     local slots=assert(Slots.install(choices,function(e,d) logs[#logs+1]=e..' '..tostring(d) end,Contributions))
     local files={}
     choices.fs={read=function(path) return files[path] end,
@@ -936,8 +975,12 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     local mcc={id='ModCoreControls',name='Controls',path='/mcc/mod_settings.ini',
         choices=choices.parse(host),settingsCount=3,testOnly=false}
     local manifest=compiled(page.menu)
+    -- As ModCoreSettings opens a menu-data page: its storage hooks read and write the config.
     local source={id=page.id,name=page.name,path='/mct/mod_settings.ini',choices=choices.parse(manifest),
-        settingsCount=#page.rows,mcManifest=manifest,testOnly=false}
+        settingsCount=#page.rows,mcManifest=manifest,testOnly=false,
+        mcHooks=Hooks.stored(page.menu,{read=function(path) return files[path] end,
+            write=function(path,content) files[path]=content end}),
+        mcHookContext={page=page.id,directory='/mct'}}
     local inserts={}
     for _,row in ipairs(Contribution.build(f.menu,'/mct').rows) do
         if row.slot~='settings:templates' then
@@ -954,8 +997,10 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     local index={}
     for i,setting in ipairs(mcc.choices) do index[setting.id]=i end
     local selector=f.menu.selectors['player.quickslots']
-    local alpha
-    for value,id in pairs(selector.byValue) do if id=='Alpha' then alpha=value end end
+    -- DMM holds the keyed Template picker as choice positions; the Apply event carries keys.
+    local position={}
+    for at,choice in ipairs(fieldOf(page.menu,selector.id).values) do position[choice.key]=at end
+    local alpha=position.Alpha
     local model=choices.open(mcc)
     assert(not model.error,model.error)
     model:set(index.MCC_Page,1)
@@ -974,7 +1019,7 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     model:set(index[bars.BarsA],5)
     visible=model:visibility()
     assert(not visible[index[bars.BarsKH]] and visible[index[bars.BarsKV]],'slot: Vertical shows KV')
-    model:set(index[selector.id],0)
+    model:set(index[selector.id],position[Menu.NONE])
     assert(not model:visibility()[index[bars.BarsKV]],'slot: the template picker still gates conditioned rows')
     model:set(index[selector.id],alpha)
     model:set(index[bars.BarsA],7)
@@ -984,6 +1029,7 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     local ok,err=model:apply()
     assert(ok,err)
     assert(#events==1 and events[1].id==page.id)
+    assert(events[1].event.values[selector.id]=='Alpha','the slot Apply carries the template key')
     f.controller:apply({providerId=page.id,revision=1,values=events[1].event.values})
     assert(#f.calls==1 and f.calls[1].id=='Alpha' and f.calls[1].operation=='attach'
         and f.calls[1].settings.Size==64)

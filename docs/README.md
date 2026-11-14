@@ -43,7 +43,7 @@ Start with the [developer guide](DEVELOPERS.md) and the runnable
 ## Requirements and installation
 
 Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.3.0 or newer (API 7,
-weak handles and function hooks), and ModCoreSettings 1.7.0 or newer with Dawnwalker Mod Menu (DMM).
+weak handles and function hooks), and ModCoreSettings 1.8.0 or newer with Dawnwalker Mod Menu (DMM).
 Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
 `_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.
 MCC supplies the Controls page that hosts quickslot visual settings.
@@ -59,8 +59,7 @@ Managed templates declare the properties they change and implement
 properties. Apply restores the previous values and attaches again with the new
 settings; selecting None restores the original state.
 
-Keep `Scripts/cache/config.ini`, `Scripts/cache/identity-catalog.lua`, and provider
-`config.ini` files when updating. Generated menu files can be rebuilt; edit Lua
+Keep `Scripts/cache/config.ini` and provider `config.ini` files when updating. Generated menu files can be rebuilt; edit Lua
 menu declarations, not generated pages.
 
 If the bridge reports its native lifetime service unavailable, MCT keeps no

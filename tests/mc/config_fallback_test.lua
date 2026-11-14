@@ -1,6 +1,12 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 -- Configuration never prevents startup: invalid saved values fall back to their defaults.
 local MenuFiles=require('mc.menu_files')
+local Ini=require('mc_ini')
+-- A key's first value in a config section, as mc_ini reads it.
+local function iniValue(content,section,key)
+    local entry=Ini.entries(Ini.parse(content),section,key)[1]
+    return entry and entry.value
+end
 local dir=(os.getenv('MCT_TEST_DIR') or os.getenv('TMPDIR') or '.'):gsub('/+$','')
 local path=dir..'/mct_config_fallback_'..os.time()..'_'..math.random(1000000000)..'.ini'
 local function write(content)
@@ -17,8 +23,8 @@ local text={Label={default='Wheel',format=nil}}
 write('[Other]\nkeep=1\n[Templates]\nTemplate=7\nSize=99\nLabel=\n')
 assert(MenuFiles.ensureConfig(path,rows,text)==true,'invalid values are rewritten')
 local content=read()
-assert(content:find('Template=0\n',1,true) and content:find('Size=5\n',1,true)
-    and content:find('Label=Wheel\n',1,true) and content:find('[Other]\nkeep=1',1,true),content)
+assert(iniValue(content,'Templates','Template')=='0' and iniValue(content,'Templates','Size')=='5'
+    and iniValue(content,'Templates','Label')=='Wheel' and iniValue(content,'Other','keep')=='1',content)
 local values=MenuFiles.readConfigValues(path,text,rows)
 assert(values.Template==0 and values.Size==5 and values.Label=='Wheel')
 assert(MenuFiles.ensureConfig(path,rows,text)==false,'a repaired config is stable')

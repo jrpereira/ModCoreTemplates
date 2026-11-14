@@ -4,7 +4,7 @@
 -- variable per contributor; ModCoreSettings reads them while building the menu.
 -- Descriptors use contract 1, contract 2 when they carry slot rows or slot links,
 -- contract 3 when a page names a hooks file, or contract 4 when a page carries menu data.
-local M={version=7,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
+local M={version=8,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
 local PREFIX='MCS_MenuContrib_v1_'
 M.prefix,M.index=PREFIX,PREFIX..'index'
 local MAX_PAGES,MAX_ROWS,MAX_ROW_SETTINGS,MAX_MANIFEST=256,64,32,262144
@@ -211,7 +211,10 @@ function M.unfold(map,where)
         assert(next(keys)~=nil,where..': empty value list')
         for name,value in pairs(keys) do
             assert(math.type(name)=='integer' and name>=1 and name<=#keys,where..': a value list must be a list')
-            assert(type(value)=='number' and value==value and math.abs(value)<=1000000000,
+            -- A number, or a keyed enum's choice key.
+            assert(type(value)=='number' and value==value and math.abs(value)<=1000000000
+                or type(value)=='string' and #value>=1 and #value<=128 and value:match('^[%w_.-]+$')
+                    and tonumber(value)==nil,
                 where..': invalid value '..tostring(value))
             assert(out[value]==nil,where..': value '..tostring(value)..' appears twice')
             out[value]=entry

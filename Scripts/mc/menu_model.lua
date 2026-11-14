@@ -74,18 +74,20 @@ function M.build(definitions, templates, locations)
         local values = U.copy(template.settings or {})
         overrideDefaults(declaration, values)
         values = defaults(Provider.normalize(declaration), values)
-        -- id is unique across modules and, with providerId (the module's id), names the
+        -- id is unique across modules: for a template from a mod folder it is
+        -- '<providerId>_<localId>' (see module_metadata). localId and providerId name the
         -- template's settings; label is what the menu shows.
-        assert(type(template.id) == 'string' and template.id:match('^%a[%w_.]*$'),
-            'template.id is required: a letter, then letters, digits, _ or .')
+        local localId = template.localId or template.id
+        assert(type(template.id) == 'string' and template.id ~= '' and type(localId) == 'string'
+            and localId:match('^%a[%w_.]*$'), 'template.id is required: a letter, then letters, digits, _ or .')
         assert(template.label == nil or type(template.label) == 'string' and template.label ~= '',
             template.id .. ': template.label must be a non-empty string')
         assert(template.providerId == nil or type(template.providerId) == 'string'
             and template.providerId:match('^[%w_.-]+$'), template.id .. ': invalid providerId')
-        template.label = template.label or template.id
+        template.label = template.label or localId
         -- Preserve template identity: callbacks may close over this table.
         template.settings = values
-        local metadata = {id=template.id, providerId=template.providerId, label=template.label, category=template.category,
+        local metadata = {id=template.id, localId=template.localId, providerId=template.providerId, label=template.label, category=template.category,
             module=template.module, menu=declaration}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             unique=unique, priority=template.priority or Runtime.DEFAULT_PRIORITY, order=index, location=assert(locations[index], 'template source path required')}

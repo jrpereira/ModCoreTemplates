@@ -3,6 +3,12 @@ local Bootstrap=require('mc.bootstrap')
 local Layout=require('mc.layout')
 local Menu=require('mc.menu')
 local Model=require('mc.menu_model')
+local Ini=require('mc_ini')
+-- A key's first value in a config section, as mc_ini reads it.
+local function iniValue(content,section,key)
+    local entry=Ini.entries(Ini.parse(content),section,key)[1]
+    return entry and entry.value
+end
 
 local testRoot=assert(os.getenv('MCT_TEST_DIR'),'MCT_TEST_DIR required')..'/module-config'
 local moduleRoot=testRoot..'/Fangdango'
@@ -45,7 +51,7 @@ boot:registerTemplate(location)
 barrier();assert(boot.phase=='running',startupError)
 local moduleConfig=assert(io.open(moduleRoot..'/config.ini','rb'))
 local moduleContent=moduleConfig:read('*a');moduleConfig:close()
-assert(moduleContent:find(sizeId..'=73',1,true),'saved module value was rewritten')
+assert(iniValue(moduleContent,'Templates',sizeId)=='73','saved module value was rewritten')
 local central=io.open(centralPath,'rb')
 local centralContent=central and central:read('*a') or ''
 if central then central:close() end

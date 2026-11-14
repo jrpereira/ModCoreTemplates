@@ -4,6 +4,12 @@ local Layout=require('mc.layout')
 local Menu=require('mc.menu')
 local Model=require('mc.menu_model')
 local Provider=require('mc.provider_settings')
+local Ini=require('mc_ini')
+-- A key's first value in a config section, as mc_ini reads it.
+local function iniValue(content,section,key)
+    local entry=Ini.entries(Ini.parse(content),section,key)[1]
+    return entry and entry.value
+end
 
 -- Declaring a range: {low, high} defaults become the stored '<low>|<high>'.
 local function fails(pattern,source)
@@ -54,10 +60,13 @@ local template={id='Center',module='Preymonition',providerId='Preymonition',cate
     attach=function() end,update=function() end,detach=function() end}
 local location=moduleRoot..'/Scripts/mc_center.lua'
 local preview=Menu.generate(Model.build({category},{template},{location}).registry)
+-- Loading prefixes the id with the module folder; the preview's setting ids already
+-- name the module through providerId.
 local growId,selectorValue
-for value,definition in pairs(preview.definitions[category.id]) do
-    if definition.id=='Center' then growId,selectorValue=definition.settings.Grow,value end
+for _,definition in pairs(preview.definitions[category.id]) do
+    if definition.id=='Center' then growId=definition.settings.Grow end
 end
+selectorValue='Preymonition_Center'
 local page=preview.pageByModule.Preymonition
 local field
 for _,item in ipairs(page.menu.fields) do if item.id==growId then field=item end end
@@ -92,25 +101,28 @@ local function config()
     local text=file:read('*a');file:close()
     return text
 end
-assert(config():find(growId..'=20|60',1,true),'a missing range is written with its default')
+assert(iniValue(config(),'Templates',growId)=='20|60','a missing range is written with its default')
 local function state()
-    return boot.menu.decodeState(boot.menuController:values())[category.id].selections.Center
+    return boot.menu.decodeState(boot.menuController:values())[category.id].selections.Preymonition_Center
 end
 assert(state().Grow[1]==20 and state().Grow[2]==60,'the template reads {low, high}')
--- Apply: the notification carries numbers only, so the range comes from the saved config.
-local text=config():gsub(growId..'=20|60',growId..'=30|80')
+-- Apply: settings_api v2 carries the range as its stored text.
+local text=Ini.set(config(),'Templates',growId,'30|80')
 saved=assert(io.open(moduleRoot..'/config.ini','wb'));saved:write(text);saved:close()
 local providerId=page.id
-assert(boot.menuController:apply({providerId=providerId,revision=1,values={[selectorId]=selectorValue}}))
+assert(boot.menuController:apply({providerId=providerId,revision=1,values={[selectorId]=selectorValue,[growId]='30|80'}}))
 assert(boot.menuController:values()[growId]=='30|80' and state().Grow[1]==30 and state().Grow[2]==80,
-    'Apply reads the range back from the config')
+    'Apply takes the range from the notification')
+assert(not pcall(boot.menuController.apply,boot.menuController,
+    {providerId=providerId,revision=2,values={[selectorId]=selectorValue,[growId]='30|35'}}),
+    'a range the track cannot hold is refused')
 -- A saved range the track cannot hold is rewritten with the default at the next start.
 assert(require('mc.menu_files').readConfigValues(moduleRoot..'/config.ini',{},page.rows)[growId]=='30|80')
-text=config():gsub(growId..'=30|80',growId..'=30|35')
+text=Ini.set(config(),'Templates',growId,'30|35')
 saved=assert(io.open(moduleRoot..'/config.ini','wb'));saved:write(text);saved:close()
 assert(require('mc.menu_files').readConfigValues(moduleRoot..'/config.ini',{},page.rows)[growId]==nil,
     'an invalid range is left out')
 assert(require('mc.menu_files').ensureConfig(moduleRoot..'/config.ini',page.rows,{}))
-assert(config():find(growId..'=20|60',1,true),'an invalid range is rewritten with its default')
+assert(iniValue(config(),'Templates',growId)=='20|60','an invalid range is rewritten with its default')
 boot:stop()
 print('PASS: a template range is menu data, stored as text and read as {low, high}')

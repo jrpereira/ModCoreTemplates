@@ -75,7 +75,7 @@ local function cell(value)
 end
 local function choiceLabel(row, value)
     for _, choice in ipairs(row.type == 'enum' and row.values or {}) do
-        if choice.value == value then return choice.label end
+        if (choice.key or choice.value) == value then return choice.label end
     end
     return tostring(value)
 end
@@ -168,7 +168,7 @@ for _, template in ipairs(templates) do
     local category = model.registry.categories:getCategory(template.category)
     local categoryName = title(template.category:gsub('%.', ' ')):gsub('^Npc ', 'NPC ')
     local definition
-    for _, candidate in ipairs(menu.definitions[template.category] or {}) do
+    for _, candidate in pairs(menu.definitions[template.category] or {}) do
         if candidate.id == template.id then definition = candidate end
     end
     assert(definition, template.label .. ': no generated settings')
@@ -202,9 +202,8 @@ for _, template in ipairs(templates) do
     if selector then
         local scope = template.uniqueBy == 'priority'
             and ('of this category with priority %s'):format(template.priority or Runtime.DEFAULT_PRIORITY) or 'of this category'
-        add(('- **Turn on:** choose %s in the %s template picker (`%s`). Only one template %s'
-            .. ' is active at a time. The picker\'s numbers depend on which templates are'
-            .. ' installed, so choose it in the menu.'):format(template.label, categoryName, selector, scope))
+        add(('- **Turn on:** choose %s in the %s template picker (`%s=%s`). Only one template %s'
+            .. ' is active at a time.'):format(template.label, categoryName, selector, definition.id, scope))
     else
         add(('- **Turn on:** set %s (`%s`) to Enabled (`1`).'):format(template.label,
             assert(owner, template.label .. ': no Enabled toggle')))

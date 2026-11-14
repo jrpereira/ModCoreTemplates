@@ -12,7 +12,6 @@ below focus on menu declarations; callbacks must still declare their targets.
     ├── categories/           Category definitions
     └── cache/
         ├── config.ini        Central saved settings
-        ├── identity-catalog.lua
         └── mcs_menu.<generation>*       Published pages
 YourProvider/
 ├── config.ini               Module-target settings, when generated
@@ -21,7 +20,7 @@ YourProvider/
     └── mc_<name>.lua         Template declaration
 ```
 
-Generated catalogs, published pages, and aggregate/category settings go into
+Published pages and aggregate/category settings go into
 `Scripts/cache`. MCT describes its pages as menu data and publishes them through
 ModCoreSettings' menu-contribution client (`vendor/menu_contributions.lua`, copied
 unchanged from ModCoreSettings); ModCoreSettings builds the pages. MCT writes nothing
@@ -31,7 +30,7 @@ instead stores them in `config.ini` at that template module's root, so for insta
 Fangdango settings are stored in `9_ModCore_Fangdango/config.ini`. Both locations
 contain user settings and must be preserved.
 
-MCT replaces every file it writes (configs, the catalog and published pages) by
+MCT replaces every file it writes (configs and published pages) by
 writing `<file>.new`, moving the current file to `<file>.old` and then renaming
 `<file>.new` into place. `<file>.old` is kept as the previous version. After a crash,
 the next read publishes a complete `<file>.new` whose original was already moved out,
@@ -239,7 +238,7 @@ options, provide:
 | `menuShared` | `ModRef` shared-variable interface for publishing pages to ModCoreSettings; Lua startup supplies it |
 | `settingsApi` | Durable Apply subscriber; the copied client is `require('settings_api')`, from `Scripts/vendor` |
 | `queue` | Game-thread dispatcher for settings callbacks |
-| `menu` | Generator options, such as an in-memory identity catalog |
+| `menu` | Generator options, such as the release `version` |
 | `menuValues` | Initial committed setting-ID values for an in-memory host without `menuRoot` |
 
 When `menuRoot` is supplied, saved central and module configurations take precedence
@@ -247,7 +246,7 @@ over `menuValues`. Missing config keys are added; existing values and unrelated
 sections are preserved. Invalid saved values are reported rather than silently
 overwritten.
 Startup creates `Scripts/categories` and `Scripts/cache` as
-needed. The central config, identity catalog, and pages are stored directly in
+needed. The central config and pages are stored directly in
 `Scripts/cache`; module-target configs are stored at their module roots. Without `menuRoot`,
 generation and Apply routing work in memory and do not write any files.
 
@@ -255,10 +254,13 @@ With `menuShared`, MCT publishes its pages once the barrier has completed and wi
 them on stop. A failed publish is reported and the templates keep running on their saved
 settings.
 
-Saved setting IDs use `MCT_`. Keep the identity catalog:
-choice numbers and named setting reservations survive subsequent regeneration,
-including adding a template before an existing one. The catalog is persisted before
-pages using its IDs are published.
+Saved setting IDs use `MCT_` and are derived from the category, module and template,
+so they survive regeneration, including adding a template before an existing one.
+Template pickers are keyed enums: each choice's key is the template's full id
+(`<Module>_<Id>`), `None` selects no template, and the config saves the key, such as
+`MCT_Template=Fangdango_SingleUnderbar`. ModCoreSettings shows the choices to DMM by
+position and translates on load and Apply. A saved key that is no longer offered loads
+as the default.
 
 ## Apply behavior
 
