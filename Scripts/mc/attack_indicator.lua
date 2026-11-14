@@ -197,21 +197,21 @@ function M.new(api, emit, log)
 
     local function bridge() return api.UE4SSLuaEventBridge or rawget(_G, 'UE4SSLuaEventBridge') end
 
-    -- Hooks the indicator's icon change. A class not loaded yet leaves the hook
-    -- pending; the bridge attaches it when the indicator appears.
+    -- Requests the indicator's icon change. A class not loaded yet leaves the
+    -- request pending; the bridge attaches it when the indicator appears.
     function self:start()
         if self.active then return true end
         local events = bridge()
         local hooks = events and events.Hooks
         local caps = events and type(events.GetCapabilities) == 'function' and events.GetCapabilities() or {}
-        if not (hooks and caps.hooks and caps.hooks_bp) then
+        if not (hooks and type(hooks.Request) == 'function' and caps.hooks and caps.hooks_bp) then
             if log then
                 log.warn('MC_NPCAttackIndicator unavailable: UE4SSLuaEventBridge Blueprint hooks missing',
                     caps.hooks_reason and (' (' .. tostring(caps.hooks_reason) .. ')') or '')
             end
             return false
         end
-        local ok, hooked, why = pcall(hooks.Hook, M.ICON,
+        local ok, hooked, why = pcall(hooks.Request, M.ICON,
             {pre = deliver, params = {'IconType'}, object_paths = true})
         if not (ok and hooked) then
             if log then log.warn('MC_NPCAttackIndicator unavailable: ', ok and why or hooked) end
@@ -219,7 +219,7 @@ function M.new(api, emit, log)
         end
         handle = hooked
         -- The attack task only adds stub; without it the events still flow.
-        local taskOk, task, taskWhy = pcall(hooks.Hook, M.ATTACK_TASK,
+        local taskOk, task, taskWhy = pcall(hooks.Request, M.ATTACK_TASK,
             {pre = deliverTask, object_paths = true})
         if taskOk and task then
             taskHandle = task
@@ -233,12 +233,12 @@ function M.new(api, emit, log)
         return true
     end
 
-    -- Unhooks and forgets every indicator's attack.
+    -- Removes both requests and forgets every indicator's attack.
     function self:stop()
         if not self.active then return end
         self.active = false
-        if handle then pcall(handle.Unhook, handle) end
-        if taskHandle then pcall(taskHandle.Unhook, taskHandle) end
+        if handle then pcall(handle.Remove, handle) end
+        if taskHandle then pcall(taskHandle.Remove, taskHandle) end
         handle, taskHandle = nil, nil
         attacks, skullSource, tasks = {}, nil, {}
         if log then

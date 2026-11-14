@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Requires UE4SSLuaEventBridge 1.3.0. `MC_NPCAttackIndicator` requests its two
+  hooks with `Hooks.Request`, which waits for the indicator's class to load
+  without polling, and removes them with `Remove()`. With an older bridge the
+  indicator logs that it is unavailable. No change for templates.
+
 ## v1.8.0
 
 - MCT publishes `templates.layout.changed` (`{category="player.quickslots"}`) once after

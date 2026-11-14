@@ -17,7 +17,7 @@ ModCore Templates (MCT) provides an environment for modifying Dawnwalker's UI wi
 
 [b]Requirements and installation[/b]
 
-Requires The Blood of Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.2.0 or newer (API 7: weak handles and function hooks), and ModCore Settings 1.7.0 or newer with Dawnwalker Mod Menu. Install and enable under Mods/3_ModCore_Templates and disable the former _UE4SSTemplatingEngine installation. Fully restart after changing Lua files. ModCore Controls supplies the Controls page for quickslot visual settings.
+Requires The Blood of Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.3.0 or newer (API 7: weak handles and function hooks), and ModCore Settings 1.7.0 or newer with Dawnwalker Mod Menu. Install and enable under Mods/3_ModCore_Templates and disable the former _UE4SSTemplatingEngine installation. Fully restart after changing Lua files. ModCore Controls supplies the Controls page for quickslot visual settings.
 
 Preserve Scripts/cache/config.ini, Scripts/cache/identity-catalog.lua and template-provider config.ini files when updating. Automatic restoration covers declared properties on managed templates. Invalid objects are forgotten safely. If the bridge's native lifetime service is unavailable, MCT keeps no objects and attaches no templates, and logs the reason once.
 

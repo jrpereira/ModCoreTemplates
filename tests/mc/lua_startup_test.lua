@@ -149,9 +149,9 @@ do
     -- The bridge's Blueprint hooks, as the attack source uses them.
     local bridgeHooks={}
     api.UE4SSLuaEventBridge.GetCapabilities=function() return {hooks=true,hooks_bp=true} end
-    api.UE4SSLuaEventBridge.Hooks={Hook=function(path,options)
+    api.UE4SSLuaEventBridge.Hooks={Request=function(path,options)
         bridgeHooks[path]=options
-        return {Unhook=function() bridgeHooks[path]=nil; return true end}
+        return {Remove=function() bridgeHooks[path]=nil; return true end}
     end}
     local function drain() while #queued>0 do table.remove(queued,1)() end end
     local attacks={id='npc.attacks',hooks={wake='MC_CombatStart',sleep='MC_CombatEnd',update='MC_NPCAttackIndicator'},

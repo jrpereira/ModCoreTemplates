@@ -26,12 +26,12 @@ objects[MAIN],objects[TWIN]=main,twin
 local hooked,unhooked,caps={},0,{hooks=true,hooks_bp=true}
 local bridge={
     GetCapabilities=function() return caps end,
-    Hooks={Hook=function(path,options)
+    Hooks={Request=function(path,options)
         assert(options.pre and options.object_paths)
         if path==Attacks.ICON then assert(options.params[1]=='IconType')
         else assert(path==Attacks.ATTACK_TASK and options.params==nil,'the attack task has no params') end
         local handle={}
-        function handle:Unhook() hooked[path]=nil; unhooked=unhooked+1; return true end
+        function handle:Remove() hooked[path]=nil; unhooked=unhooked+1; return true end
         hooked[path]=options
         return handle
     end},
@@ -204,10 +204,18 @@ local refusing=Attacks.new(api,function() end,log)
 assert(refusing:start()==false and not refusing.active,'no bridge hooks, no source')
 assert(logged[#logged]:match('Hooks disabled'),'the bridge reason is logged')
 
+-- A bridge without Hooks.Request (before 1.3.0) leaves the source stopped too.
+caps={hooks=true,hooks_bp=true}
+bridge.Hooks.Request,bridge.Hooks.Hook=nil,bridge.Hooks.Request
+local old=Attacks.new(api,function() end,log)
+assert(old:start()==false and not old.active,'no Hooks.Request, no source')
+assert(logged[#logged]:match('unavailable'),'the missing API is logged')
+bridge.Hooks.Request,bridge.Hooks.Hook=bridge.Hooks.Hook,nil
+
 -- An attack task hook the bridge refuses leaves the events without stub.
 caps={hooks=true,hooks_bp=true}
-local realHook=bridge.Hooks.Hook
-bridge.Hooks.Hook=function(path,options)
+local realHook=bridge.Hooks.Request
+bridge.Hooks.Request=function(path,options)
     if path==Attacks.ATTACK_TASK then return nil,'no task' end
     return realHook(path,options)
 end
@@ -219,6 +227,6 @@ assert(refused,'the refusal is logged')
 icon(MAIN,1)
 assert(take()=='arrow 3 main')
 stubless:stop()
-bridge.Hooks.Hook=realHook
+bridge.Hooks.Request=realHook
 
 print('PASS: attack indicator source emits arrow, critical, resolve and unblockable events from the icon, with the attacker\'s stub')
