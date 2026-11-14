@@ -42,6 +42,8 @@
 - Fewer global object lookups on attach, update and layout passes: the widget layout
   library, created objects' classes and the player controller are found once while they
   live, and each pass reads the screen size once.
+- An Apply updates only the templates whose effective settings changed; the others in
+  the same category stay attached as they are.
 
 ## v1.8.0
 

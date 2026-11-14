@@ -48,6 +48,16 @@ local function overlay(base, overrides)
     for key, value in pairs(overrides) do result[key] = copy(value) end
     return result
 end
+local function same(left, right)
+    if type(left) ~= 'table' or type(right) ~= 'table' then return left == right end
+    for key, value in pairs(left) do
+        if not same(value, right[key]) then return false end
+    end
+    for key in pairs(right) do
+        if left[key] == nil then return false end
+    end
+    return true
+end
 local function keys(values)
     local result = {}
     for key in pairs(values) do result[#result + 1] = key end
@@ -319,8 +329,12 @@ function M.new(host, definitions, templates, state, options)
             if not ok then report('layout', nil, why) end
         end
     end
+    -- A template whose effective settings did not change keeps its revision, so an
+    -- Apply does not rebuild it.
     local function refreshSettings(category, record)
-        record.settings = overlay(category.settings, overlay(record.defaults, record.overrides))
+        local settings = overlay(category.settings, overlay(record.defaults, record.overrides))
+        if same(settings, record.settings) then return end
+        record.settings = settings
         record.definition.settings = copy(record.settings)
         record.revision = record.revision + 1
     end

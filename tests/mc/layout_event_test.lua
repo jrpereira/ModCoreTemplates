@@ -178,6 +178,32 @@ test('a turn reads the screen once for every attachment it makes', function()
     assert(#f.calls == 4 and f.screens() == 2, 'each turn reads it again')
 end)
 
+test('an Apply rebuilds only templates whose settings changed', function()
+    local objects = {{id='hud', class='Slot'}}
+    local host = {valid=function(o) return o ~= nil end, identity=function(o) return o.id end,
+        ready=function() return true end, matches=function(o, s) return s.class == o.class end,
+        parent=function() end, watch=function() end, screen=function() return {} end,
+        find=function() return objects end, subscribe=function() return function() end end,
+        onError=function(e) error(e.message) end}
+    local counts = {}
+    local function template(id)
+        counts[id] = 0
+        local function count() counts[id] = counts[id] + 1 end
+        return {id=id, category='c', objects={'slots'}, managed=false, uniqueBy=false,
+            attach=count, update=count, detach=function() end}
+    end
+    local runtime = Runtime.new(host, {{id='c', objects={slots={source='lookup',class='Slot'}}}},
+        {template('a'), template('b')})
+    runtime:select('c', {a={x=1}, b={x=1}}); runtime:start()
+    assert(counts.a == 1 and counts.b == 1)
+    runtime:commit({c={settings={}, selections={a={x=2}, b={x=1}}}})
+    assert(counts.a == 2 and counts.b == 1, 'a='..counts.a..' b='..counts.b)
+    runtime:commit({c={settings={}, selections={a={x=2}, b={x=1}}}})
+    assert(counts.a == 2 and counts.b == 1, 'an unchanged Apply rebuilds nothing')
+    runtime:commit({c={settings={shared=true}, selections={a={x=2}, b={x=1}}}})
+    assert(counts.a == 3 and counts.b == 2, 'a category value reaches every template')
+end)
+
 test('the quickslots category opts in', function()
     local category = assert(loadfile('Scripts/categories/player_quickslots.lua'))()
     assert(category.id == 'player.quickslots' and category.layoutEvent == true)
