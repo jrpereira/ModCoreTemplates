@@ -37,6 +37,8 @@
 - A root waiting out its category's `attachDelay` attaches at the latest three delays
   after it was first found (6 seconds for quickslots), even while lifecycle events keep
   restarting its timer.
+- `MC_NPCAttackIndicator` looks up each combat indicator once while it lives instead
+  of on every icon change.
 
 ## v1.8.0
 

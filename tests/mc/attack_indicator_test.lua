@@ -36,7 +36,8 @@ local bridge={
         return handle
     end},
 }
-local api={UE4SSLuaEventBridge=bridge,StaticFindObject=function(path) return objects[path] end}
+local finds=0
+local api={UE4SSLuaEventBridge=bridge,StaticFindObject=function(path) finds=finds+1; return objects[path] end}
 local events,logged={},{}
 local log=setmetatable({},{__index=function(_,level)
     return function(...) logged[#logged+1]=level..' '..table.concat({...}) end
@@ -122,12 +123,20 @@ assert(take()=='unblockable false main, arrow 4 main','any other state ends the 
 icon(MAIN,0)
 take()
 
+-- An indicator is looked up once while it lives.
+finds=0
+for _=1,3 do icon(MAIN,1); icon(MAIN,0) end
+take()
+assert(finds==0,'a live indicator is not looked up again')
 -- An indicator that is gone forgets its attack quietly.
 icon(MAIN,1)
 take()
+main.gone=true
 objects[MAIN]=nil
 icon(MAIN,0)
 assert(take()=='','a missing indicator emits nothing')
+assert(finds==1,'a dead indicator is looked up again')
+main.gone=nil
 objects[MAIN]=main
 
 -- stub: the attack task begun in the icon's frame or the one before.

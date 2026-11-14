@@ -66,7 +66,8 @@ function M.attackOf(icon)
     if DIRECTIONS[icon - 4] and icon <= 8 then return DIRECTIONS[icon - 4], true end
 end
 
--- api: UE4SSLuaEventBridge (or the global one) with hooks, and StaticFindObject.
+-- api: UE4SSLuaEventBridge (or the global one) with hooks and weak handles, and
+-- StaticFindObject.
 -- emit(event) delivers an event; log is a leveled logger or nil.
 function M.new(api, emit, log)
     assert(type(emit) == 'function', 'emit required')
@@ -80,6 +81,26 @@ function M.new(api, emit, log)
     local tasks = {}
     local delivered, sequence = 0, 0
     local failures = {}
+    -- Indicators by path, as weak handles: StaticFindObject walks every object, so it
+    -- runs only for a path seen for the first time or whose indicator died.
+    local indicators = {}
+    local function forgetIndicators()
+        for _, held in pairs(indicators) do Objects.release(held) end
+        indicators = {}
+    end
+    local function indicatorAt(path)
+        local held = indicators[path]
+        local object = held and Objects.get(held)
+        if object then return object end
+        -- Drop dead handles while paying for the lookup anyway.
+        for key, value in pairs(indicators) do
+            if not Objects.get(value) then Objects.release(value); indicators[key] = nil end
+        end
+        local find = api.StaticFindObject or rawget(_G, 'StaticFindObject')
+        object = find(path)
+        if valid(object) then indicators[path] = Objects.hold(object) end
+        return object
+    end
 
     local function fail(kind, why)
         local count = failures[kind]
@@ -117,8 +138,7 @@ function M.new(api, emit, log)
     end
 
     local function onIcon(path, icon, frame)
-        local find = api.StaticFindObject or rawget(_G, 'StaticFindObject')
-        local indicator = find(path)
+        local indicator = indicatorAt(path)
         if not valid(indicator) then
             attacks[path] = nil
             if skullSource == path then skullSource = nil end
@@ -227,6 +247,7 @@ function M.new(api, emit, log)
             log.warn('MC_NPCAttackIndicator without stub: ', taskOk and taskWhy or task)
         end
         attacks, skullSource, tasks = {}, nil, {}
+        forgetIndicators()
         delivered = 0
         self.active = true
         if log then log.debug('MC_NPCAttackIndicator hooked') end
@@ -241,6 +262,7 @@ function M.new(api, emit, log)
         if taskHandle then pcall(taskHandle.Remove, taskHandle) end
         handle, taskHandle = nil, nil
         attacks, skullSource, tasks = {}, nil, {}
+        forgetIndicators()
         if log then
             log.debug('MC_NPCAttackIndicator unhooked after ', delivered, ' icon changes')
             for kind, count in pairs(failures) do
