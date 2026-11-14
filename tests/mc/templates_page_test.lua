@@ -14,11 +14,10 @@ local templates={
     {id='d',template={label='Built In "Quoted"',category='player.quickslots'}},
 }
 local state={['player.quickslots']={settings={},selections={b={}}},['npc.attacks']={settings={},selections={}}}
-local categories={'npc.attacks','npc.intent','player.compass','player.quickslots'}
-local text=List.encode(templates,state,'controls:visuals',categories)
+local text=List.encode(templates,state)
 local file=assert(io.open(paths.templates,'wb'));file:write(text);file:close()
 local list=assert(load(text,'list','t',{}))()
-assert(list.slot=='controls:visuals' and #list.templates==4 and table.concat(list.categories,',')==table.concat(categories,','))
+assert(list.version==1 and #list.templates==4)
 assert(list.templates[2].active==true and list.templates[1].active==false and list.templates[3].active==false
     and list.templates[4].module=='' and list.templates[4].label=='Built In "Quoted"')
 
