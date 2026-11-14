@@ -460,4 +460,24 @@ do
     assert(blueprint.ready(gameHud),'a HUD that rejoined a panel is ready again without AddChild')
     blueprint.stop()
 end
+do
+    -- Reports keep the template id and provider file, in the log line and for MCTOnError.
+    sourceErrors={}
+    source.onError({stage='attach',template='Fangdango_Wheels',message='callback returned false'})
+    source.onError({stage='provider',provider='Mods/F/Scripts/mc_x.lua',message='bad default'})
+    assert(sourceErrors[1].template=='Fangdango_Wheels' and sourceErrors[1].stage=='attach'
+        and sourceErrors[2].provider=='Mods/F/Scripts/mc_x.lua')
+    local lines={}
+    local quiet={}
+    for key,value in pairs(api) do quiet[key]=value end
+    quiet.MCTOnError=nil
+    local logged=Source.new({},quiet,function(line) lines[#lines+1]=line end)
+    logged.onError({stage='attach',template='Fangdango_Wheels',message='callback returned false'})
+    logged.onError({stage='provider',provider='Mods/F/Scripts/mc_x.lua',message='bad default'})
+    logged.onError({stage='runtime',message='plain'})
+    assert(lines[1]=='attach (Fangdango_Wheels): callback returned false',lines[1])
+    assert(lines[2]=='provider (Mods/F/Scripts/mc_x.lua): bad default',lines[2])
+    assert(lines[3]=='runtime: plain',lines[3])
+    logged.stop()
+end
 print('PASS: widget construction, group parenting, valid detach and hook cleanup')

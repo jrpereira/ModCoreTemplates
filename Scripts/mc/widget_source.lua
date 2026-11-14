@@ -103,13 +103,22 @@ function M.new(categories, api, log)
     local identityFailureReported=false
     local hooks, hookSpecs = {}, {}
     local refreshHooks = function() end
-    -- level (optional) overrides the stage's level for one report.
-    local function errorReport(stage, message, level)
-        local error = {stage=stage,message=tostring(message)}
+    -- level (optional) overrides the stage's level for one report. context (optional)
+    -- names the template and provider file the report is about.
+    local function errorReport(stage, message, level, context)
+        context = context or {}
+        local error = {stage=stage,message=tostring(message),
+            template=context.template,provider=context.provider}
         if type(api.MCTOnError)=='function' then pcall(api.MCTOnError,error)
-        else log[level or levels[stage] or 'error'](error.stage, ': ', error.message) end
+        else
+            local about = {}
+            if error.template ~= nil then about[#about+1] = tostring(error.template) end
+            if error.provider ~= nil then about[#about+1] = tostring(error.provider) end
+            local where = #about > 0 and ' ('..table.concat(about, ', ')..')' or ''
+            log[level or levels[stage] or 'error'](error.stage, where, ': ', error.message)
+        end
     end
-    source.onError = function(error) errorReport(error.stage or 'object', error.message) end
+    source.onError = function(error) errorReport(error.stage or 'object', error.message, nil, error) end
     local function onGameThread()
         return api.IsInGameThread() == true
     end

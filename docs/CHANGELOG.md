@@ -29,6 +29,9 @@
 - A HUD widget removed and added back to a panel is ready again once it is seen in its
   panel, even when no AddChild hook saw it return. Before, its templates could stay
   detached until it was next added to the viewport.
+- Logged errors name the template and provider file they are about, such as
+  `attach (Fangdango_Wheels): callback returned false`; `MCTOnError` receives them as
+  `template` and `provider`.
 
 ## v1.8.0
 
