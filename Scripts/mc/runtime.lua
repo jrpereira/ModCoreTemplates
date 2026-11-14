@@ -767,30 +767,50 @@ function M.new(host, definitions, templates, state, options)
             end
         end
     end
-    function self:select(categoryName, selections)
-        assert(self.phase == 'new' or self.phase == 'running', 'runtime is not accepting selections')
-        local category = assert(categories[categoryName], 'unknown category')
-        local desired, count, unique = {}, 0, {}
-        for id, settings in pairs(selections) do
-            assert(category.templates[id], 'template does not belong to category')
-            assert(type(settings) == 'table', 'settings must be a table')
-            desired[id], count = copy(settings), count + 1
-            local key = category.templates[id].unique
-            assert(not key or not unique[key], 'a category accepts at most one template per uniqueBy group')
-            if key then unique[key] = true end
+    -- Validates, then applies, each named category's template selections and, when
+    -- given, its values; one reconcile follows. refused: the error outside new/running.
+    local function applySelections(changes, refused)
+        assert(self.phase == 'new' or self.phase == 'running', refused)
+        local pending = {}
+        for name, change in pairs(changes) do
+            local category = assert(categories[name], 'unknown category')
+            assert((change.settings == nil or type(change.settings) == 'table')
+                and type(change.selections) == 'table', 'invalid category commit')
+            local unique = {}
+            for id, settings in pairs(change.selections) do
+                assert(category.templates[id] and type(settings) == 'table', 'invalid template selection')
+                local key = category.templates[id].unique
+                assert(not key or not unique[key], 'a category accepts at most one template per uniqueBy group')
+                if key then unique[key] = true end
+            end
+            pending[name] = copy(change)
         end
-        if log then log.debug(categoryName, ': ', count, ' template(s) selected') end
         serialize(function()
-            for id, record in pairs(category.templates) do
-                record.enabled = desired[id] ~= nil
-                if not record.enabled then record.waiting={} end
-                if record.enabled then
-                    record.overrides = desired[id]
-                    refreshSettings(category, record)
+            for name, change in pairs(pending) do
+                local category = categories[name]
+                if change.settings then category.settings = change.settings end
+                for id, record in pairs(category.templates) do
+                    record.enabled = change.selections[id] ~= nil
+                    if not record.enabled then record.waiting={} end
+                    if record.enabled then
+                        record.overrides = change.selections[id]
+                        refreshSettings(category, record)
+                    end
                 end
             end
-            if self.phase == 'running' then refreshDiscovery(); reconcile() end
+            if next(pending) and self.phase == 'running' then
+                refreshDiscovery(); reconcile()
+            end
         end)
+    end
+    -- Selects one category's templates, keeping its values.
+    function self:select(categoryName, selections)
+        if log and type(selections) == 'table' then
+            local count = 0
+            for _ in pairs(selections) do count = count + 1 end
+            log.debug(categoryName, ': ', count, ' template(s) selected')
+        end
+        applySelections({[categoryName]={selections=selections}}, 'runtime is not accepting selections')
     end
     function self:setCategorySettings(categoryName, settings)
         assert(self.phase == 'new' or self.phase == 'running', 'runtime is not accepting settings')
@@ -891,37 +911,10 @@ function M.new(host, definitions, templates, state, options)
     end
     -- Menu commits category values and template selections together, then reconciles once.
     function self:commit(changes)
-        assert(self.phase == 'new' or self.phase == 'running', 'runtime is not accepting commits')
-        local pending = {}
-        for name, change in pairs(changes) do
-            local category = assert(categories[name], 'unknown category')
-            assert(type(change.settings) == 'table' and type(change.selections) == 'table', 'invalid category commit')
-            local unique = {}
-            for id, settings in pairs(change.selections) do
-                assert(category.templates[id] and type(settings) == 'table', 'invalid template selection')
-                local key = category.templates[id].unique
-                assert(not key or not unique[key], 'a category accepts at most one template per uniqueBy group')
-                if key then unique[key] = true end
-            end
-            pending[name] = copy(change)
+        for _, change in pairs(changes) do
+            assert(type(change) == 'table' and type(change.settings) == 'table', 'invalid category commit')
         end
-        serialize(function()
-            for name, change in pairs(pending) do
-                local category = categories[name]
-                category.settings = change.settings
-                for id, record in pairs(category.templates) do
-                    record.enabled = change.selections[id] ~= nil
-                    if not record.enabled then record.waiting={} end
-                    if record.enabled then
-                        record.overrides = change.selections[id]
-                        refreshSettings(category, record)
-                    end
-                end
-            end
-            if next(pending) and self.phase == 'running' then
-                refreshDiscovery(); reconcile()
-            end
-        end)
+        applySelections(changes, 'runtime is not accepting commits')
     end
     -- The object source reports only changes; a destroyed object fails validity and
     -- is dropped at the next reconcile.
