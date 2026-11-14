@@ -500,10 +500,13 @@ function M.new(host, definitions, templates, state, options)
                 delay.roots[token]=rootState
                 local generation=rootState.generation
                 local ok,why=pcall(defer,delay.ms,function()
-                    if delay.roots[token]~=rootState or rootState.generation~=generation then return end
-                    delay.roots[token]='settled'
-                    revealRoot(rootState,category)
-                    if self.phase=='running' then serialize(function() reconcile() end) end
+                    -- Reveal inside a turn, so the reveal publishes the layout event.
+                    serialize(function()
+                        if delay.roots[token]~=rootState or rootState.generation~=generation then return end
+                        delay.roots[token]='settled'
+                        revealRoot(rootState,category)
+                        if self.phase=='running' then reconcile() end
+                    end)
                 end)
                 if not ok then
                     delay.roots[token],settledThisTurn[token]='settled',true

@@ -139,6 +139,34 @@ test('a failing listener is reported, not raised', function()
     assert(#runtime.errors == 1 and runtime.errors[1].stage == 'layout')
 end)
 
+test('an attachDelay reveal publishes even when nothing attaches', function()
+    dofile('tests/support/lifetimes.lua').install()
+    local root = {id='hud', class='Slot', opacity=0.8}
+    function root:IsValid() return true end
+    function root:GetRenderOpacity() return self.opacity end
+    function root:SetRenderOpacity(value) self.opacity = value end
+    local passes, timers = {}, {}
+    local host = {valid=function(o) return o ~= nil end, identity=function(o) return o.id end,
+        ready=function() return true end, matches=function(o, s) return s.class == o.class end,
+        parent=function() end, watch=function() end, screen=function() return {} end,
+        find=function() return {root} end, subscribe=function() return function() end end,
+        onError=function(e) error(e.message) end}
+    local runtime = Runtime.new(host,
+        {{id='player.quickslots', layoutEvent=true, attachDelay=2000,
+          objects={slots={source='lookup',class='Slot',required=true}}}},
+        {{id='bars', category='player.quickslots', objects={'slots'}, managed=false,
+          attach=function() end, update=function() end, detach=function() end}},
+        nil, {layoutChanged=function(ids) passes[#passes + 1] = table.concat(ids, ',') end,
+              defer=function(_, callback) timers[#timers + 1] = callback end})
+    runtime:select('player.quickslots', {bars={}}); runtime:start()
+    assert(root.opacity == 0 and #timers == 1, 'the root waits hidden')
+    runtime:select('player.quickslots', {})
+    local before = #passes
+    timers[#timers]()
+    assert(root.opacity == 0.8, 'the timer reveals the root')
+    assert(#passes == before + 1 and passes[#passes] == 'player.quickslots', table.concat(passes, ' | '))
+end)
+
 test('the quickslots category opts in', function()
     local category = assert(loadfile('Scripts/categories/player_quickslots.lua'))()
     assert(category.id == 'player.quickslots' and category.layoutEvent == true)

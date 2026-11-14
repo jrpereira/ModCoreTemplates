@@ -20,6 +20,8 @@
 - A config file saved with a UTF-8 byte order mark keeps its first setting.
 - An Apply keeps created layers in template order: a template's overlays no longer move
   above higher-priority layers, such as the quickslot canvas, when its settings change.
+- A root revealed when its `attachDelay` ends publishes `templates.layout.changed`
+  even when no template attaches in that pass.
 
 ## v1.8.0
 
