@@ -51,8 +51,11 @@ Groups preserve structure, for example `objects={buttons={'ability_left','abilit
 
 Declare captured properties on category targets or template targets/groups.
 For example, `abilities={properties={'position'}}` captures translation. Properties are
-`parent`, `order`, `slot`, `position`, `size`, `opacity` and `color` (the widget's own
-`ColorAndOpacity`, which tints everything it draws).
+`parent`, `order`, `slot`, `position`, `size`, `opacity`, `color` (the widget's own
+`ColorAndOpacity`, which tints everything it draws), `widthOverride` and
+`heightOverride` (a SizeBox override as `{enabled, value}`) and `activeIndex` (a
+WidgetSwitcher's active child). `box` captures the widget's layout box
+(`width`, `height`, `pivotX`, `pivotY`) for the template to read; it is not restored.
 A category's `required=true` targets must be ready; its `sharedObjects` are
 prepared before template attachment and restored after template detachment.
 A template does not need to request shared objects just to activate that preparation.
@@ -151,9 +154,65 @@ dead object; `MC.release(handle)` drops it early.
 keys overriding copied defaults; it does not register another template.
 Names cannot contain path separators. An explicit `.lua` filename is also accepted.
 
-Declared event callbacks receive `(params, event, objects)` once per live
-attachment. Events update shared state without rebuilding templates; later attach
-calls see that state. See [Template menus](MENUS.md#apply-behavior).
+Declared event callbacks for ModCore events, such as `controls.group.focus`, receive
+`(params, event, objects)` once per live attachment. Events update shared state
+without rebuilding templates; later attach calls see that state. See
+[Template menus](MENUS.md#apply-behavior). The template events `wake`, `sleep` and
+`update` are called differently; see below.
+
+## Category hooks and template events
+
+A category's `hooks` time its templates with MCT's signals:
+
+| Hook | Effect |
+| --- | --- |
+| `attach` | New attachments wait until this signal holds |
+| `wake` | Selected templates are awake while it holds; defaults to `attach` |
+| `sleep` | Puts them to sleep when it fires; defaults to the opposite of `wake` |
+| `update` | Names an update event that awake templates receive |
+
+| Signal | Fires when | Opposite |
+| --- | --- | --- |
+| `MC_PlayerReady` | The loading screen finishes fading out | `MC_PlayerUnready` |
+| `MC_PlayerUnready` | A loading screen finishes fading in | `MC_PlayerReady` |
+| `MC_CombatStart` | The player's combat starts | `MC_CombatEnd` |
+| `MC_CombatEnd` | Combat ends, or a loading screen finishes fading in | `MC_CombatStart` |
+
+A signal holds from when it fires until its opposite fires; none holds before it
+first fires. When the game hook behind a signal cannot be registered, a start
+signal holds for good and an end signal never fires. `player.quickslots` wakes on
+`MC_PlayerReady`. `npc.attacks` attaches on `MC_PlayerReady`, wakes on
+`MC_CombatStart`, sleeps on `MC_CombatEnd` and takes `MC_NPCAttackIndicator` updates.
+
+Template events are declared in `template.events` and called once per template, not
+per attachment, in priority order:
+
+- `wake(params, event)` and `sleep(params, event)`: `params` holds copied `settings`
+  and `state`; `event` is `{name='wake' or 'sleep', signal=<signal or nil>}`. There
+  are no objects or screen. A failing callback is reported and the template still
+  changes state, so a later sleep can undo a partial wake.
+- `update(params, event)`: called at once, in the frame of the game call that caused
+  it. `params.settings` is the template's own table, not a copy: read it, do not
+  change it. `event` is the update event with `name='update'` and `signal` set to
+  its name. Objects in it are valid only during the call.
+
+`MC_NPCAttackIndicator` turns the combat target indicator's icon changes into update
+events. It is hooked only while a template listens and needs UE4SSLuaEventBridge
+1.3.0; without it MCT logs that the indicator is unavailable. Events follow the game
+by about one frame and carry an increasing `sequence`:
+
+| `kind` | Fields | Meaning |
+| --- | --- | --- |
+| `arrow` | `direction`, `path`, `indicator`, `stub` | An attack shows on an indicator |
+| `critical` | `direction`, `path`, `indicator`, `stub` | That attack's parry window opened |
+| `resolve` | `path`, `indicator`, `reason` | The indicator's attack ended: `'sword'` (defending) or `'hidden'` |
+| `unblockable` | `path`, `indicator`, `active`, `stub` | The unblockable skull showed (`true`) or went (`false`) |
+
+`direction` is 1 top, 2 bottom, 3 left, 4 right. `indicator` is the live widget,
+valid only during the event; `path` names it for later. `stub` is the attacking
+enemy's `DogwoodAIStub` path, from the attack task the game begins in the icon's
+frame or the one before; it is nil when no task pairs with the icon or two enemies'
+tasks do, and `unblockable` carries it only when `active`.
 
 ## Event host contract
 
