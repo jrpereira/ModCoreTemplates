@@ -23,9 +23,11 @@ python3 tools/run-tests.py --lua lua5.4 \
 ```
 
 Supply both optional paths together; `menu_data.lua` must sit beside
-`presentation.lua`, as it does in ModCoreSettings. The equivalent environment variables are
-`MCT_DMM_CHOICES` and `MCT_PRESENTATION`. Tests write generated data to a temporary
-directory. Edit template declarations, not generated menu files.
+`presentation.lua`, as it does in ModCoreSettings. The runner puts that folder on
+`LUA_PATH`. The equivalent environment variables are `MCT_DMM_CHOICES` and
+`MCT_PRESENTATION`. CI runs without them, so it skips these compatibility checks. Tests
+write generated data to a temporary directory. Edit template declarations, not generated
+menu files.
 
 ## In-game checks
 

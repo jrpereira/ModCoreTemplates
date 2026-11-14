@@ -34,8 +34,11 @@ with tempfile.TemporaryDirectory(prefix='mct-menu-tests-') as directory:
     env.pop('MCT_DMM_CHOICES', None)
     env.pop('MCT_PRESENTATION', None)
     if args.dmm_choices:
+        presentation = Path(args.presentation).resolve()
         env.update(MCT_DMM_CHOICES=str(Path(args.dmm_choices).resolve()),
-                   MCT_PRESENTATION=str(Path(args.presentation).resolve()))
+                   MCT_PRESENTATION=str(presentation))
+        # presentation.lua requires its ModCoreSettings siblings; ';;' keeps the default path.
+        env['LUA_PATH'] = f"{presentation.parent}/?.lua;" + env.get('LUA_PATH', ';;')
     for path in sorted(ROOT.glob('tests/mc/*_test.lua')):
         subprocess.run([args.lua, str(path)], cwd=ROOT, env=env, check=True)
 print(f'PASS: {len(files)} runtime/category syntax checks')
