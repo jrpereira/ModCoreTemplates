@@ -15,8 +15,10 @@ local function load(name)
     error('unknown MC helper: ' .. name, 2)
 end
 
-local function template(name, defaults)
-    assert(type(name) == 'string', 'MC template filename required')
+-- The sibling file a call names: 'x.lua' as given, or a stem 'x' as 'mc_x.lua', in
+-- the folder of the file that called template or registerTemplate.
+local function siblingPath(name, label)
+    assert(type(name) == 'string', 'MC template name required')
     local filename
     if name:sub(-4) == '.lua' then
         assert(name:match('^[%w_%-]+%.lua$'),
@@ -27,12 +29,17 @@ local function template(name, defaults)
             'MC template name must be a simple file stem')
         filename = 'mc_' .. name .. '.lua'
     end
-    local caller = assert(debug.getinfo(2, 'S'), 'MC template caller unavailable')
+    -- Level 3: the caller of template or registerTemplate.
+    local caller = assert(debug.getinfo(3, 'S'), 'MC template caller unavailable')
     local source = assert(caller.source:match('^@(.+)$'),
-        'MC.template must be called from a Lua file')
+        label .. ' must be called from a Lua file')
     local folder = assert(source:match('^(.*)[/\\][^/\\]+$'),
         'MC template caller has no directory')
-    local path = folder .. '/' .. filename
+    return folder .. '/' .. filename
+end
+
+local function template(name, defaults)
+    local path = siblingPath(name, 'MC.template')
     local chunk = assert(loadfile(path, 't'))
     local value = chunk()
     assert(type(value) == 'table', path .. ': expected a template table')
@@ -40,24 +47,10 @@ local function template(name, defaults)
 end
 
 local function registerTemplate(name,...)
-    assert(type(name)=='string','MC template name required')
     assert(select('#',...)==0,'MC.registerTemplate metadata belongs in the template or module manifest')
-    local filename
-    if name:sub(-4)=='.lua' then
-        assert(name:match('^[%w_%-]+%.lua$'),
-            'MC template filename must be a simple Lua filename')
-        filename=name
-    else
-        assert(name:match('^[%w_%-]+$'),'MC template name must be a simple file stem')
-        filename='mc_'..name..'.lua'
-    end
-    local caller=assert(debug.getinfo(2,'S'),'MC template registrar unavailable')
-    local source=assert(caller.source:match('^@(.+)$'),
-        'MC.registerTemplate must be called from a Lua file')
-    local folder=assert(source:match('^(.*)[/\\][^/\\]+$'),
-        'MC template registrar has no directory')
+    local path = siblingPath(name, 'MC.registerTemplate')
     assert(type(templateRegistrar)=='function','MCT template registration is unavailable')
-    return templateRegistrar(folder..'/'..filename)
+    return templateRegistrar(path)
 end
 
 local function setTemplateRegistrar(registrar)
