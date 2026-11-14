@@ -79,8 +79,8 @@ local function fixture(unique, alphaTarget, betaTarget, locationBase)
     a.providerId, b.providerId = 'Alpha', 'Beta'
     b.author,b.icon='Example Author','B'
     locationBase = locationBase or '/Mods'
-    local locations = {locationBase..'/Alpha/Scripts/templates/template.lua',
-        locationBase..'/Beta/Scripts/templates/template.lua'}
+    local locations = {locationBase..'/Alpha/Scripts/mc_template.lua',
+        locationBase..'/Beta/Scripts/mc_template.lua'}
     local model = Model.build({category}, {a,b}, locations)
     local menu = Menu.generate(model.registry)
     local object = {id='instance:1'}
@@ -886,7 +886,7 @@ test('modules whose templates moved to a slot keep their page with a link to the
         menu={{id='Layout',label='Layout',fields={field('Size',20)}}},
         attach=function() end,update=function() end,detach=function() end}
     local model=Model.build({f.category,other},{f.a,f.b,extra},
-        {f.locations[1],f.locations[2],'/Mods/Beta/Scripts/templates/other.lua'})
+        {f.locations[1],f.locations[2],'/Mods/Beta/Scripts/mc_other.lua'})
     local menu=Menu.generate(model.registry)
     assert(menu.pageByModule.Beta.module=='Beta' and not menu.pageByModule.Beta.merged)
     assert(menu.pageByModule.Alpha.merged=='controls:visuals')
@@ -1048,7 +1048,7 @@ test('category-unique templates share a picker and the others get Enabled toggle
         end
         if slotted then f.category.slot={provider='controls',slot='visuals'} end
         local model=Model.build({f.category},{f.a,f.b,gamma},
-            {f.locations[1],f.locations[2],'/Mods/Gamma/Scripts/templates/template.lua'})
+            {f.locations[1],f.locations[2],'/Mods/Gamma/Scripts/mc_template.lua'})
         local menu=Menu.generate(model.registry)
         local selector=menu.selectors['player.quickslots']
         local picked={}

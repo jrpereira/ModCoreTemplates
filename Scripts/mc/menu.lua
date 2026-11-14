@@ -52,8 +52,7 @@ end
 -- The module a template belongs to is the mod folder holding its provider file.
 local function moduleRoot(location)
     local normalized = location:gsub('\\', '/'):gsub('%[%d+%]$', '')
-    return normalized:match('^(.*)/Scripts/templates/[^/]+%.lua$')
-        or normalized:match('^(.*)/Scripts/[^/]+%.lua$')
+    return normalized:match('^(.*)/Scripts/[^/]+%.lua$')
 end
 M.moduleRoot = moduleRoot
 

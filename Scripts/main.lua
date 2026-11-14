@@ -33,7 +33,7 @@ local bootstrap = require('mc.lua_startup').start({
     menuRoot = root,
     categoryFiles = listedCategories(),
     settingsApi = require('settings_api'),
-    collectTemplates = function() return registrations:collect() end,
+    collectTemplates = function(reject) return registrations:collect(reject) end,
 })
 MC._setTemplateRegistrar(function(path)
     return bootstrap:registerTemplate(path)

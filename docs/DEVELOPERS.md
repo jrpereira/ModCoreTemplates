@@ -27,9 +27,10 @@ local MC = require('mc')
 MC.registerTemplate('nudge') -- loads sibling mc_nudge.lua at MCT startup
 ```
 
-Register each template separately before the startup barrier. Late registrations
-are rejected; duplicate file registrations are ignored. One invalid template
-is skipped without removing other valid templates.
+Register each template separately before the startup barrier, from a file directly in
+your mod's `Scripts` folder. Late registrations are rejected; duplicate file
+registrations are ignored. A template file outside a mod's `Scripts` folder, or any
+other invalid template, is reported and skipped without removing other valid templates.
 
 ## Declare objects and changes
 

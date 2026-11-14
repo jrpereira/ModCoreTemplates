@@ -318,6 +318,26 @@ test('startup drains cross-state registrations before loading templates', functi
     assert(boot.phase=='running' and collected==1 and #executed==1 and executed[1]=='external')
 end)
 
+test('a rejected registration is reported as a provider error and the rest load', function()
+    local f=fixture()
+    f.object('one')
+    local barrier,executed,errors=nil,{},{}
+    local onError=f.host.onError
+    f.host.onError=function(e) errors[#errors+1]=e end
+    local boot=Bootstrap.new({host=f.host,categories=f.categories,
+        execute=function(path) executed[#executed+1]=path;return f.a end,
+        collectTemplates=function(reject)
+            reject('Other/Scripts/templates/mc_x.lua','registered template is outside a mod Scripts directory')
+            return {'external'}
+        end,
+        subscribeLoopStart=function(callback) barrier=callback;return function() end end})
+    barrier()
+    f.host.onError=onError
+    assert(boot.phase=='running' and #executed==1 and executed[1]=='external')
+    assert(#errors==1 and errors[1].stage=='registration'
+        and errors[1].provider=='Other/Scripts/templates/mc_x.lua', tostring(errors[1] and errors[1].message))
+end)
+
 test('template main can return multiple definitions', function()
     local f=fixture()
     f.object('one')

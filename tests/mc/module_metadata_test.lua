@@ -7,8 +7,10 @@ local root=assert(os.getenv('MCT_TEST_DIR'),'MCT_TEST_DIR required')..'/9_ModCor
 local template=Metadata.apply({id='Template',category='player.quickslots'},root..'/Scripts/mc_template.lua')
 assert(template.module=='9_ModCore_Provider' and template.author==nil and template.version==nil
     and template.icon==nil)
-assert(Metadata.apply({id='T'},root..'\\Scripts\\templates\\nested.lua').module=='9_ModCore_Provider',
-    'templates under Scripts/templates and Windows paths resolve to the same folder')
+assert(Metadata.apply({id='T'},root..'\\Scripts\\mc_nested.lua').module=='9_ModCore_Provider',
+    'Windows paths resolve to the same folder')
+assert(Metadata.apply({id='T'},root..'/Scripts/templates/mc_nested.lua').module==nil,
+    'a file below Scripts is not a module template')
 -- The folder wins over a declared module; outside a mod folder the declared one is kept.
 assert(Metadata.apply({id='T',module='Other'},root..'/Scripts/mc_template.lua').module=='9_ModCore_Provider')
 assert(Metadata.apply({module='Declared'},'template').module=='Declared')

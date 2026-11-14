@@ -34,7 +34,8 @@ end
 function M.publisher(shared,modsRoot)
     check(shared)
     assert(type(modsRoot)=='string' and modsRoot~='','Mods root required')
-    local allowed=modsRoot:gsub('\\','/'):gsub('/+$','')..'/'
+    -- Windows paths: the Mods-root prefix is compared case-insensitively.
+    local allowed=(modsRoot:gsub('\\','/'):gsub('/+$','')..'/'):lower()
     local generation,collected
     local self={}
     function self:begin()
@@ -46,7 +47,9 @@ function M.publisher(shared,modsRoot)
         shared:SetSharedVariable(prefix..'active',generation)
         return generation
     end
-    function self:collect()
+    -- The registered paths that are template files directly in a mod's Scripts folder.
+    -- Each other path goes to reject(path, why) and is skipped.
+    function self:collect(reject)
         assert(generation and not collected,'template registrations already collected')
         assert(shared:GetSharedVariable(prefix..'active')==generation,
             'template registration generation was superseded')
@@ -56,13 +59,21 @@ function M.publisher(shared,modsRoot)
         local paths={}
         for index=1,count do
             local path=shared:GetSharedVariable(prefix..generation..'.item.'..index)
-            assert(type(path)=='string' and #path>0 and #path<=4096,
-                'invalid registered template path')
-            local canonical=path:gsub('\\','/')
-            assert(canonical:sub(1,#allowed)==allowed
-                and canonical:match('/Scripts/[%w_%-]+%.lua$'),
-                'registered template is outside a mod Scripts directory: '..canonical)
-            paths[#paths+1]=path
+            local why
+            if type(path)~='string' or #path==0 or #path>4096 then
+                why='invalid registered template path'
+            else
+                local canonical=path:gsub('\\','/')
+                if canonical:sub(1,#allowed):lower()~=allowed
+                    or not canonical:match('/Scripts/[%w_%-]+%.lua$') then
+                    why='registered template is outside a mod Scripts directory: '..canonical
+                end
+            end
+            if why then
+                if reject then pcall(reject,type(path)=='string' and path or nil,why) end
+            else
+                paths[#paths+1]=path
+            end
         end
         collected=true
         return paths

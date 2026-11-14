@@ -40,6 +40,34 @@ test('publisher collects once and closes registration',function()
     _G.ModRef=previous
 end)
 
+test('an invalid registered path is rejected alone',function()
+    local state,values=shared()
+    local publisher=Registration.publisher(state,'C:\\Games\\Mods\\')
+    publisher:begin()
+    local items={'c:/games/mods/Good/Scripts/mc_good.lua',
+        'C:/Games/Mods/Other/Scripts/templates/mc_x.lua',
+        'D:/Elsewhere/Scripts/mc_y.lua',
+        42,
+        'C:\\Games\\Mods\\Win\\Scripts\\mc_win.lua'}
+    for index,item in ipairs(items) do values['MCT.TemplateRegistration.v1.1.item.'..index]=item end
+    values['MCT.TemplateRegistration.v1.1.count']=#items
+    local rejected={}
+    local paths=publisher:collect(function(path,why) rejected[#rejected+1]={path=path,why=why} end)
+    assert(#paths==2 and paths[1]==items[1] and paths[2]==items[5],'valid paths are kept, prefix case-insensitive')
+    assert(#rejected==3,'each invalid path is reported')
+    assert(rejected[1].path==items[2] and rejected[1].why:match('outside a mod Scripts directory'))
+    assert(rejected[2].path==items[3])
+    assert(rejected[3].path==nil and rejected[3].why=='invalid registered template path')
+end)
+
+test('an invalid count still fails collection',function()
+    local state,values=shared()
+    local publisher=Registration.publisher(state,repoRoot)
+    publisher:begin()
+    values['MCT.TemplateRegistration.v1.1.count']=-1
+    assert(not pcall(publisher.collect,publisher))
+end)
+
 test('client installation is content-aware',function()
     local root=assert(os.getenv('MCT_TEST_DIR'),'MCT_TEST_DIR required')..'/registration-client.lua'
     assert(Registration.install('./Scripts/mc_client.lua',root))

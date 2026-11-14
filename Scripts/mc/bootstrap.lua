@@ -152,7 +152,9 @@ function M.new(options)
         if self.phase~='registering' then return false end
         local ok,why=pcall(function()
             if options.collectTemplates then
-                local registered=options.collectTemplates()
+                local registered=options.collectTemplates(function(path,why)
+                    report('registration',why,path)
+                end)
                 assert(type(registered)=='table','collected templates must be a table')
                 for _,path in ipairs(registered) do self:registerTemplate(path) end
             end

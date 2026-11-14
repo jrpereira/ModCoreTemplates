@@ -22,6 +22,10 @@
   above higher-priority layers, such as the quickslot canvas, when its settings change.
 - A root revealed when its `attachDelay` ends publishes `templates.layout.changed`
   even when no template attaches in that pass.
+- A registered template file outside a mod's `Scripts` folder, such as one in
+  `Scripts/templates/`, is reported as a registration error and skipped; other templates
+  still load. Before, one such file stopped MCT from starting. The Mods-folder prefix is
+  compared case-insensitively.
 
 ## v1.8.0
 
