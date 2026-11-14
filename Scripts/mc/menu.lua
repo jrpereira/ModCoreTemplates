@@ -7,13 +7,7 @@ local M = {}
 -- fields with a type (enum, integer or range), values, widget and style, visibility and label rules, and storage. ModCoreSettings
 -- turns them into menu pages.
 
-local function text(value)
-    U.text(value, 'menu text')
-    assert(not value:find('[%c|;%[%]]') and not value:match('^%s') and not value:match('%s$'),
-        'menu text contains unsupported separators, controls, or edge whitespace')
-    assert(#value <= 4096, 'menu text too long')
-    return value
-end
+local function text(value) return Provider.text(value, 'menu text') end
 
 local function key(parts)
     local out = {}
@@ -21,9 +15,7 @@ local function key(parts)
     return table.concat(out)
 end
 
-local function title(value)
-    return value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end)
-end
+local title = Provider.title
 
 -- A visibility rule on a picker: shown while field holds one of values.
 local function rule(field, values)

@@ -7,12 +7,17 @@ local MenuController=require('mc.menu_controller')
 local U=require('mc.util')
 local M={}
 
-function M.validate(options,categories,templates,locations)
-    local model=MenuModel.build(categories,U.copy(templates),locations)
+-- The menu model, generated menu and runtime for these templates.
+local function compile(options,categories,templates,locations,runtimeOptions)
+    local model=MenuModel.build(categories,templates,locations)
     local menuOptions=U.copy(options.menu or {})
     if options.menuRoot then menuOptions.version=Layout.version(options.menuRoot) end
-    Menu.generate(model.registry,menuOptions)
-    Runtime.new(options.host,model.categories,model.templates,options.state)
+    local menu=Menu.generate(model.registry,menuOptions)
+    return model,menu,Runtime.new(options.host,model.categories,model.templates,options.state,runtimeOptions)
+end
+
+function M.validate(options,categories,templates,locations)
+    compile(options,categories,U.copy(templates),locations)
 end
 
 function M.new(options,categories,templates,locations,own)
@@ -34,13 +39,10 @@ function M.new(options,categories,templates,locations,own)
         return true
     end
     if own then own(self) end
-    local model=MenuModel.build(categories,templates,locations)
-    local menuOptions=U.copy(options.menu or {})
-    if options.menuRoot then menuOptions.version=Layout.version(options.menuRoot) end
-    self.menu=Menu.generate(model.registry,menuOptions)
+    local model
+    model,self.menu,self.runtime=compile(options,categories,templates,locations,{defer=options.defer,
+        unavailable=options.unavailableSignals,awakeChanged=options.awakeChanged,layoutChanged=options.layoutChanged})
     self.categories=model.categories
-    self.runtime=Runtime.new(options.host,model.categories,model.templates,options.state,{defer=options.defer,unavailable=options.unavailableSignals,
-        awakeChanged=options.awakeChanged,layoutChanged=options.layoutChanged})
     local savedValues=options.menuValues
     local configSources={}
     if options.menuRoot then

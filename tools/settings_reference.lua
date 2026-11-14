@@ -35,9 +35,7 @@ local function jsonString(path, name)
     local text = read(path)
     return text and text:match('"' .. name .. '"%s*:%s*"([^"]*)"')
 end
-local function title(value)
-    return (value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end))
-end
+local title = require('mc.provider_settings').title
 
 -- Installed folder names, as the release manifests give them.
 local moduleFolder = jsonString(moduleDir .. '/release-manifest.json', 'module') or moduleDir:match('([^/\\]+)$')

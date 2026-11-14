@@ -2,6 +2,7 @@ local U = require('mc.util')
 local Contributions = require('menu_contributions')
 local M = {}
 local function finite(v) return type(v) == 'number' and v == v and math.abs(v) <= 1000000000 end
+-- Menu text: nonempty, no separators or controls, no edge whitespace, at most 4096 bytes.
 local function text(v, where)
     U.text(v, where)
     assert(#v <= 4096 and not v:find('[%c|;%[%]]') and not v:match('^%s') and not v:match('%s$'),
@@ -28,9 +29,11 @@ local domains = {
     percent = {min=0,max=100,step=1,suffix='%'},
 }
 
+-- 'player_quickslots' as 'Player Quickslots'.
 local function title(value)
-    return value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end)
+    return (value:gsub('_', ' '):gsub('(%a)([%w_]*)', function(a, b) return a:upper() .. b end))
 end
+M.text, M.title = text, title
 
 -- A choice is its label, or a ModCoreSettings menu-data choice without its value:
 -- {label=,note=,sound=}. Notes and sounds come back keyed by value.
