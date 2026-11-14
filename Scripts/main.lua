@@ -9,9 +9,9 @@ package.path = scripts .. '/vendor/?.lua;' .. scripts .. '/?.lua;' .. package.pa
 local Registration=require('mc.registration')
 Registration.install(scripts..'/mc_client.lua',mods..'/shared/mc.lua')
 local registrations=Registration.publisher(assert(ModRef,'ModRef unavailable'),mods)
+-- The level comes from log_level.txt in the mod folder; WARN without it.
+local log = require('mc_log').new({name='ModCoreTemplates', path=root .. '/log_level.txt'})
 registrations:begin()
--- Install the public registrar before later provider mods load.
-local MC=require('mc')
 local function listedCategories()
     local names = assert(loadfile(root .. '/Scripts/categories/mc.lua'))()
     assert(type(names) == 'table', 'invalid category source list')
@@ -26,16 +26,26 @@ local function listedCategories()
     end
     return files
 end
--- The level comes from log_level.txt in the mod folder; WARN without it.
-local log = require('mc_log').new({name='ModCoreTemplates', path=root .. '/log_level.txt'})
-local bootstrap = require('mc.lua_startup').start({
-    log = log,
-    menuRoot = root,
-    categoryFiles = listedCategories(),
-    settingsApi = require('settings_api'),
-    collectTemplates = function(reject) return registrations:collect(reject) end,
-})
-MC._setTemplateRegistrar(function(path)
-    return bootstrap:registerTemplate(path)
+-- Registration is open from here: a failed start closes it again, so providers that load
+-- later are refused instead of registering into a generation nobody collects.
+local started, bootstrap = pcall(function()
+    -- Install the public registrar before later provider mods load.
+    local MC=require('mc')
+    local bootstrap = require('mc.lua_startup').start({
+        log = log,
+        menuRoot = root,
+        categoryFiles = listedCategories(),
+        settingsApi = require('settings_api'),
+        collectTemplates = function(reject) return registrations:collect(reject) end,
+    })
+    MC._setTemplateRegistrar(function(path)
+        return bootstrap:registerTemplate(path)
+    end)
+    return bootstrap
 end)
+if not started then
+    pcall(registrations.stop, registrations)
+    pcall(log.critical, 'startup failed: ', tostring(bootstrap))
+    error(bootstrap, 0)
+end
 return bootstrap

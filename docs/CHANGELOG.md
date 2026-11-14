@@ -32,6 +32,8 @@
 - Logged errors name the template and provider file they are about, such as
   `attach (Fangdango_Wheels): callback returned false`; `MCTOnError` receives them as
   `template` and `provider`.
+- When MCT fails to start, it logs one CRITICAL line and closes template registration,
+  so providers that load later are told registration is not open.
 
 ## v1.8.0
 

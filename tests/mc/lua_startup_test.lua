@@ -219,4 +219,23 @@ package.loaded['mc.registration']=originalRegistration
 _G.ModRef=originalModRef
 assert(type(active)=='table')
 assert(#registered==0)
+do
+    -- A failed start closes registration again and fails the load.
+    local stopped=0
+    package.loaded['mc.lua_startup']={start=function() error('bridge loop start unavailable',0) end}
+    package.loaded['mc.registration']={
+        install=function() return true end,
+        publisher=function()
+            return {begin=function() end,collect=function() return {} end,
+                stop=function() stopped=stopped+1 end}
+        end,
+    }
+    _G.ModRef={}
+    local ok,why=pcall(dofile,root..'/Scripts/main.lua')
+    package.loaded['mc.lua_startup']=original
+    package.loaded['mc.registration']=originalRegistration
+    _G.ModRef=originalModRef
+    assert(not ok and tostring(why):find('bridge loop start unavailable',1,true),tostring(why))
+    assert(stopped==1,'a failed start closes template registration')
+end
 print('PASS: active MCT entry point installs direct template registration')
