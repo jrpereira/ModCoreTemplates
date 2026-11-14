@@ -402,4 +402,62 @@ do
     assert(not scoped.ready(hudOwner) and not scoped.ready(hudRoot),'a hosted HUD follows its host')
     scoped.stop()
 end
+do
+    -- A removed UserWidget that rejoins a panel is ready again even when no AddChild
+    -- hook sees it: hook changes wait for the next dispatch, and categories without
+    -- widget selectors never hook AddChild.
+    for _,value in ipairs(all) do value.alive=false end
+    local pending={}
+    function api.ExecuteInGameThread(callback) pending[#pending+1]=callback end
+    local function drain() while #pending>0 do table.remove(pending,1)() end end
+    local liveWorld=obj(100,'World /Game/Live.Live')
+    local function hud(address,suffix,classes)
+        local value=obj(address,'WBP_GameHUD_C /Engine/Transient.GameEngine_0.WBP_GameHUD_C_'..suffix,classes)
+        value.class=ownerClass; value.world=liveWorld
+        value.parent=obj(address+1,'Overlay /Engine/Transient.GameEngine_0.Frame_'..suffix,{['/Script/UMG.Widget']=true})
+        return value
+    end
+    local function removeAndRejoin(target)
+        local panel=target.parent
+        hooks['/Script/UMG.Widget:RemoveFromParent'].pre(wrap(target))
+        target.parent=nil
+        hooks['/Script/UMG.Widget:RemoveFromParent'].post(wrap(target))
+        target.parent=panel -- rejoins in the same dispatch
+    end
+    -- (a) A ready widget root: AddChild is not hooked in the ready state.
+    local owned=hud(110,'10',{['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
+    local ownedTree=obj(112,'WidgetTree '..owned.full:match('^%S+ (.+)$')..'.WidgetTree',{},owned)
+    local ownedRoot=obj(113,'WidgetSwitcher '..owned.full:match('^%S+ (.+)$')..'.WidgetTree.QuickslotsSwitcher',
+        {['/Script/UMG.Widget']=true,['/Script/UMG.WidgetSwitcher']=true},ownedTree)
+    ownedRoot.class=widgetClass; owned.WidgetTree=ownedTree; ownedTree.RootWidget=ownedRoot
+    ownedRoot.parent=obj(114,'CanvasPanel '..owned.full:match('^%S+ (.+)$')..'.WidgetTree.Root',
+        {['/Script/UMG.Widget']=true},ownedTree)
+    local switched={id='switched',objects={switcher={source='lookup',object=objectPath}}}
+    local widgets=Source.new({switched},api)
+    widgets.watch({switched.objects.switcher})
+    assert(#widgets.find(switched.objects.switcher)==1)
+    drain()
+    assert(widgets.ready(ownedRoot) and not hooks['/Script/UMG.PanelWidget:AddChild'])
+    removeAndRejoin(owned)
+    drain()
+    assert(widgets.ready(ownedRoot),'a widget root that rejoined a panel is ready again')
+    widgets.stop()
+    owned.alive,ownedRoot.alive=false,false
+    -- (b) Only a blueprint-class root selector: AddChild is never hooked.
+    local attacks={id='attacks',objects={hud={source='lookup',class=classPath,required=true}}}
+    local blueprint=Source.new({attacks},api)
+    local gameHud=hud(120,'20',{['/Script/UMG.WBP_GameHUD_C']=true,
+        ['/Script/UMG.UserWidget']=true,['/Script/UMG.Widget']=true})
+    blueprint.watch({attacks.objects.hud})
+    assert(#blueprint.find(attacks.objects.hud)==1)
+    drain()
+    assert(blueprint.ready(gameHud) and hooks['/Script/UMG.Widget:RemoveFromParent']
+        and not hooks['/Script/UMG.PanelWidget:AddChild'])
+    hooks['/Script/UMG.Widget:RemoveFromParent'].pre(wrap(gameHud))
+    assert(not blueprint.ready(gameHud),'unready while its removal runs')
+    removeAndRejoin(gameHud)
+    drain()
+    assert(blueprint.ready(gameHud),'a HUD that rejoined a panel is ready again without AddChild')
+    blueprint.stop()
+end
 print('PASS: widget construction, group parenting, valid detach and hook cleanup')

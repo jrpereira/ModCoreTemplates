@@ -209,7 +209,16 @@ function M.new(categories, api, log)
                 if not ok or not source.valid(root)
                     or safe(root,'GetAddress') ~= safe(object,'GetAddress') then return false end
             end
-            if built[ownerToken] == false then return false end
+            if built[ownerToken] == false then
+                -- Removed: unready until its removal has finished and it is seen in a
+                -- panel again. AddChild may not be hooked to clear the marker, either
+                -- in the ready state or without widget selectors.
+                local ownerParent = owner == object and parent or source.parent(owner)
+                if pendingRemoval[safe(owner,'GetAddress')] or not source.valid(ownerParent) then
+                    return false
+                end
+                built[ownerToken] = nil
+            end
             if built[ownerToken] == true then return true end
             -- Nested game HUDs are children of another UserWidget. IsInViewport
             -- is unavailable for them in Dawnwalker; a live world and panel

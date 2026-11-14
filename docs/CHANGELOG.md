@@ -26,6 +26,9 @@
   `Scripts/templates/`, is reported as a registration error and skipped; other templates
   still load. Before, one such file stopped MCT from starting. The Mods-folder prefix is
   compared case-insensitively.
+- A HUD widget removed and added back to a panel is ready again once it is seen in its
+  panel, even when no AddChild hook saw it return. Before, its templates could stay
+  detached until it was next added to the viewport.
 
 ## v1.8.0
 
