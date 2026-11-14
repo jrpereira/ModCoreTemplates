@@ -13,6 +13,17 @@ local function address(object)
     local ok, value = pcall(function() return object:GetAddress() end)
     return ok and value or nil
 end
+-- Created objects' classes by path, as weak handles: StaticFindObject walks every
+-- object, so a class is looked up again only once its handle died.
+local classes = {}
+local function classAt(path)
+    local class = Objects.get(classes[path])
+    if class then return class end
+    Objects.release(classes[path])
+    class = StaticFindObject(path)
+    classes[path] = Objects.valid(class) and Objects.hold(class) or nil
+    return class
+end
 local function later(left, right)
     if left.priority ~= right.priority then return left.priority > right.priority end
     return left.id > right.id
@@ -183,7 +194,7 @@ function M.new(template,specs,order,createdSpecs,layer)
                 local outer=readyObject(Objects.call(anchor,'GetOuter'),spec.from..' outer')
                 local classPath=spec.class:find('/',1,true) and spec.class
                     or '/Script/UMG.'..spec.class
-                local class=assert(StaticFindObject(classPath),
+                local class=assert(classAt(classPath),
                     spec.name..' class unavailable')
                 local object=assert(StaticConstructObject(class,outer),
                     spec.name..' construction failed')

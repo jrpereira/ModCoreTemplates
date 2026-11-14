@@ -10,7 +10,7 @@ end
 
 -- One quickslot-like category opting in, one NPC-like category that does not.
 local function fixture(layoutEvent)
-    local objects, errors, passes = {}, {}, {}
+    local objects, errors, passes, screens = {}, {}, {}, 0
     local sink, epoch
     local host = {
         valid=function(o) return o ~= nil and o.valid ~= false end,
@@ -19,7 +19,7 @@ local function fixture(layoutEvent)
         matches=function(o, s) return s.class == o.class end,
         parent=function(o) return o.parent end,
         watch=function() end,
-        screen=function() return {width=1920,height=1080} end,
+        screen=function() screens = screens + 1; return {width=1920,height=1080} end,
         find=function(s)
             local found = {}
             for _, o in ipairs(objects) do
@@ -47,7 +47,8 @@ local function fixture(layoutEvent)
     local npc = template('npc', 'npc.pawn', 'pawn')
     local runtime = Runtime.new(host, categories, {bars, npc}, nil, {
         layoutChanged=function(ids) passes[#passes + 1] = table.concat(ids, ',') end})
-    local f = {runtime=runtime, passes=passes, calls=calls, errors=errors}
+    local f = {runtime=runtime, passes=passes, calls=calls, errors=errors,
+        screens=function() return screens end}
     function f.object(id, class)
         local object = {id=id, class=class or 'Slot'}
         objects[#objects + 1] = object
@@ -167,20 +168,31 @@ test('an attachDelay reveal publishes even when nothing attaches', function()
     assert(#passes == before + 1 and passes[#passes] == 'player.quickslots', table.concat(passes, ' | '))
 end)
 
+test('a turn reads the screen once for every attachment it makes', function()
+    local f = fixture(true)
+    f.object('hud'); f.object('aa')
+    f.runtime:select('player.quickslots', {bars={}})
+    f.runtime:start()
+    assert(#f.calls == 2 and f.screens() == 1, 'two attaches, one screen read: '..f.screens())
+    f.runtime:select('player.quickslots', {bars={size=2}})
+    assert(#f.calls == 4 and f.screens() == 2, 'each turn reads it again')
+end)
+
 test('the quickslots category opts in', function()
     local category = assert(loadfile('Scripts/categories/player_quickslots.lua'))()
     assert(category.id == 'player.quickslots' and category.layoutEvent == true)
 end)
 
 test('startup publishes templates.layout.changed through mc_events', function()
-    local shared, commands = {}, {}
+    dofile('tests/support/lifetimes.lua').install()
+    local shared, commands, finds = {}, {}, 0
     local controller
     controller = {IsValid=function() return true end,
         Player={ViewportClient={ProcessConsoleExec=function(_, command, _, from)
             assert(from == controller); commands[#commands + 1] = command end}}}
     local api = {ExecuteInGameThread=function(f) f() end,
         UE4SSLuaEventBridge={onLoopStart=function() return function() end end},
-        FindFirstOf=function(class) assert(class == 'PlayerController'); return controller end,
+        FindFirstOf=function(class) assert(class == 'PlayerController'); finds = finds + 1; return controller end,
         ModRef={GetSharedVariable=function(_, key) return shared[key] end,
             SetSharedVariable=function(_, key, value) shared[key] = value end}}
     local configured = {host={}, categories={}, events={register=function() end}, state={}}
@@ -198,6 +210,7 @@ test('startup publishes templates.layout.changed through mc_events', function()
     assert(shared['MCT.Templates.LayoutChanged.v1.data'] == '2 player.quickslots',
         tostring(shared['MCT.Templates.LayoutChanged.v1.data']))
     assert(#commands == 2 and commands[1] == 'MCT_Templates_LayoutChanged_v1')
+    assert(finds == 1, 'the live player controller is found once')
     -- A subscriber reads the published category.
     assert(Events.layout == 'templates.layout.changed')
 end)

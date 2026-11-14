@@ -50,18 +50,24 @@ local lifetimes=Lifetimes.service(function(value)
         and serialByAddress[value.address]==value.serial
 end)
 api.UE4SSLuaEventBridge=Lifetimes.bridge(lifetimes)
+local layoutLookups=0
+local layoutLibrary
 function api.StaticFindObject(path)
     if path~='/Script/UMG.Default__WidgetLayoutLibrary' then return nil end
-    return {IsValid=function() return true end,
-        GetViewportSize=function(_,context)
-            assert(context==owner or context.full:find('WBP_GameHUD_C_2',1,true),
-                'viewport lookup must use the owning HUD')
-            return {X=1920,Y=1080}
-        end,
-        GetViewportScale=function(_,context)
-            assert(context==owner or context.full:find('WBP_GameHUD_C_2',1,true))
-            return 0.5
-        end}
+    layoutLookups=layoutLookups+1
+    if layoutLibrary then return layoutLibrary end
+    layoutLibrary=obj(5,'WidgetLayoutLibrary /Script/UMG.Default__WidgetLayoutLibrary')
+    table.remove(all) -- kept alive: not part of any map
+    function layoutLibrary.GetViewportSize(_,context)
+        assert(context==owner or context.full:find('WBP_GameHUD_C_2',1,true),
+            'viewport lookup must use the owning HUD')
+        return {X=1920,Y=1080}
+    end
+    function layoutLibrary.GetViewportScale(_,context)
+        assert(context==owner or context.full:find('WBP_GameHUD_C_2',1,true))
+        return 0.5
+    end
+    return layoutLibrary
 end
 function api.IsInGameThread() return true end
 function api.ExecuteInGameThread(callback) callback() end
@@ -159,6 +165,8 @@ runtime:select('quickslots',{visual={size=2}})
 runtime:start()
 assert(finds==2 and #calls==0)
 assert(host.screen(host.capture(root)).center==1920)
+assert(host.screen(host.capture(root)).scale==0.5 and layoutLookups==1,
+    'the layout library is looked up once while it lives')
 local wrap=function(o) return {get=function() return o end} end
 hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(owner))
 assert(#calls==1 and calls[1][1]=='attach' and calls[1][2]==root

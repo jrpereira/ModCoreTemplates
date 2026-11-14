@@ -296,6 +296,8 @@ function M.new(host, definitions, templates, state, options)
     end
     -- Categories with layoutEvent whose widgets callbacks may have changed this turn.
     local touched = nil
+    -- The viewport cannot change within one game-thread turn: its screen is read once.
+    local turnScreen = nil
     local function touch(category)
         if touched and category and category.layoutEvent then touched[category.id] = true end
     end
@@ -303,7 +305,7 @@ function M.new(host, definitions, templates, state, options)
         queue[#queue + 1] = operation
         if busy then return end
         busy = true
-        failedInTurn, touched = {}, {}
+        failedInTurn, touched, turnScreen = {}, {}, nil
         local index = 1
         while index <= #queue do
             local ok, why = pcall(queue[index])
@@ -311,7 +313,7 @@ function M.new(host, definitions, templates, state, options)
             index = index + 1
         end
         local changed = keys(touched)
-        queue, busy, failedInTurn, touched = {}, false, nil, nil
+        queue, busy, failedInTurn, touched, turnScreen = {}, false, nil, nil, nil
         if layoutChanged and #changed > 0 then
             local ok, why = pcall(layoutChanged, changed)
             if not ok then report('layout', nil, why) end
@@ -337,13 +339,14 @@ function M.new(host, definitions, templates, state, options)
             if not host.valid(object) then return false, 'not_ready' end
             if operation == 'detach' then screen=oldScreen end
             if operation ~= 'detach' then
-                screen = host.screen(object)
+                screen = turnScreen or host.screen(object)
                 if not screen then return false, 'not_ready' end
+                if busy then turnScreen = screen end
             end
             local target = object
             if host.unwrap then target = host.unwrap(object) end
             if target == nil then return false, 'not_ready' end
-            local params = {settings=copy(settings),screen=screen,state=copy(state)}
+            local params = {settings=copy(settings),screen=copy(screen),state=copy(state)}
             named=TemplateTargets.arrange(record.targetTree,targets,host.unwrap,host.valid)
             if record.manager then
                 local dependencies={}

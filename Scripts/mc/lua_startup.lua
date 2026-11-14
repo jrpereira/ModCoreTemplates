@@ -150,16 +150,22 @@ function M.start(options, api)
     if not configured.layoutChanged and api.ModRef then
         local publish=Events.publisher(api.ModRef)
         local log=configured.log and require('mc_log').wrap(configured.log) or nil
+        local Objects=require('mc.objects')
+        -- The player controller as a weak handle, found again only once it died.
+        local controllerHandle
         configured.layoutChanged=function(categoryIds)
             local owner
-            if type(api.FindFirstOf)=='function' then
-                pcall(function()
-                    local controller=api.FindFirstOf('PlayerController')
-                    if controller and controller:IsValid() then
-                        owner={controller=controller,player=controller.Player}
-                    end
-                end)
-            end
+            pcall(function()
+                local controller=Objects.get(controllerHandle)
+                if not controller and type(api.FindFirstOf)=='function' then
+                    Objects.release(controllerHandle)
+                    controller=api.FindFirstOf('PlayerController')
+                    controllerHandle=Objects.valid(controller) and Objects.hold(controller) or nil
+                end
+                if Objects.valid(controller) then
+                    owner={controller=controller,player=controller.Player}
+                end
+            end)
             for _,id in ipairs(categoryIds) do
                 local ok,why=pcall(publish,Events.layout,{category=id},owner)
                 if not ok or why==false then

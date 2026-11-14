@@ -51,7 +51,9 @@ local root,outer=object('root'),object('WidgetTree')
 function root:GetOuter() return outer end
 local native=object('native HUD content')
 root:AddChild(native)
-StaticFindObject=function(path) return {path=path} end
+local classLookups=0
+local overlayClass=object('Class /Script/UMG.Overlay')
+StaticFindObject=function(path) classLookups=classLookups+1; assert(path=='/Script/UMG.Overlay'); return overlayClass end
 StaticConstructObject=function(_,owner)
     assert(owner==outer)
     return object('cue')
@@ -88,6 +90,7 @@ end
 attach(omens)
 attach(edges)
 assert(order()=='native,Omens,Edges',order())
+assert(classLookups==1,'a created class is looked up once while it lives')
 -- Enabled mid-session: the backdrop goes under the layers already shown.
 cues.Edges.Slot:SetPadding({Left=3,Top=0,Right=0,Bottom=0})
 attach(background)

@@ -39,6 +39,9 @@
   restarting its timer.
 - `MC_NPCAttackIndicator` looks up each combat indicator once while it lives instead
   of on every icon change.
+- Fewer global object lookups on attach, update and layout passes: the widget layout
+  library, created objects' classes and the player controller are found once while they
+  live, and each pass reads the screen size once.
 
 ## v1.8.0
 

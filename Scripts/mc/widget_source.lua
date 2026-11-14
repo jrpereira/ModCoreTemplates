@@ -285,10 +285,21 @@ function M.new(categories, api, log)
         end
         return current
     end
+    -- The layout library's default object, kept as a weak handle: StaticFindObject walks
+    -- every object, so it runs again only once the handle died.
+    local layoutHandle
+    local function layoutLibrary()
+        local layout = Objects.get(layoutHandle)
+        if layout then return layout end
+        Objects.release(layoutHandle)
+        layout = api.StaticFindObject('/Script/UMG.Default__WidgetLayoutLibrary')
+        layoutHandle = Objects.valid(layout) and Objects.hold(layout) or nil
+        return layout
+    end
     function source.screen(object)
         assert(onGameThread(), 'viewport discovery requires the game thread')
         if not source.valid(object) or type(api.StaticFindObject) ~= 'function' then return nil end
-        local layout = api.StaticFindObject('/Script/UMG.Default__WidgetLayoutLibrary')
+        local layout = layoutLibrary()
         if not Objects.valid(layout) then return nil end
         local hud=ObjectSelector.owner(object) or object
         local size = safe(layout, 'GetViewportSize', hud)
@@ -577,6 +588,8 @@ function M.new(categories, api, log)
         mutationDepth, wakePending = 0, false
         removeHooks()
         forgetKnown()
+        Objects.release(layoutHandle)
+        layoutHandle = nil
     end
     if categories then source.activate(categories) end
     return source
