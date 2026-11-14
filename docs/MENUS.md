@@ -243,8 +243,8 @@ options, provide:
 
 When `menuRoot` is supplied, saved central and module configurations take precedence
 over `menuValues`. Missing config keys are added; existing values and unrelated
-sections are preserved. Invalid saved values are reported rather than silently
-overwritten.
+sections are preserved. An invalid saved value is rewritten with its default; startup
+continues.
 Startup creates `Scripts/categories` and `Scripts/cache` as
 needed. The central config and pages are stored directly in
 `Scripts/cache`; module-target configs are stored at their module roots. Without `menuRoot`,
