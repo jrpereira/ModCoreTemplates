@@ -42,7 +42,7 @@ function M.start(options, api)
         return function() active = false; cancel() end
     end
     configured.queue = api.ExecuteInGameThread
-    -- Retries of a category's loaded check run later on the game thread.
+    -- attachDelay timers fire later on the game thread.
     if type(api.ExecuteWithDelay) == 'function' then
         configured.defer = function(ms, callback)
             api.ExecuteWithDelay(ms, function() api.ExecuteInGameThread(callback) end)

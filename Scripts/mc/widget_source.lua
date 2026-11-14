@@ -38,7 +38,8 @@ function M.new(categories, api, log)
         ok,caps=pcall(bridge.GetCapabilities)
     end
 
-    -- Objects are kept only as weak handles. If the bridge's ABI probe fails,
+    -- Objects are kept only as weak handles, which came with bridge API 6; MCT's
+    -- published minimum is Event Bridge 1.3.0. If the bridge's ABI probe fails,
     -- holding fails and nothing is kept or attached: there is no fallback.
     assert(ok
         and type(caps)=='table'
@@ -47,7 +48,7 @@ function M.new(categories, api, log)
         and type(lifetimes)=='table'
         and type(lifetimes.captureObject)=='function'
         and type(lifetimes.weak)=='function',
-        'MCT requires UE4SSLuaEventBridge API 6 weak handles')
+        'MCT requires UE4SSLuaEventBridge 1.3.0 or newer (weak handles)')
     Objects.useLifetimes(lifetimes)
     -- Adds the bridge's reason when its lifetime service is down.
     local function lifetimeFailure(why)
