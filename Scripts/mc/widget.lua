@@ -2,16 +2,20 @@ local Objects = require('mc.objects')
 local M = {}
 local currentSlots=setmetatable({}, {__mode='k'})
 
+-- Hoisted so a call builds no closure: these run inside every widget hook.
+local function fetch(value) return value:get() end
+local function index(object, name) return object[name] end
+
 function M.unwrap(value)
     if value == nil then return nil end
-    local ok, result = pcall(function() return value:get() end)
+    local ok, result = pcall(fetch, value)
     if ok then return result end
     return value
 end
 
 function M.property(object, name)
     if object == nil then return nil end
-    local ok, value = pcall(function() return object[name] end)
+    local ok, value = pcall(index, object, name)
     if ok then return M.unwrap(value) end
 end
 

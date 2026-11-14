@@ -298,6 +298,9 @@ function M.new(host, definitions, templates, state, options)
             priority=template.priority or M.DEFAULT_PRIORITY, category=category}
         byId[template.id], category.templates[template.id] = record, record
     end
+    -- Categories and templates are fixed from here, so their orders are computed once.
+    local categoryOrder, templateOrder = keys(categories), ordered(byId)
+    for _, category in pairs(categories) do category.order = ordered(category.templates) end
     local function report(stage, id, message)
         local error = {stage=stage, template=id, message=tostring(message)}
         self.errors[#self.errors + 1] = error
@@ -389,7 +392,7 @@ function M.new(host, definitions, templates, state, options)
     local function syncAwake(category)
         local open = self.phase == 'running' and wakeOpen(category)
         local changed = false
-        for _, id in ipairs(ordered(category.templates)) do
+        for _, id in ipairs(category.order) do
             local record = category.templates[id]
             local wanted = record.enabled and open
             if wanted ~= record.awake then
@@ -448,7 +451,7 @@ function M.new(host, definitions, templates, state, options)
     end
     local function refreshDiscovery()
         local roots,seen,identities={},{},{}
-        for _,categoryName in ipairs(keys(categories)) do
+        for _,categoryName in ipairs(categoryOrder) do
             local category=categories[categoryName]
             local function add(graph)
                 for _,name in ipairs(graph.order) do
@@ -466,7 +469,7 @@ function M.new(host, definitions, templates, state, options)
             end
             add(category.requiredGraph)
             if category.shared and hasEnabledTemplate(category) then add(category.shared.graph) end
-            for _,id in ipairs(ordered(category.templates)) do
+            for _,id in ipairs(category.order) do
                 local record=category.templates[id]
                 if record.enabled then add(record.graph) end
             end
@@ -483,7 +486,7 @@ function M.new(host, definitions, templates, state, options)
         for id, object in pairs(candidates) do
             if not host.valid(object) then candidates[id] = nil end
         end
-        for _, name in ipairs(names or keys(categories)) do
+        for _, name in ipairs(names or categoryOrder) do
             local category = categories[name]
             local resolved,allObjects={},{}
             local function exposeSharedTargets(record,bundles,sharedAttached)
@@ -562,7 +565,7 @@ function M.new(host, definitions, templates, state, options)
                 sharedObjects,sharedBundles=objects,bundles
                 for token,object in pairs(objects) do allObjects[token]=object end
             end
-            for _,id in ipairs(ordered(category.templates)) do
+            for _,id in ipairs(category.order) do
                 local record=category.templates[id]
                 if record.enabled then
                     local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
@@ -601,7 +604,7 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
             -- Detach all outgoing templates before any incoming template attaches.
-            for _, id in ipairs(ordered(category.templates)) do
+            for _, id in ipairs(category.order) do
                 local record = category.templates[id]
                 local objects=resolved[id] and resolved[id].objects or {}
                 local bundles=resolved[id] and resolved[id].bundles or {}
@@ -699,7 +702,7 @@ function M.new(host, definitions, templates, state, options)
             -- Outgoing templates sleep after they detach; incoming ones wake
             -- before they attach.
             syncAwake(category)
-            for _, id in ipairs(ordered(category.templates)) do
+            for _, id in ipairs(category.order) do
                 local record = category.templates[id]
                 if record.enabled then
                     local objects,bundles=resolved[id].objects,resolved[id].bundles
@@ -810,7 +813,7 @@ function M.new(host, definitions, templates, state, options)
         assert(event==nil or type(event)=='table' and type(event.name)=='string',
             'invalid template event')
         serialize(function()
-            for _,id in ipairs(ordered(byId)) do
+            for _,id in ipairs(templateOrder) do
                 local record=byId[id]
                 local callback=record.awake and event and not M.TEMPLATE_EVENTS[event.name]
                     and record.definition.events
@@ -848,7 +851,7 @@ function M.new(host, definitions, templates, state, options)
             if log then log.debug('signal ', name) end
             if self.phase ~= 'running' then return end
             local affected = {}
-            for _, categoryName in ipairs(keys(categories)) do
+            for _, categoryName in ipairs(categoryOrder) do
                 local hooks = categories[categoryName].hooks
                 if hooks then
                     for _, hook in ipairs({hooks.attach or false, hooks.wake or false, hooks.sleep or false}) do
@@ -1016,10 +1019,10 @@ function M.new(host, definitions, templates, state, options)
         assert(type(event) == 'table', 'update event data must be a table')
         if self.phase ~= 'running' then return end
         event.name, event.signal = 'update', name
-        for _, categoryName in ipairs(keys(categories)) do
+        for _, categoryName in ipairs(categoryOrder) do
             local category = categories[categoryName]
             if category.hooks and category.hooks.update == name then
-                for _, id in ipairs(ordered(category.templates)) do
+                for _, id in ipairs(category.order) do
                     local record = category.templates[id]
                     local callback = record.awake and record.definition.events
                         and record.definition.events.update
