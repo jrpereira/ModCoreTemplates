@@ -18,6 +18,8 @@
 - Apply notifications use ModCore Settings' settings_api v2, which carries ranges as
   text, so MCT no longer re-reads ranges from the config after an Apply.
 - A config file saved with a UTF-8 byte order mark keeps its first setting.
+- An Apply keeps created layers in template order: a template's overlays no longer move
+  above higher-priority layers, such as the quickslot canvas, when its settings change.
 
 ## v1.8.0
 

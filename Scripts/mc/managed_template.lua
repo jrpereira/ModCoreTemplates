@@ -296,6 +296,7 @@ function M.new(template,specs,order,createdSpecs,layer)
                     local object=assert(objects[spec.name])
                     local slot=attachCreated(spec,object,targets,dependencies)
                     configureCreated(spec,object,slot)
+                    stackCreated(spec,object,targets,dependencies)
                 end
                 adoptInto(created,targets,dependencies)
                 for _,spec in ipairs(createdSpecs) do

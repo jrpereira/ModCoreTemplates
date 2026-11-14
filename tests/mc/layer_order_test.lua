@@ -101,4 +101,19 @@ assert(omens:detach(root))
 cues.Omens=nil
 attach(omens)
 assert(order()=='native,Background,Alpha,Omens,Edges',order())
+-- Another manager's layer above them all, as the quickslot canvas sits above the cues.
+local canvas=manager('Canvas',100)
+attach(canvas)
+assert(order()=='native,Background,Alpha,Omens,Edges,Canvas',order())
+-- An update (an Apply) re-adds each reused layer; it keeps its place and stays registered.
+for _,m in ipairs({background,alpha,omens,edges}) do
+    assert(m:update(root,{},{settings={}},{root=root}))
+end
+assert(order()=='native,Background,Alpha,Omens,Edges,Canvas',order())
+-- A layer attached after the updates still lands under the higher ones.
+local low=manager('Low',5)
+attach(low)
+assert(order()=='native,Low,Background,Alpha,Omens,Edges,Canvas',order())
+assert(edges:update(root,{},{settings={}},{root=root}))
+assert(order()=='native,Low,Background,Alpha,Omens,Edges,Canvas',order())
 print('PASS: created layers stack by template priority, then id, whatever the attach order')
