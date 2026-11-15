@@ -920,12 +920,15 @@ function M.new(host, definitions, templates, state, options)
     -- is dropped at the next reconcile.
     function self:event(event)
         assert(type(event) == 'table', 'lifecycle event required')
-        local kind, object, epoch = event.kind, event.object, event.epoch
+        local kind, object, objects, epoch = event.kind, event.object, event.objects, event.epoch
         assert(kind == 'changed', 'unknown lifecycle event')
         assert(type(epoch) == 'number', 'event must carry the epoch captured before queuing')
+        assert(objects == nil or type(objects) == 'table', 'event objects must be a list')
         serialize(function()
             if self.phase ~= 'running' or epoch ~= self.epoch then return end
+            -- A batched event (objects) costs one reconcile for all of its objects.
             include(object)
+            for _, other in ipairs(objects or {}) do include(other) end
             reconcile()
         end)
     end

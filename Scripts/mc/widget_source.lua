@@ -314,23 +314,25 @@ function M.new(categories, api, log)
         return {width=width,height=height,left=0,center=width/2,right=width,
             bottom=0,middle=height/2,top=height,scale=scale}
     end
-    local function emit(kind, object)
+    -- objects (optional) lists every changed object; the runtime reconciles them in one pass.
+    local function emit(kind, object, objects)
         if not active or not sink then return end
         if not onGameThread() then
             errorReport('object-event', 'UE4SS delivered a lifecycle event off the game thread')
             return
         end
-        sink({kind=kind,object=object,epoch=getEpoch()})
+        sink({kind=kind,object=object,objects=objects,epoch=getEpoch()})
+    end
+    -- Whether an object is a valid candidate of some selector; remembers it if so.
+    local function candidate(object)
+        if not source.valid(object) then return false end
+        for _,selector in ipairs(selectors) do
+            if source.matches(object,selector) then remember(object); return true end
+        end
+        return false
     end
     local function changed(object)
-        if not source.valid(object) then return end
-        local matched=false
-        for _,selector in ipairs(selectors) do
-            if source.matches(object,selector) then matched=true;break end
-        end
-        if not matched then return end
-        remember(object)
-        emit('changed',object)
+        if candidate(object) then emit('changed',object) end
     end
     local function wakeKnownNow()
         for _,object in ipairs(knownObjects()) do
@@ -474,11 +476,16 @@ function M.new(categories, api, log)
         local function revisitOwner(class,remaining)
             api.ExecuteInGameThread(function()
                 if not active or not subscribed then return end
+                -- Every candidate found wakes the runtime once, not once each.
+                local found={}
                 for _,selector in ipairs(selectors) do
                     if eventClass(selector)==class then
-                        for _,candidate in ipairs(source.find(selector)) do changed(candidate) end
+                        for _,object in ipairs(source.find(selector)) do
+                            if candidate(object) then found[#found+1]=object end
+                        end
                     end
                 end
+                if #found>0 then emit('changed',found[1],found) end
                 if remaining>1 then revisitOwner(class,remaining-1) end
             end)
         end

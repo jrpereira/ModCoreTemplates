@@ -100,7 +100,16 @@ function M.new(source)
         return source.subscribe(function(event)
             if event.kind == 'changed' then
                 local reference = host.capture(event.object)
-                if reference then callback({kind='changed', object=reference, epoch=event.epoch}) end
+                local references
+                if event.objects then
+                    references = {}
+                    for _, object in ipairs(event.objects) do
+                        references[#references + 1] = host.capture(object)
+                    end
+                end
+                if reference then
+                    callback({kind='changed', object=reference, objects=references, epoch=event.epoch})
+                end
             else
                 callback(event)
             end

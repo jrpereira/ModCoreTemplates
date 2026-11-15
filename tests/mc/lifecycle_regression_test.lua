@@ -199,4 +199,17 @@ do
     assert(manager:detach(o))
     assert(live==0,'failed update cleanup was lost during recovery')
 end
+do
+    -- A batched event carries every changed object; all join the one reconcile it runs.
+    local attached=0
+    local r,o,host=fixture({objects={'root'},attach=function(_,_,saved) attached=attached+1; return saved end})
+    local found=host.find
+    host.find=function() return {} end
+    r:start(); assert(attached==0)
+    local other=object('other'); other.class='Other'
+    r:event({kind='changed',object=other,objects={other,o},epoch=r.epoch})
+    assert(attached==1,'an object listed only in objects is reconciled')
+    host.find=found
+    r:stop()
+end
 print('PASS: lifecycle regression cases')

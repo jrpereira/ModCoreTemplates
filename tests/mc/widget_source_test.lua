@@ -389,7 +389,11 @@ do
     end
     local again=0
     for index=2,#observed do
-        if observed[index].object==hudOwner then again=again+1 end
+        if observed[index].object==hudOwner then
+            again=again+1
+            assert(observed[index].objects and observed[index].objects[1]==hudOwner,
+                'a revisit wakes the runtime once with every candidate it found')
+        end
     end
     assert(again>0,'a root with scoped targets is revisited after creation')
     -- CommonUI hosts the HUD in the frontend's WidgetTree with no panel parent; it
