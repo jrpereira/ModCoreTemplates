@@ -3,6 +3,7 @@ local Selectors = require('mc.selectors')
 local ManagedTemplate = require('mc.managed_template')
 local TemplateTargets = require('mc.template_targets')
 local Objects = require('mc.objects')
+local Widget = require('mc.widget')
 local array = require('mc.util').array
 local copy = require('mc.util').copy
 local M = {}
@@ -242,6 +243,21 @@ function M.new(host, definitions, templates, state, options)
                 manager=managedRecord(sharedDefinition,sharedGraph,definition.sharedObjects),
                 attached={},exposed={},category=category}
         end
+        -- preview.lend: a module page's preview borrows the shared created object that
+        -- adopts the category's targets, whole, with them inside (see self:lend).
+        local preview = definition.preview
+        assert(preview == nil or type(preview) == 'table', definition.id..'.preview must be a table')
+        if preview and preview.lend ~= nil then
+            assert(preview.lend == true, definition.id..'.preview.lend must be true')
+            assert(category.shared, definition.id..'.preview.lend requires sharedObjects')
+            local names = {}
+            for _, name in ipairs(definition.sharedObjects) do
+                local selector = graph.byName[name]
+                if selector.create and selector.adopt then names[#names + 1] = name end
+            end
+            assert(#names == 1, definition.id..'.preview.lend requires exactly one shared created object that adopts targets')
+            category.lendName = names[1]
+        end
         -- attachDelay (ms): the game may create a root before filling its content.
         -- A newly found root attaches this long after the last reconcile reached it,
         -- and at most ATTACH_DEADLINE times this long after it was first found.
@@ -382,6 +398,8 @@ function M.new(host, definitions, templates, state, options)
         if not (ok and type(why)=='string' and
             (why == 'not_ready' or why:match('^not_ready:'))) then
             report(operation, record.definition.id, ok and (why or 'callback returned false') or value)
+        elseif tracing() then
+            trace(record.definition.id, operation, ' not ready: ', why)
         end
         return false
     end
@@ -416,9 +434,262 @@ function M.new(host, definitions, templates, state, options)
             if not ok then report('awake', nil, why) end
         end
     end
+    -- Lending (category.preview.lend, see self:lend). The category's shared created
+    -- canvas (category.lendName) moves whole into the preview, the adopted objects
+    -- untouched in their slots inside it. category.lend holds the request and, once
+    -- lent, active: weak handles for the shared root, the canvas and its HUD parent, the
+    -- canvas's index and slot there, the preview attachment's manager and the preview's
+    -- own state. While lent the canvas counts as lent, not lost: the shared attachment
+    -- stands (nothing that validates it reads the canvas's parent), sharedWanted holds,
+    -- and the adopted objects still resolve through the HUD's members. Nothing but weak
+    -- handles is read across frames, except the attachment's targets, used only while
+    -- its manager finds them all alive.
+    local function raw(value) return host.unwrap and host.unwrap(value) or value end
+    local function lendAlive(lend)
+        local active = lend and lend.active
+        if not active then return false end
+        if not (Objects.get(active.root) and Objects.get(lend.destination)
+            and Objects.get(active.canvas) and Objects.get(active.home)) then return false end
+        return not active.manager or active.manager:live(active.key)
+    end
+    -- Detaches the preview attachment: restored while its targets live, else forgotten.
+    local function lendDetach(active)
+        local manager = active.manager
+        active.manager, active.targets = nil, nil
+        if not (manager and manager:hasState(active.key)) then return end
+        local ok, detached, why = pcall(function() return mutate(function() return manager:detach(active.key) end) end)
+        if not (ok and detached) then
+            report('preview', active.template, ok and why or detached)
+            pcall(manager.forget, manager, active.key)
+        end
+    end
+    -- Moves the lent canvas back to its HUD parent, at its index, with its slot; if that
+    -- parent is gone (a save load, a HUD rebuild), the canvas only leaves the preview.
+    -- Dead objects are not touched.
+    local function lendReturn(active)
+        local canvas, home = Objects.get(active.canvas), Objects.get(active.home)
+        if canvas then
+            local ok, why = pcall(function() return mutate(function()
+                local parent = Objects.parent(canvas)
+                if not home then
+                    if parent then assert(parent:RemoveChild(canvas) ~= false, 'lent canvas could not leave the preview') end
+                    return
+                end
+                if Objects.same(parent, home) then return end
+                if parent then assert(parent:RemoveChild(canvas) ~= false, 'lent canvas could not leave the preview') end
+                local slot = home:AddChild(canvas)
+                assert(Objects.valid(slot), 'lent canvas could not return')
+                Widget.rememberSlot(canvas, slot)
+                Widget.restoreSlot(canvas, active.slot)
+                -- AddChild appends: the siblings that were after it move after it again,
+                -- each keeping its slot.
+                local after = {}
+                for index = active.order, home:GetChildrenCount() - 2 do after[#after + 1] = home:GetChildAt(index) end
+                for _, child in ipairs(after) do
+                    local saved = Widget.snapshotSlot(child, true)
+                    assert(home:RemoveChild(child) ~= false, 'could not reorder after the lent canvas')
+                    local moved = home:AddChild(child)
+                    assert(Objects.valid(moved), 'could not restore a sibling of the lent canvas')
+                    Widget.rememberSlot(child, moved)
+                    Widget.restoreSlot(child, saved)
+                end
+            end) end)
+            if not ok then report('preview', active.template, why) end
+        end
+        Objects.release(active.canvas); Objects.release(active.home)
+        active.canvas, active.home = nil, nil
+    end
+    -- Ends a category's lend: the preview attachment detaches, the lent canvas goes home,
+    -- and the next reconcile attaches the applied templates again.
+    -- After a preview hands the canvas back, the applied template lays out again; if it
+    -- could not (its widgets not measured yet, 'not_ready'), it tries again every quarter
+    -- second, one pending timer, until it has, at most RETRIES times. The game's pause
+    -- menu shows the HUD, so this does not wait for play to resume.
+    local RETRIES = 40
     local reconcile
+    local function laidOut(category)
+        for _, record in pairs(category.templates) do
+            if record.enabled and not next(record.attached) then return false end
+        end
+        return true
+    end
+    local function redrawWhenPlaying(category)
+        if not defer then return end
+        if category.redrawPending then return end
+        category.redrawTries = (category.redrawTries or 0) + 1
+        if category.redrawTries > RETRIES then category.redrawTries = nil; return end
+        category.redrawPending = true
+        local ok = pcall(defer, 250, function()
+            serialize(function()
+                category.redrawPending = nil
+                if self.phase ~= 'running' or category.lend or laidOut(category) then
+                    category.redrawTries = nil; return
+                end
+                if log then log.debug(category.id, ': not laid out after the preview; trying again') end
+                local done = pcall(reconcile, {category.id})
+                if not done and log then log.warn(category.id, ': laying out again failed') end
+                if laidOut(category) then category.redrawTries = nil
+                else redrawWhenPlaying(category) end
+            end)
+        end)
+        if not ok then category.redrawPending = nil end
+    end
+    local revealRoot
+    local function endLend(category, why)
+        local lend = category.lend
+        if not lend then return end
+        category.lend = nil
+        lend.ended = why
+        local active = lend.active
+        if active then
+            lendDetach(active)
+            lendReturn(active)
+            Objects.release(active.root)
+            -- The root was settled before the lend: the applied template attaches again
+            -- at once, not after another attachDelay. That delay is settled by a timer the
+            -- game's pause menu can hold back, and the wheels then sat without a layout at
+            -- the canvas origin (seen in game, 2026-11-16).
+            if category.attachDelay and active.token then
+                local rootState = category.attachDelay.roots[active.token]
+                if type(rootState) == 'table' then revealRoot(rootState, category) end
+                category.attachDelay.roots[active.token] = 'settled'
+            end
+        end
+        Objects.release(lend.destination)
+        -- The canvas is back without any template's layout: every template still recorded
+        -- as attached lays out again on the next reconcile (seen in game: an applied bar
+        -- left recorded as attached, its wheels at the canvas origin after the preview
+        -- closed).
+        for _, record in pairs(category.templates) do
+            if next(record.attached) then record.revision = record.revision + 1 end
+        end
+        if log then log.debug(category.id, ': preview lend ended: ', tostring(why)) end
+        redrawWhenPlaying(category)
+    end
+    -- Attaches the requested template to the lent objects, with params.preview, the
+    -- request's screen and the preview's own state.
+    local function lendAttach(category, lend)
+        local active, request = lend.active, lend.request
+        local record = category.templates[request.template]
+        local root = Objects.get(active.root)
+        if not root then return false, 'not_ready: lent root' end
+        local _, _, bundles = Selectors.resolve(record.graph, candidates, host)
+        local bundle
+        for token, candidate in pairs(bundles) do
+            if token == active.token then bundle = candidate end
+        end
+        if not bundle then return false, 'not_ready: lent targets' end
+        local exposed = category.shared.exposed[active.token]
+        for _, name in ipairs(record.sharedTargets) do bundle[name] = exposed and exposed[name] or nil end
+        local settings = overlay(request.settings or category.settings,
+            overlay(record.defaults, request.overrides or {}))
+        -- The game's own screen unless the request names one: the lent widgets keep their
+        -- HUD sizes, so the preview scales the whole screen down rather than laying them
+        -- out on a smaller one (where they show too big).
+        local screen = request.screen or active.gameScreen
+        if not screen then return false, 'not_ready: screen' end
+        local params = {settings=copy(settings), screen=copy(screen), state=copy(active.state), preview=true}
+        local named = TemplateTargets.arrange(record.targetTree, bundle, host.unwrap, host.valid)
+        local dependencies = {}
+        for _, name in ipairs(record.graph.order) do
+            local value = bundle[name]
+            if value and host.valid(value) then dependencies[name] = raw(value) end
+        end
+        local manager = managedRecord(record.definition, record.graph, record.definition.objects, category.sharedNames)
+        active.template, active.settings, active.screen = request.template, settings, copy(screen)
+        local ok, attached, why = pcall(function() return mutate(function()
+            return manager:attach(active.key, named, params, dependencies)
+        end) end)
+        if not (ok and attached) then
+            pcall(manager.forget, manager, active.key)
+            return false, ok and why or attached
+        end
+        active.manager, active.targets = manager, named
+        return true
+    end
+    -- Fills a panel slot: a canvas slot anchored to every edge, else padding 0 and Fill.
+    local function fillSlot(slot)
+        local canvas = pcall(function()
+            slot:SetLayout({Offsets={Left=0,Top=0,Right=0,Bottom=0},
+                Anchors={Minimum={X=0,Y=0},Maximum={X=1,Y=1}}, Alignment={X=0,Y=0}})
+            slot:SetAutoSize(false)
+        end)
+        if canvas then return end
+        slot:SetPadding({Left=0,Top=0,Right=0,Bottom=0})
+        slot:SetHorizontalAlignment(0)
+        slot:SetVerticalAlignment(0)
+    end
+    -- Moves the shared attachment's created canvas at token, with the objects it adopted
+    -- still inside, from its HUD parent into the request's destination, filling it, then
+    -- attaches. Its parent, index and slot are kept to return it exactly.
+    local function lendMove(category, lend, token)
+        local destination = Objects.get(lend.destination)
+        if not destination then return false, 'preview panel gone' end
+        local shared = category.shared
+        local attached = shared.attached[token]
+        if not (attached and host.valid(attached.object) and shared.manager:live(attached.root)) then
+            return false, 'not_ready: '..category.id
+        end
+        local exposed = shared.exposed[token]
+        local canvas = exposed and exposed[category.lendName]
+        canvas = canvas and raw(canvas)
+        if not Objects.valid(canvas) then return false, 'not_ready: '..category.lendName end
+        local home = Objects.parent(canvas)
+        if not home then return false, 'not_ready: '..category.lendName..' parent' end
+        local order
+        for index = 0, home:GetChildrenCount() - 1 do
+            if Objects.same(home:GetChildAt(index), canvas) then order = index end
+        end
+        if not order then return false, category.lendName..' is not a child of its parent' end
+        local root = attached.object
+        local active = {token=token, root=Objects.hold(raw(root)), canvas=Objects.hold(canvas),
+            home=Objects.hold(home), order=order, slot=Widget.snapshotSlot(canvas), key={},
+            state=copy(state), template=lend.request.template, gameScreen=host.screen(root)}
+        lend.active = active
+        if not (active.root and active.canvas and active.home) then return false, 'lent canvas cannot be kept' end
+        local ok, why = pcall(function() return mutate(function()
+            assert(home:RemoveChild(canvas) ~= false, category.lendName .. ' could not be detached')
+            local slot = destination:AddChild(canvas)
+            assert(Objects.valid(slot), category.lendName .. ' could not be lent')
+            Widget.rememberSlot(canvas, slot)
+            fillSlot(slot)
+        end) end)
+        if not ok then return false, why end
+        return lendAttach(category, lend)
+    end
+    -- A template that is not ready on the canvas just lent (its widgets not measured in
+    -- their new parent until the next frame: seen in game, 2026-11-16, as 'not_ready: key
+    -- layout') attaches again a tenth of a second later, one pending timer, at most
+    -- LEND_RETRIES times, the canvas staying lent meanwhile. Returns whether one is pending.
+    local LEND_RETRIES = 20
+    local function attachLater(category, lend)
+        if not defer or not lend.active then return false end
+        if lend.retryPending then return true end
+        lend.tries = (lend.tries or 0) + 1
+        if lend.tries > LEND_RETRIES then return false end
+        lend.retryPending = true
+        local ok = pcall(defer, 100, function()
+            serialize(function()
+                lend.retryPending = nil
+                if category.lend ~= lend or not lend.active or self.phase ~= 'running' then return end
+                if not lendAlive(lend) then
+                    endLend(category, 'lent objects gone'); reconcile({category.id}); return
+                end
+                lendDetach(lend.active)
+                local done, attached, why = pcall(lendAttach, category, lend)
+                if done and attached then lend.tries = nil; return end
+                why = tostring(done and why or attached)
+                if why:match('^not_ready') and attachLater(category, lend) then return end
+                if not why:match('^not_ready') then report('preview', lend.request.template, why) end
+                if log then log.debug(category.id, ': preview attach gave up: ', why) end
+                endLend(category, why); reconcile({category.id})
+            end)
+        end)
+        if not ok then lend.retryPending = nil end
+        return ok
+    end
     -- Restores a root hidden while its attachDelay ran; a dead root is not touched.
-    local function revealRoot(rootState, category)
+    function revealRoot(rootState, category)
         if type(rootState)~='table' or not rootState.hidden then return end
         touch(category)
         local live=Objects.get(rootState.hidden)
@@ -449,6 +720,14 @@ function M.new(host, definitions, templates, state, options)
         end
         return false
     end
+    -- An enabled template attaches unless its category is lent to a preview; the
+    -- category's shared objects stay attached while either holds.
+    local function attachable(record)
+        return record.enabled and not record.category.lend
+    end
+    local function sharedWanted(category)
+        return category.lend ~= nil or hasEnabledTemplate(category)
+    end
     local function refreshDiscovery()
         local roots,seen,identities={},{},{}
         for _,categoryName in ipairs(categoryOrder) do
@@ -468,10 +747,10 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
             add(category.requiredGraph)
-            if category.shared and hasEnabledTemplate(category) then add(category.shared.graph) end
+            if category.shared and sharedWanted(category) then add(category.shared.graph) end
             for _,id in ipairs(category.order) do
                 local record=category.templates[id]
-                if record.enabled then add(record.graph) end
+                if record.enabled or category.lend and category.lend.request.template==id then add(record.graph) end
             end
         end
         table.sort(identities)
@@ -489,6 +768,11 @@ function M.new(host, definitions, templates, state, options)
         for _, name in ipairs(names or categoryOrder) do
             local category = categories[name]
             local resolved,allObjects={},{}
+            -- A lend whose objects died (a save load, a HUD rebuild) or whose preview
+            -- went ends here, before anything reads them.
+            if category.lend and category.lend.active and not lendAlive(category.lend) then
+                endLend(category,'lent objects gone')
+            end
             local function exposeSharedTargets(record,bundles,sharedAttached)
                 for token,bundle in pairs(bundles or {}) do
                     local attached=sharedAttached and sharedAttached[token]
@@ -529,6 +813,7 @@ function M.new(host, definitions, templates, state, options)
                             if delay.roots[token]~=rootState
                                 or generation and rootState.generation~=generation then return end
                             delay.roots[token]='settled'
+                            if tracing() then trace(category.id..' '..tostring(token),'attachDelay settled') end
                             revealRoot(rootState,category)
                             if self.phase=='running' then reconcile() end
                         end)
@@ -559,7 +844,7 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
             local shared,sharedObjects,sharedBundles=category.shared,{},{ }
-            local sharedActive=shared and hasEnabledTemplate(category)
+            local sharedActive=shared and sharedWanted(category)
             if sharedActive then
                 local _,objects,bundles=Selectors.resolve(shared.graph,candidates,host)
                 sharedObjects,sharedBundles=objects,bundles
@@ -567,7 +852,7 @@ function M.new(host, definitions, templates, state, options)
             end
             for _,id in ipairs(category.order) do
                 local record=category.templates[id]
-                if record.enabled then
+                if attachable(record) then
                     local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
                     -- A managed template may reparent its own targets. Keep those valid
                     -- targets in the resolved bundle until the manager detaches
@@ -628,7 +913,7 @@ function M.new(host, definitions, templates, state, options)
                 for _, token in ipairs(keys(record.attached)) do
                     local attached = record.attached[token]
                     if not host.valid(attached.object) or not targetsValid(attached.targets,host) then
-                        if record.enabled and host.valid(attached.object)
+                        if attachable(record) and host.valid(attached.object)
                             and objects[token] and host.ready(attached.object)
                             and not retainsTargets(attached.targets,bundles[token],host) then
                             record.waiting[token]=targetNames(attached.targets)
@@ -638,9 +923,9 @@ function M.new(host, definitions, templates, state, options)
                             if not ok then report('forget',record.definition.id,why)
                             else record.attached[token]=nil end
                         else record.attached[token]=nil end
-                    elseif not record.enabled or not objects[token] or not host.ready(attached.object)
+                    elseif not attachable(record) or not objects[token] or not host.ready(attached.object)
                         or not sameTargets(attached.targets,bundles[token],host) then
-                        if record.enabled and objects[token] and host.ready(attached.object)
+                        if attachable(record) and objects[token] and host.ready(attached.object)
                             and not retainsTargets(attached.targets,bundles[token],host) then
                             record.waiting[token]=targetNames(attached.targets)
                         end
@@ -664,6 +949,12 @@ function M.new(host, definitions, templates, state, options)
                     if not sharedActive or not host.valid(attached.object)
                         or not current or not host.ready(current)
                         or not sameTargets(attached.targets,sharedBundles[token],host) then
+                        -- Nothing above reads the created canvas's parent, so a lent canvas
+                        -- (in the preview) keeps the shared attachment standing; when it does
+                        -- go, the canvas goes home before the shared objects release it.
+                        if category.lend and category.lend.active and category.lend.active.token==token then
+                            endLend(category,'shared objects detached')
+                        end
                         if host.valid(attached.object) and targetsValid(attached.targets,host) then
                             if invoke(shared,'detach',attached.object,nil,attached.targets,attached.screen) then
                                 shared.attached[token]=nil
@@ -699,12 +990,39 @@ function M.new(host, definitions, templates, state, options)
                     end
                 end
             end
+            -- A requested lend takes the shared objects once they are attached. If it
+            -- cannot, it ends, and the applied templates attach again below.
+            local lend=category.lend
+            if lend and not lend.active then
+                local token=keys(shared.attached)[1]
+                local ok,lent,why=true,false,'nothing to lend: '..category.id..' is not in the game'
+                if token then ok,lent,why=pcall(lendMove,category,lend,token) end
+                local failed=not (ok and lent) and tostring(ok and why or lent)
+                -- Lent but not ready: the canvas stays in the preview and attaches again.
+                if failed and lend.active and failed:match('^not_ready') and attachLater(category,lend) then
+                    if log then log.debug(category.id,': preview waits: ',failed) end
+                    failed=false
+                end
+                if failed then
+                    lend.failed=failed
+                    if token and not lend.failed:match('^not_ready') then
+                        report('preview',lend.request.template,lend.failed)
+                    end
+                    endLend(category,lend.failed)
+                end
+            end
             -- Outgoing templates sleep after they detach; incoming ones wake
             -- before they attach.
             syncAwake(category)
             for _, id in ipairs(category.order) do
                 local record = category.templates[id]
-                if record.enabled then
+                if attachable(record) then
+                    -- Not resolved above while a lend was pending.
+                    if not resolved[id] then
+                        local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
+                        resolved[id]={objects=objects,bundles=bundles}
+                        if shared then exposeSharedTargets(record,bundles,shared.exposed) end
+                    end
                     local objects,bundles=resolved[id].objects,resolved[id].bundles
                     for _, token in ipairs(keys(objects)) do
                         local object, blocked = objects[token], false
@@ -719,6 +1037,13 @@ function M.new(host, definitions, templates, state, options)
                             end
                         end
                         local old = record.attached[token]
+                        if old and tracing() then
+                            trace(id..' '..tostring(token),'recorded attached at revision ',tostring(old.revision),
+                                ' (now ',tostring(record.revision),')',record.pending[token] and ', detach pending' or '',
+                                blocked and ', blocked' or '',shared and not shared.attached[token] and ', shared objects not attached' or '',
+                                not retainsTargets(record.waiting[token],bundles[token],host) and ', waiting for targets' or '',
+                                failedInTurn[record] and failedInTurn[record][token] and ', failed this turn' or '')
+                        end
                         if not old and tracing() then
                             local why={}
                             if blocked then why[#why+1]='blocked by another template' end
@@ -733,6 +1058,10 @@ function M.new(host, definitions, templates, state, options)
                                 why[#why+1]='waiting for targets'
                             end
                             if failedInTurn[record] and failedInTurn[record][token] then why[#why+1]='failed this turn' end
+                            local delayed=category.attachDelay and defer and category.attachDelay.roots[token]
+                            if category.attachDelay and defer and delayed~='settled' then
+                                why[#why+1]='waiting for attachDelay'
+                            end
                             trace(id..' '..tostring(token),#why>0 and table.concat(why,', ') or 'attaching')
                         end
                         if not blocked and not record.pending[token]
@@ -973,6 +1302,9 @@ function M.new(host, definitions, templates, state, options)
                 else failed('unsubscribe',ok and detail or result) end
             end
             for _, record in pairs(byId) do record.enabled = false; record.waiting={} end
+            for _, category in pairs(categories) do
+                if category.lend then endLend(category,'runtime stopped') end
+            end
             local reconciled,why=pcall(reconcile)
             if not reconciled then failed('reconcile',why) end
             local watched,result,detail=pcall(host.watch,{})
@@ -1029,6 +1361,127 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
         end
+    end
+    -- Lends a category declaring preview.lend to a module page's preview. request:
+    --   destination  a panel in the preview, the game's screen in size, that takes the
+    --                lent canvas (a SizeBox; the canvas fills it)
+    --   template     the id of the template to show, which declares preview={...}
+    --   settings     the category's effective settings at the page's values (optional)
+    --   overrides    the template's own values at the page's values (optional)
+    --   screen       the preview's screen, as host.screen describes the game's; the
+    --                game's own screen when omitted
+    -- The category's applied templates detach through their normal path, its shared
+    -- objects attach if they were not, the shared created canvas moves whole from its HUD
+    -- parent into destination, the objects it adopted untouched inside, and the template
+    -- attaches to them with params.preview, the screen and a copy of the state. Again
+    -- with the same destination, only the preview attachment is replaced. A nil request
+    -- ends the lend: the preview attachment detaches, the canvas returns to its HUD
+    -- parent, index and slot, and the applied templates attach again. A lend that cannot
+    -- be made or fails, or whose objects die (see reconcile), ends the same way; with its
+    -- HUD gone the canvas only leaves the preview. Returns true, or false and why.
+    function self:lend(categoryName, request)
+        local category = assert(categories[categoryName], 'unknown category')
+        assert(category.lendName, categoryName .. ' does not lend to previews')
+        if request ~= nil then
+            assert(type(request) == 'table' and (request.screen == nil or type(request.screen) == 'table'),
+                'invalid lend request')
+            local record = category.templates[request.template]
+            assert(record and record.manager and type(record.definition.preview) == 'table',
+                'template does not preview: ' .. tostring(request.template))
+        end
+        local done, why = false, 'queued behind a running turn'
+        serialize(function()
+            local lend = category.lend
+            if request == nil then
+                if lend then
+                    endLend(category, 'closed')
+                    if self.phase == 'running' then reconcile({categoryName}) end
+                end
+                done, why = true, nil
+                return
+            end
+            if lend and lend.active and lendAlive(lend)
+                and Objects.same(Objects.get(lend.destination), request.destination) then
+                lendDetach(lend.active)
+                lend.request = request
+                local ok, attached, reason = pcall(lendAttach, category, lend)
+                if ok and attached then done, why = true, nil; return end
+                why = tostring(ok and reason or attached)
+                lend.tries = nil
+                if why:match('^not_ready') and attachLater(category, lend) then done, why = true, nil; return end
+                if not why:match('^not_ready') then report('preview', request.template, why) end
+                endLend(category, why)
+                reconcile({categoryName})
+                return
+            end
+            if lend then endLend(category, 'replaced') end
+            if self.phase ~= 'running' then
+                if lend then reconcile({categoryName}) end
+                why = 'runtime is not running'
+                return
+            end
+            local destination, reason = Objects.hold(request.destination)
+            if not destination then why = 'preview panel cannot be kept: ' .. tostring(reason); return end
+            lend = {request=request, destination=destination}
+            category.lend = lend
+            refreshDiscovery()
+            reconcile({categoryName})
+            if category.lend == lend and lend.active then done, why = true, nil
+            else
+                -- reconcile ended it; an error in reconcile itself must not leave it.
+                if category.lend == lend then endLend(category, 'not lent'); reconcile({categoryName}) end
+                why = lend.failed or lend.ended or 'not lent'
+            end
+        end)
+        return done, why
+    end
+    -- The screen a lent category's preview is laid out on, or nil when it is not lent.
+    function self:lentScreen(categoryName)
+        local category = assert(categories[categoryName], 'unknown category')
+        local active = category.lend and category.lend.active
+        local screen = active and (active.screen or active.gameScreen)
+        return screen and copy(screen) or nil
+    end
+    -- Whether a category is lent to a preview now.
+    function self:lending(categoryName)
+        local category = assert(categories[categoryName], 'unknown category')
+        return category.lend ~= nil and category.lend.active ~= nil
+    end
+    -- A preview's scripted event (event.preview) for a lent category: it reaches only
+    -- the preview attachment, as callback(params, event, objects) with params.preview,
+    -- and a group focus or Global keys event updates the preview's own state as ModCore
+    -- Controls' would the runtime's. Returns whether the lend still stands; one whose
+    -- objects died ends here.
+    function self:previewEvent(categoryName, event)
+        local category = assert(categories[categoryName], 'unknown category')
+        assert(type(event) == 'table' and type(event.name) == 'string', 'invalid preview event')
+        local standing = false
+        serialize(function()
+            local lend = category.lend
+            if not (lend and lend.active) then return end
+            if not lendAlive(lend) then
+                endLend(category, 'lent objects gone')
+                if self.phase == 'running' then reconcile({categoryName}) end
+                return
+            end
+            standing = true
+            local active = lend.active
+            active.state.controls = active.state.controls or {}
+            if type(event.group) == 'table' then
+                active.state.controls.group = {from=event.group.from, to=event.group.to}
+            end
+            if type(event.global) == 'table' then active.state.controls.global = copy(event.global) end
+            local record = category.templates[active.template]
+            local callback = active.manager and record.definition.events and record.definition.events[event.name]
+            if not callback or M.TEMPLATE_EVENTS[event.name] then return end
+            local params = {settings=copy(active.settings), screen=copy(active.screen), state=copy(active.state),
+                preview=true}
+            local ok, why = pcall(function() return mutate(function()
+                return callback(params, copy(event), active.targets)
+            end) end)
+            if not ok then report('preview event', active.template, why) end
+        end)
+        return standing
     end
     function self:attachments(id)
         local result = {}

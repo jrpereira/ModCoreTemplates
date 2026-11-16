@@ -385,6 +385,10 @@ function M.new(template,specs,order,createdSpecs,layer)
     function manager:hasState(root)
         return states[root]~=nil
     end
+    -- Whether root's attachment exists and every object it targets still lives.
+    function manager:live(root)
+        return states[root]~=nil and live(states[root])
+    end
     return manager
 end
 

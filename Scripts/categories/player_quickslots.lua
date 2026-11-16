@@ -31,6 +31,26 @@ local category = {
     -- Every pass that may move, show or hide the key indicators publishes
     -- templates.layout.changed, so ModCore Controls re-copies their layout.
     layoutEvent = true,
+    -- A module page's live preview borrows the game's own wheels (mc/preview.lua, the
+    -- runtime's lend): the actions canvas moves whole, with the wheels it adopted, into the
+    -- preview while it is open, with the page's template attached to the wheels, and
+    -- returns to its place in the HUD when it closes. Its loop focuses each wheel in turn, 2 s each, as ModCore Controls
+    -- reports it, and once a loop gives the consumable Top slot a Global key while the
+    -- abilities have focus, then clears it.
+    -- Times in milliseconds from the loop's start.
+    -- Without a game to lend from (the main menu), the preview shows unavailable.
+    preview = { lend = true, unavailable = 'Load a game to preview your Quickslots', length = 8000, events = (function()
+        local function focus(at, from, to)
+            return {at = at, event = {name = 'controls.group.focus', group = {from = from, to = to}}}
+        end
+        local function global(at, slot)
+            local rows = {{false, false, false, false}, {false, false, false, false}}
+            if slot then rows[2][slot] = true end
+            return {at = at, event = {name = 'controls.slots.global', global = rows}}
+        end
+        return {focus(0, 2, 1), focus(2000, 1, 2), focus(4000, 2, 1), global(4000, 2),
+            focus(6000, 1, 2), global(6000, nil)}
+    end)() },
     objects = {
         switcher = {  object = "WidgetSwitcher /Game/_Dawnwalker/UI/_Unified/HUD/WBP_GameHUD.WBP_GameHUD_C:WidgetTree.QuickslotsSwitcher", source = 'lookup',
             required = true },

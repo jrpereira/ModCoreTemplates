@@ -2,6 +2,18 @@
 local Bootstrap = require('mc.bootstrap')
 local Events = require('mc_events')
 local M = {}
+-- delay(ms, callback) on the game thread: UE4SS's game-thread timer when present,
+-- else ExecuteWithDelay handing over to the game thread; nil with neither.
+function M.delay(api)
+    if type(api.ExecuteInGameThreadWithDelay) == 'function' then
+        return function(ms, callback) api.ExecuteInGameThreadWithDelay(math.max(1, math.floor(ms)), callback) end
+    end
+    if type(api.ExecuteWithDelay) == 'function' then
+        return function(ms, callback)
+            api.ExecuteWithDelay(ms, function() api.ExecuteInGameThread(callback) end)
+        end
+    end
+end
 function M.start(options, api)
     api = api or _G
     assert(type(api.ExecuteInGameThread) == 'function', 'game-thread dispatch unavailable')
@@ -42,12 +54,12 @@ function M.start(options, api)
         return function() active = false; cancel() end
     end
     configured.queue = api.ExecuteInGameThread
-    -- attachDelay timers fire later on the game thread.
-    if type(api.ExecuteWithDelay) == 'function' then
-        configured.defer = function(ms, callback)
-            api.ExecuteWithDelay(ms, function() api.ExecuteInGameThread(callback) end)
-        end
-    end
+    -- Timers (attachDelay, layout retries, previews) fire later on the game thread.
+    -- ExecuteWithDelay runs its callback on UE4SS's async thread, so this mod's Lua
+    -- state ran there while the game thread used it: each preview change scheduling
+    -- them crashed the game within a few changes (2026-11-16). The game-thread timer is
+    -- used whenever UE4SS has it.
+    configured.defer = M.delay(api)
     if configured.menuRoot then configured.menuShared = assert(api.ModRef, 'ModRef unavailable') end
     -- ModCoreSettings publishes each mod folder's module id while it loads, before the
     -- loop start at which MCT reads its templates.
@@ -182,6 +194,7 @@ function M.start(options, api)
         local byId={}
         for _,category in ipairs(configured.categories or {}) do byId[category.id]=category end
         local ok,why=pcall(require('mc.preview').new,{shared=api.ModRef,register=api.RegisterConsoleCommandHandler,
+            queue=api.ExecuteInGameThread,delay=M.delay(api),
             session=function() return bootstrap and bootstrap.session end,categories=byId,
             log=configured.log and require('mc_log').wrap(configured.log) or nil})
         if not ok and configured.log then require('mc_log').wrap(configured.log).warn('preview unavailable: ',tostring(why)) end

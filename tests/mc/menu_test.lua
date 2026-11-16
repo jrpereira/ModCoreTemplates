@@ -838,6 +838,20 @@ test('slot pages publish hidden with rows addressed to the slot', function()
         and plain.pages[1].hooks,'an aggregate that parents category pages stays listed and still fills the tab')
 end)
 
+test('a module whose templates moved to a slot gets its page\'s live preview', function()
+    local f=fixture(true,'module','module')
+    f.category.slot={provider='controls',slot='visuals'}
+    f.b.preview={background='images/back.jpg'}
+    local model=Model.build({f.category},{f.a,f.b},f.locations)
+    local menu=Menu.generate(model.registry)
+    local beta,alpha=menu.pageByModule.Beta,menu.pageByModule.Alpha
+    assert(beta.merged and beta.preview==true and beta.menu.preview.background:match('/Beta/images/back%.jpg$'),
+        'the merged page takes the preview and its picture from the module folder')
+    assert(beta.categories[f.category.id] and beta.owned[f.b.id] and not beta.owned[f.a.id],
+        'with the slot category and only its own templates')
+    assert(not alpha.preview and alpha.menu.preview==nil,'a module without a preview template gets none')
+end)
+
 test('modules whose templates moved to a slot keep their page with a link to the slot', function()
     local f=slotFixture()
     local contribution=Contribution.build(f.menu,'/Mods/3_ModCore_Templates')
@@ -1125,7 +1139,7 @@ test('a category page lists its templates in registration order, not by priority
         return {id=id,category='npc.attacks',objects={'root'},managed=false,priority=priority,
             menu={{id='Main',label='Main',fields={field('Size',20)}}}}
     end
-    -- Preymonition registers Background last but stacks it lowest.
+    -- A template registered last lists last, even when it stacks lowest.
     local templates={template('Omens',10),template('Edges',11),template('Countdown',12),
         template('Background',9)}
     local locations={}

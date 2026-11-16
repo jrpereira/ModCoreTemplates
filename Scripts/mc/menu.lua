@@ -293,7 +293,10 @@ function M.generate(registry, options)
                     -- names the template and turns it on or off.
                     headingId = group(key({identity, 'template_heading'}), template.label,
                         nil, 'none', templateScope)
-                    picker(ownerSelector, template.label, headingId, choices({0, 1}, {'Disabled', 'Enabled'}), nil, nil, 0)
+                    -- Off unless the template declares defaultEnabled=true.
+                    picker(ownerSelector, template.label, headingId, choices({0, 1}, {'Disabled', 'Enabled'}), nil, nil,
+                        template.defaultEnabled == true and 1 or 0)
+                    definition.enabledId = ownerSelector
                     rows[#rows]._control, rows[#rows].style, rows[#rows].widget = true, 'category', 'switch'
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
@@ -537,6 +540,15 @@ function M.generate(registry, options)
     local categoryOwned, moduleOwned, moduleCategories, moduleRoots, modulePreviews = {}, {}, {}, {}, {}
     -- Modules whose templates all moved to a slot keep an entry that opens the slot.
     local slotModules = {}
+    -- A template may give its module page a live preview: preview={background=<picture
+    -- in the module folder>}; the first one declared names the background.
+    local function declarePreview(module, template, parent, location)
+        if type(template.preview) ~= 'table' or not parent or modulePreviews[module] then return end
+        local background = template.preview.background
+        assert(background == nil or type(background) == 'string' and background:match('^[%w_%-./]+$')
+            and not background:find('..', 1, true), location .. ': invalid preview background')
+        modulePreviews[module] = {background = background and parent .. '/' .. background or nil}
+    end
     for _, entry in ipairs(entries) do
         local template = entry.template
         local parent = moduleRoot(entry.location)
@@ -547,6 +559,7 @@ function M.generate(registry, options)
                 slotModules[module] = slotModules[module] or {root=parent, slot=slot, owned={}, categories={}}
                 slotModules[module].owned[entry.id] = true
                 slotModules[module].categories[template.category] = true
+                declarePreview(module, template, parent, entry.location)
             end
         elseif template.menu.target == 'templates' then
             categoryOwned[template.category] = categoryOwned[template.category] or {}
@@ -558,14 +571,7 @@ function M.generate(registry, options)
             moduleOwned[module], moduleCategories[module] = moduleOwned[module] or {}, moduleCategories[module] or {}
             moduleRoots[module] = parent
             moduleOwned[module][entry.id], moduleCategories[module][template.category] = true, true
-            -- A template may give its module page a live preview: preview={background=<picture
-            -- in the module folder>}; the first one declared names the background.
-            if type(template.preview) == 'table' and parent and not modulePreviews[module] then
-                local background = template.preview.background
-                assert(background == nil or type(background) == 'string' and background:match('^[%w_%-./]+$')
-                    and not background:find('..', 1, true), entry.location .. ': invalid preview background')
-                modulePreviews[module] = {background = background and parent .. '/' .. background or nil}
-            end
+            declarePreview(module, template, parent, entry.location)
         end
     end
     for _, category in ipairs(registry.categories:list()) do
@@ -649,6 +655,9 @@ function M.generate(registry, options)
         local page = {id=providerId, name=module, merged=entry.slot, moduleRoot=entry.root, rows=selectedRows,
             menu=providerMenu(module, selectedRows, false)}
         page.decode = makeDecoder(page.rows, entry.categories, entry.owned)
+        -- Its preview shows the slot's templates the module owns.
+        page.categories, page.owned = entry.categories, entry.owned
+        if modulePreviews[module] then page.menu.preview, page.preview = modulePreviews[module], true end
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end
     local decodeAll = makeDecoder(rows, allCategories)

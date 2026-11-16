@@ -1,5 +1,22 @@
 package.path = './Scripts/?.lua;./Scripts/vendor/?.lua;' .. package.path
 local Startup = require('mc.lua_startup')
+-- Timers run on UE4SS's game-thread timer when it has one, never ExecuteWithDelay's
+-- async thread; without it, ExecuteWithDelay hands over to the game thread.
+do
+    local calls={}
+    local api={ExecuteInGameThreadWithDelay=function(ms,fn) calls[#calls+1]={'game',ms};fn() end,
+        ExecuteWithDelay=function() error('async timer used') end,ExecuteInGameThread=function(fn) fn() end}
+    local ran=false
+    Startup.delay(api)(250,function() ran=true end)
+    assert(ran and calls[1][1]=='game' and calls[1][2]==250,'the game-thread timer is used')
+    Startup.delay(api)(0,function() end)
+    assert(calls[2][2]==1,'a zero delay waits one millisecond')
+    local queued={}
+    local fallback={ExecuteWithDelay=function(ms,fn) fn() end,ExecuteInGameThread=function(fn) queued[#queued+1]=fn end}
+    Startup.delay(fallback)(10,function() end)
+    assert(#queued==1,'without it, ExecuteWithDelay hands over to the game thread')
+    assert(Startup.delay({})==nil,'no timer at all: no delay')
+end
 local References = require('mc.lua_references')
 local Lifetimes = dofile('tests/support/lifetimes.lua')
 Lifetimes.install()

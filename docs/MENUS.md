@@ -89,7 +89,8 @@ on a second line under the template's label. `None` and templates without a modu
 no note. Every other template gets an `Enabled` toggle (`mcType=onoff`), saved as
 `MCT_<Module>_<Id>_Enabled`. The toggle is labelled with the template's label and stands
 in for its group's heading (`style='category'` on the row, `style='none'` on the group),
-so the heading row itself turns the template on or off. A category can have both. A template with `enabled = false` remains represented in the
+so the heading row itself turns the template on or off. It is off by default; a template
+declaring `defaultEnabled = true` starts on. A category can have both. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
 
@@ -188,6 +189,10 @@ return function(context)
 end
 ```
 
+`context.head(path, count)` gives the first `count` bytes (at most 4096) of a file in the
+module folder, or nil and why, so a list file can leave out a file it cannot use, such as a
+picture of the wrong size.
+
 Keys are letters, digits and `_ . -`, never a number. The `default` may be a listed key.
 Rules (`visible`, `label`, `dim`) may name fixed keys only, and a listed picker shows as a
 `picker` or `cycler`. Because the files decide what is offered, a listed picker accepts any
@@ -263,12 +268,15 @@ alongside both. Categories do not declare `uniqueBy`.
 ### Live preview
 
 A template may declare `preview={background='images/x.jpg', sound='Sound'}` (a picture in
-its module folder; `sound` names the menu group whose settings make the preview sound when
-ModCore Settings' sound button is on Auto). Its module page then gets ModCore Settings' live preview: while the page is open,
+its module folder; `sound` names the menu group, or a list of groups such as
+`{'Sound','Options'}`, or `true` for every setting of the template, its Enabled toggle
+included, whose settings make the preview sound when ModCore Settings' sound button is on
+Auto). Its module page then gets ModCore Settings' live preview: while the page is open,
 the page's selected templates that declare `preview` attach to the preview host with the
 page's current values, applied or not, and reattach on every change. Each gets its own
 Overlay layer, `objects={hud=<the menu's widget>, cue=<layer>}`, and params with
-`preview=true` and a 1920 by 1080 `screen`.
+`preview=true` and a 1920 by 1080 `screen`. They attach, and their layers stack, by
+`priority` as on the HUD: lowest first and so lowest underneath, then by id.
 
 A category plays a script into it in a loop: `preview={length=<ms>, events={{at=<ms>,
 attack=<n>, event={...}}, ...}}`. Each event reaches the template's `update` callback with
@@ -278,6 +286,63 @@ while none of the template's `sound` settings is selected. npc.attacks loops fou
 behind: arrow, then critical, then resolved) and one unblockable attack, 9.4 s in all.
 A template that declares `preview` keeps preview events to its preview attachment and game
 events away from it, and shows its preview attachment without waiting for combat.
+
+A module whose templates sit in another provider's slot (player.quickslots, in ModCore
+Controls' Visuals) gets the preview on its own page too.
+
+#### Lending the game's widgets
+
+Templates that rearrange the game's own widgets, rather than draw their own, preview on
+those widgets, lent to the preview. A category opts in with `preview={lend=true,
+length=<ms>, events=...}`; it needs exactly one `sharedObjects` created object that
+`adopt`s targets. That shared canvas is lent whole, with the widgets it adopted inside.
+Its optional `unavailable` text shows over the preview's background when there is no game
+to lend from (the main menu); player.quickslots says "Load a game to preview your
+Quickslots". player.quickslots lends its `actions` canvas, which holds both quickslot
+wheels. While the page is open, for the page's selected template of that category, if
+the page owns it and it declares `preview`:
+
+1. Open: the category's applied template detaches through its normal path, restoring
+   the natives. Its shared objects attach if they were not (no template applied), and
+   the shared canvas moves from its HUD parent into a SizeBox of the preview host, the
+   game's screen in size and scaled to fit, filling it. The adopted widgets stay in
+   their canvas slots, untouched. The canvas's HUD parent, index and slot are kept (the
+   parent as a weak handle). The template then attaches to the widgets as a managed
+   template with `preview=true`, the game's `screen`, the page's values over its
+   defaults, and a copy of the runtime's state.
+2. A value change or another template detaches and reattaches only that attachment; the
+   canvas stays lent.
+3. The script's events reach only that attachment, as its named event callbacks
+   (`callback(params, event, objects)`) with `event.preview=true` and `params.preview=true`.
+   A `group` or `global` in an event updates the preview's own copy of the state, never
+   the runtime's. Game events never reach it.
+4. Close, page switch or a gone host: the attachment detaches, the canvas returns to its
+   HUD parent, index and slot, and the applied template attaches again as after an Apply.
+   An Apply while lent takes effect then. The widgets never changed parent, so their
+   measured sizes hold; should the applied template still find them unmeasured
+   (`not_ready`), it tries again every 250 ms, one pending timer, at most 40 times.
+
+While lent the canvas counts as lent, not lost: the category's shared attachment stands
+(nothing that validates it reads the canvas's parent), and the adopted widgets still
+resolve through the HUD's members.
+
+A lend that cannot be made (no HUD in the main menu: the preview shows only its picture
+and the category's `unavailable` text) or whose attach fails ends at once: the canvas
+returns and the applied template attaches again. If the HUD, the canvas or the preview's
+panel die while lent (a save load, a HUD rebuild), the next reconcile or preview event
+ends the lend without touching freed objects: the attachment is forgotten and its
+cleanups run, a live canvas whose HUD parent is gone only leaves the preview, and the
+runtime's normal path builds a fresh shared canvas on the new HUD and attaches the
+applied template there. The preview then shows nothing for that category until it is
+opened again.
+
+player.quickslots loops 8 s: the focus moves between the wheels every 2 s, as ModCore
+Controls' `controls.group.focus`, and the consumable Top slot holds a Global key
+(`controls.slots.global`) from 4 s to 6 s, so Double bars show their labels un-merging.
+
+The runtime's side: `runtime:lend(category, request)` with `{destination, template,
+settings, overrides, screen}`, or `nil` to end it; `runtime:previewEvent(category,
+event)`; `runtime:lending(category)`.
 
 ## Startup integration
 
