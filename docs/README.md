@@ -28,6 +28,11 @@ available objects; a **template** selects objects and changes their appearance o
 - **Keep companion widgets in place:** MCT announces `templates.layout.changed`
   after each pass that may move, show or hide the quickslot key indicators, so
   ModCore Controls can keep its Hold underlines under the keys.
+- **Preview templates live:** a template declaring `preview` gives its module page
+  a looping live preview in ModCore Settings' side panel, with the page's current
+  values. Templates that rearrange the game's own widgets, such as the quickslot
+  wheels, preview on those widgets, lent from the HUD while the page is open; this
+  needs a loaded game. See [Template menus](MENUS.md#live-preview).
 
 ## Choose the right module
 

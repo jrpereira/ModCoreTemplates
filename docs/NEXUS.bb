@@ -13,6 +13,7 @@ ModCore Templates (MCT) provides an environment for modifying Dawnwalker's UI wi
 [*]Place settings on module/category pages or in shared areas such as Controls' quickslot visuals.
 [*]Declare event reactions; MCT shares subscriptions and delivers callbacks to active attachments on the game thread.
 [*]MCT announces when the quickslot key indicators may have moved, shown or hidden, so ModCore Controls keeps its Hold underlines under the keys.
+[*]Templates that declare a preview get a looping live preview on their module page in ModCore Settings, with the page's current values. Templates that rearrange the game's own widgets, such as the quickslot wheels, preview on those widgets while a game is loaded.
 [/list]
 
 [b]Requirements and installation[/b]

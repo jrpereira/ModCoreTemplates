@@ -1,42 +1,59 @@
 # Changelog
 
-## v1.9.0
+## v1.9.1
 
-- Requires ModCore Settings 1.9.0 or newer.
-- A template's `preview` declaration reaches its module page, and the preview attaches the
-  templates themselves; before, the menu model dropped it and no page showed a preview.
-- Preview events carry `silent=true` when ModCore Settings' preview sound button is Off, or
-  on Auto while none of the template's `preview.sound` settings is selected.
+- Requires ModCore Settings 1.9.0 or newer and UE4SSLuaEventBridge 1.3.0 or newer.
 - Live previews on module pages: a template declaring `preview={background=<picture>}`
   gives its module page a preview in ModCore Settings' side panel. While the page is open,
   its selected preview templates attach to it with the page's current values (applied or
-  not) and its category's script plays in a loop; for npc.attacks, four attacks (left,
-  right, ahead, behind) and one unblockable attack. Preview events carry `preview=true`.
-- Template pickers can be keyed: `{key=, label=, note=, sound=}` choices, saved and delivered
-  as their keys. A keyed picker may hold `{from='choices/x.lua'}` entries, list files in the
-  module's `Scripts/` that ModCore Settings runs each time the menu opens, so files added to
-  the mod while the game runs become choices. Needs ModCore Settings with listed choices.
-- The settings reference lists a listed picker's choices from the module's folder.
-- Requires UE4SSLuaEventBridge 1.3.0. `MC_NPCAttackIndicator` requests its two
-  hooks with `Hooks.Request`, which waits for the indicator's class to load
-  without polling, and removes them with `Remove()`. With an older bridge the
-  indicator logs that it is unavailable. No change for templates.
-- Requires ModCore Settings 1.8.0. Template pickers are keyed: the config saves the
-  template's id, such as `MCT_Template=Fangdango_SingleUnderbar`, and `None` for no
-  template. Saved template choices from earlier versions reset to their default once.
+  not), stacked by priority as on the HUD, and its category's script plays in a loop; for
+  npc.attacks, four attacks (left, right, ahead, behind) and one unblockable attack.
+  Preview events carry `preview=true`, and `silent=true` when ModCore Settings' preview
+  sound button is Off, or on Auto while none of the template's `preview.sound` settings
+  is selected. `preview.sound` names a menu group, a list of groups, or `true` for all of
+  the template's settings, its Enabled toggle included. A module whose templates sit in
+  another provider's slot gets the preview on its own page.
+- Live previews can lend the game's own widgets: a category declaring
+  `preview={lend=true, ...}` (player.quickslots does) moves its shared canvas whole, with
+  the widgets it adopted (both quickslot wheels) untouched inside, into the preview while
+  its module page is open, attaches the page's selected template to them with
+  `preview=true` on the game's screen scaled to fit, and returns the canvas to its exact
+  place in the HUD on close, attaching the applied template again. A HUD that goes away
+  while lent (a save load) ends the lend without touching it; the new HUD gets a fresh
+  canvas. Lending needs a loaded game. player.quickslots' preview loop moves the focus
+  between the wheels every 2 s and gives one consumable slot a Global key for 2 s of each
+  8 s loop.
+- Template pickers are keyed: the config saves the template's id, such as
+  `MCT_Template=Fangdango_SingleUnderbar`, and `None` for no template. Saved template
+  choices from 1.7.0 reset to their default once.
+- Template pickers can declare keyed choices, `{key=, label=, note=, sound=}`, saved and
+  delivered as their keys. A keyed picker may hold `{from='choices/x.lua'}` entries, list
+  files in the module's `Scripts/` that ModCore Settings runs each time the menu opens, so
+  files added to the mod while the game runs become choices. List files get
+  `context.head(path, count)` to read a file's first bytes. The settings reference lists a
+  listed picker's choices from the module's folder.
+- `defaultEnabled = true` makes a template's Enabled toggle start on.
+- MCT publishes `templates.layout.changed` (`{category="player.quickslots"}`) once after
+  each pass that may move, show or hide the quickslot key indicators, so ModCore
+  Controls can keep its Hold underlines under the keys. Categories opt in with
+  `layoutEvent = true`. Vendors the ModCore Controls event transport with
+  `controls.slots.global` and `templates.layout.changed`.
 - Template ids are unique within a module: loading prefixes each with its module id
   (`<Module>_<Id>`), so two modules can use the same id. `template.localId` keeps the
   declared id. Two templates whose setting names would match are not both loaded; the
   later provider file is rejected.
 - Setting ids are derived, not stored: `Scripts/cache/identity-catalog.lua` is no longer
   written or read and can be deleted.
-- Apply notifications use ModCore Settings' settings_api v2, which carries ranges as
-  text, so MCT no longer re-reads ranges from the config after an Apply.
+- `MC_NPCAttackIndicator` requests its two hooks with `Hooks.Request`, which waits for
+  the indicator's class to load without polling. With an older bridge the indicator logs
+  that it is unavailable. It looks up each combat indicator once while it lives instead
+  of on every icon change.
+- An Apply updates only the templates whose effective settings changed; the others in
+  the same category stay attached as they are. Apply keeps created layers in template
+  order: a template's overlays no longer move above higher-priority layers, such as the
+  quickslot canvas, when its settings change. Ranges arrive with ModCore Settings'
+  settings_api v2 notifications instead of being re-read from the config.
 - A config file saved with a UTF-8 byte order mark keeps its first setting.
-- An Apply keeps created layers in template order: a template's overlays no longer move
-  above higher-priority layers, such as the quickslot canvas, when its settings change.
-- A root revealed when its `attachDelay` ends publishes `templates.layout.changed`
-  even when no template attaches in that pass.
 - A registered template file outside a mod's `Scripts` folder, such as one in
   `Scripts/templates/`, is reported as a registration error and skipped; other templates
   still load. Before, one such file stopped MCT from starting. The Mods-folder prefix is
@@ -44,35 +61,17 @@
 - A HUD widget removed and added back to a panel is ready again once it is seen in its
   panel, even when no AddChild hook saw it return. Before, its templates could stay
   detached until it was next added to the viewport.
+- A root waiting out its category's `attachDelay` attaches at the latest three delays
+  after it was first found (6 seconds for quickslots), even while lifecycle events keep
+  restarting its timer.
 - Logged errors name the template and provider file they are about, such as
   `attach (Fangdango_Wheels): callback returned false`; `MCTOnError` receives them as
   `template` and `provider`.
 - When MCT fails to start, it logs one CRITICAL line and closes template registration,
   so providers that load later are told registration is not open.
-- A root waiting out its category's `attachDelay` attaches at the latest three delays
-  after it was first found (6 seconds for quickslots), even while lifecycle events keep
-  restarting its timer.
-- `MC_NPCAttackIndicator` looks up each combat indicator once while it lives instead
-  of on every icon change.
 - Fewer global object lookups on attach, update and layout passes: the widget layout
   library, created objects' classes and the player controller are found once while they
   live, and each pass reads the screen size once.
-- An Apply updates only the templates whose effective settings changed; the others in
-  the same category stay attached as they are.
-
-## v1.8.0
-
-- MCT publishes `templates.layout.changed` (`{category="player.quickslots"}`) once after
-  each pass that may move, show or hide the quickslot key indicators, so ModCore
-  Controls can keep its Hold underlines under the keys. Categories opt in with
-  `layoutEvent = true`. A template's own callback for the event does not publish
-  another.
-- Vendors the ModCore Controls event transport with `controls.slots.global` and
-  `templates.layout.changed`.
-
-## v1.7.1
-
-- Requires ModCore Settings 1.7.0. No change to templates.
 
 ## v1.7.0
 
