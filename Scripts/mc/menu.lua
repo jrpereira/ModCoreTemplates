@@ -86,10 +86,16 @@ function M.generate(registry, options)
         pageRows[currentCategory][#pageRows[currentCategory] + 1] = fields
         return fields.id
     end
-    local function picker(settingId, label, group, list, visible, title, default)
+    local function picker(settingId, label, group, list, visible, title, default, description)
         return row({id = settingId, label = text(label), group = group, type = 'enum', values = list,
             default = default == nil and (list[1].key or list[1].value) or default, visible = visible,
-            style = title and 'title' or nil})
+            style = title and 'title' or nil, description = description})
+    end
+    -- A template's description as one line for the side panel, or nil.
+    local function described(template, limit)
+        local value = template.description
+        return type(value) == 'string' and value:find('%S')
+            and value:gsub('%c', ' '):match('^%s*(.-)%s*$'):sub(1, limit) or nil
     end
     -- A generated group is headed by its label and shown only by its visibility rule.
     local function group(identity, label, visible, style, publicId)
@@ -215,9 +221,10 @@ function M.generate(registry, options)
                     local value = entry.id
                     assert(value ~= M.NONE, category .. ': template id ' .. M.NONE .. ' is reserved')
                     values[#values + 1] = value
-                    -- Each template choice notes its module, which ModCoreSettings names.
+                    -- Each template choice notes its module, which ModCoreSettings names, and
+                    -- carries its description for the side panel while it is the choice.
                     list[#list + 1] = {key = value, label = text(entry.template.label),
-                        module = entry.template.module}
+                        module = entry.template.module, description = described(entry.template, 1024)}
                     byValue[value] = entry.id
                 end
                 local selector
@@ -226,14 +233,17 @@ function M.generate(registry, options)
                         or publicName(category) .. 'Template'
                     selector = namedId(selectorName, {'selector', category})
                     local isQuickslots = category == 'player.quickslots'
-                    picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil)
+                    picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil, nil,
+                        'Only one template from this list can be active at a time. None turns them all off.')
                     selectors[category] = {id = selector, byValue = byValue}
                     categoryValues = values
                 else
                     local priority = members[1].priority
                     selector = namedId(publicName(category) .. publicName('Priority ' .. priority) .. 'Template',
                         {'selector', category, 'priority', priority})
-                    picker(selector, title(suffix) .. ' (priority ' .. priority .. ')', aggregateGroup, list)
+                    picker(selector, title(suffix) .. ' (priority ' .. priority .. ')', aggregateGroup, list, nil,
+                        nil, nil, 'Only one template from this list can be active at a time, alongside those'
+                            .. ' chosen at other priorities. None turns this list off.')
                 end
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
@@ -294,8 +304,10 @@ function M.generate(registry, options)
                     headingId = group(key({identity, 'template_heading'}), template.label,
                         nil, 'none', templateScope)
                     -- Off unless the template declares defaultEnabled=true.
+                    -- Its side panel describes the template.
                     picker(ownerSelector, template.label, headingId, choices({0, 1}, {'Disabled', 'Enabled'}), nil, nil,
-                        template.defaultEnabled == true and 1 or 0)
+                        template.defaultEnabled == true and 1 or 0,
+                        described(template, 4096) or 'Turns this template on or off.')
                     definition.enabledId = ownerSelector
                     rows[#rows]._control, rows[#rows].style, rows[#rows].widget = true, 'category', 'switch'
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
@@ -594,13 +606,40 @@ function M.generate(registry, options)
             for _, item in ipairs(rows) do
                 if item._category == category and item._slot then selectedRows[#selectedRows + 1] = item end
             end
+            -- As on a module page: the category's pickers, then each template's groups under
+            -- their own headings. The pickers share the unheaded group Slot (a host slot with
+            -- slotLabel heads it with its own label); the templates' groups keep their labels
+            -- and styles but no rules: each row carries its slot visibility, and a heading
+            -- shows while any of its rows does.
             local menu = {storage = {file = Layout.configFile, section = 'Templates'},
-                groups = {{id = 'Slot'}}, fields = {}}
+                groups = {{id = 'Slot', style = 'none'}}, fields = {}}
+            local aggregate, used, listed = {}, {}, {}
+            for _, groupId in ipairs(aggregateGroupOrder) do aggregate[groupId] = true end
+            for _, item in ipairs(selectedRows) do
+                if not aggregate[item.group] then used[item.group] = true end
+            end
+            for _, groupId in ipairs(groupOrder) do
+                if used[groupId] then
+                    local section = U.copy(groupSections[groupId])
+                    local outer = listed[section.within]
+                    section.visible, section.within = nil, nil
+                    section = conditioned(section)
+                    if outer then
+                        outer.groups = outer.groups or {}
+                        outer.groups[#outer.groups + 1] = section
+                    else
+                        menu.groups[#menu.groups + 1] = section
+                    end
+                    listed[groupId] = section
+                end
+            end
+            local selector = selectors[category] and selectors[category].id
             for _, item in ipairs(selectedRows) do
                 local stored = plain(item)
                 -- A slot row keeps its other rules and takes its slot's visibility.
-                -- Slot rows share one group, so no row takes the title or stands in for its heading.
-                stored.group, stored.style = 'Slot', nil
+                if aggregate[item.group] then stored.group, stored.style = 'Slot', nil end
+                -- The category picker is the page's Template entry.
+                if stored.id == selector then stored.label = 'Template' end
                 local conditions = stored.conditions or {}
                 conditions.visible = U.copy(item._slot.visible)
                 stored.conditions = next(conditions) and conditions or nil
@@ -650,7 +689,7 @@ function M.generate(registry, options)
         local host = title(entry.slot:match('^[^:]+'))
         table.insert(selectedRows, 1, {id='MCT_MergedNotice', group=selectedRows[1].group,
             label='These settings have been merged into ' .. host .. ' and can also be edited there',
-            type='enum', values={{value=0, label=host}}, default=0, action=true, widget='tabs', link=entry.slot,
+            description='Opens these settings on the ' .. host .. ' page.', type='enum', values={{value=0, label=host}}, default=0, action=true, widget='tabs', link=entry.slot,
             style='notice'})
         local page = {id=providerId, name=module, merged=entry.slot, moduleRoot=entry.root, rows=selectedRows,
             menu=providerMenu(module, selectedRows, false)}

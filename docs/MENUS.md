@@ -90,7 +90,9 @@ no note. Every other template gets an `Enabled` toggle (`mcType=onoff`), saved a
 `MCT_<Module>_<Id>_Enabled`. The toggle is labelled with the template's label and stands
 in for its group's heading (`style='category'` on the row, `style='none'` on the group),
 so the heading row itself turns the template on or off. It is off by default; a template
-declaring `defaultEnabled = true` starts on. A category can have both. A template with `enabled = false` remains represented in the
+declaring `defaultEnabled = true` starts on. A category can have both. A template's
+optional `description` (text) fills the side panel: on its Enabled toggle, and on its
+choice in a template picker while it is selected. A template with `enabled = false` remains represented in the
 menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
 separate from the player's selection.
 

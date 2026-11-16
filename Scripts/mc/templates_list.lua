@@ -3,7 +3,7 @@
 -- page's hooks file (Scripts/mct_templates_page.lua) on each menu build.
 local M = {version=1}
 
--- templates: the registry's {id, template={label, category, module}} entries.
+-- templates: the registry's {id, template={label, category, module, description}} entries.
 -- state: menu.decodeState's result; a template is active when its category selects it.
 function M.encode(templates, state)
     local out = {'return {version=' .. M.version .. ',templates={'}
@@ -11,8 +11,10 @@ function M.encode(templates, state)
         local template = entry.template
         local category = state[template.category]
         local active = category ~= nil and category.selections[entry.id] ~= nil
-        out[#out + 1] = string.format('{label=%q,module=%q,category=%q,active=%s},', tostring(template.label),
-            tostring(template.module or ''), tostring(template.category), tostring(active))
+        local description = type(template.description) == 'string' and template.description or ''
+        out[#out + 1] = string.format('{label=%q,module=%q,category=%q,description=%q,active=%s},',
+            tostring(template.label), tostring(template.module or ''), tostring(template.category),
+            description, tostring(active))
     end
     out[#out + 1] = '}}'
     return table.concat(out, '\n') .. '\n'

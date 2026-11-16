@@ -216,6 +216,21 @@ test('aggregate Apply preserves template values from other pages', function()
     assert(f.calls[#f.calls].settings.Size==77 and f.calls[#f.calls].settings.Opacity==25)
 end)
 
+test('a template toggle is described by its template', function()
+    local f=fixture(false)
+    f.a.description=' Alpha arranges\nthe keys. '
+    local model=Model.build({f.category},{U.copy(f.a),U.copy(f.b)},f.locations)
+    local menu=Menu.generate(model.registry)
+    local described={}
+    for _,item in ipairs(menu.multiSelectors['player.quickslots']) do
+        for _,candidate in ipairs(menu.rows) do
+            if candidate.id==item.id then described[item.definition.id]=candidate.description end
+        end
+    end
+    assert(described.Alpha=='Alpha arranges the keys.','one trimmed line: '..tostring(described.Alpha))
+    assert(described.Beta=='Turns this template on or off.')
+end)
+
 test('multi-template toggles stand in for a heading named for the template', function()
     local f=fixture(false)
     local toggles=f.menu.multiSelectors['player.quickslots']
@@ -234,6 +249,7 @@ test('multi-template toggles stand in for a heading named for the template', fun
         local stored=fieldOf(menu,item.id)
         assert(stored.style=='category' and stored.widget=='switch', 'the toggle is an on/off heading row')
         assert(stored.values[1].label=='Disabled' and stored.values[2].label=='Enabled')
+        assert(stored.description=='Turns this template on or off.','a toggle without a template description')
         -- The template's own groups, on the page holding its rows (Alpha's), are subgroups
         -- of its heading: smaller, without a rule.
         local sub=heading.groups and heading.groups[1]
@@ -683,7 +699,19 @@ test('a slot category moves to one hidden page with flattened visibility', funct
         assert(rule==nil or seen[rule.field],row.id..': rule must name an earlier slot row')
         seen[row.id]=index
     end
-    assert(#page.menu.groups==1 and page.menu.groups[1].id=='Slot','source group rules are not published')
+    -- As on a module page: the pickers in the unheaded Slot group, then each template's
+    -- groups with their headings, without rules (rows carry their own visibility).
+    assert(page.menu.groups[1].id=='Slot' and page.menu.groups[1].style=='none','the pickers\' group has no heading')
+    assert(#page.menu.groups>1,'template groups keep their headings')
+    local function ruleless(groups)
+        for _,group in ipairs(groups or {}) do
+            assert(group.conditions==nil,'source group rules are not published: '..group.id)
+            ruleless(group.groups)
+        end
+    end
+    ruleless(page.menu.groups)
+    assert(fieldOf(page.menu,f.definitions.Alpha.settings.Size).group~='Slot','a template\'s rows keep its group')
+    assert(template.label=='Template','the category picker is the Template entry')
 end)
 
 test('the template picker notes each choice with its module', function()
@@ -728,6 +756,33 @@ test('the template picker notes each choice with its module', function()
     for _,choice in ipairs(fieldOf(menu.pageBySlot['player.quickslots'].menu,
         menu.selectors['player.quickslots'].id).values) do modules[#modules+1]=choice.module end
     assert(#modules==1 and modules[1]=='Alpha')
+end)
+
+test('each template choice carries its description for the side panel', function()
+    local f=fixture(true,'module','module')
+    f.category.slot={provider='controls',slot='visuals'}
+    f.a.description='Alpha arranges;\nthe keys at 100%'
+    local model=Model.build({f.category},{U.copy(f.a),U.copy(f.b)},f.locations)
+    local menu=Menu.generate(model.registry)
+    local selector=menu.selectors['player.quickslots']
+    local page=menu.pageBySlot['player.quickslots']
+    local described={}
+    for _,choice in ipairs(fieldOf(page.menu,selector.id).values) do described[choice.key]=choice.description end
+    local alpha
+    for value,id in pairs(selector.byValue) do if id:match('Alpha$') or id=='Alpha' then alpha=value end end
+    assert(described[alpha]=='Alpha arranges; the keys at 100%','a control character becomes a space: '..tostring(described[alpha]))
+    assert(described[Menu.NONE]==nil,'None has none')
+    assert(fieldOf(page.menu,selector.id).description
+        =='Only one template from this list can be active at a time. None turns them all off.',
+        'the picker\'s own description reads before the choice\'s')
+    if Choices then
+        local manifest=MenuData.manifest(page.menu)
+        local choices=Choices.parse(manifest)
+        Presentation.parse(manifest,choices)
+        local found
+        for _,text in pairs(assert(choices[1].mcChoiceDescriptions,'descriptions reach ModCoreSettings')) do found=text end
+        assert(found=='Alpha arranges; the keys at 100%','escaped and restored: '..tostring(found))
+    end
 end)
 
 local function conditionalPage()
@@ -872,6 +927,7 @@ test('modules whose templates moved to a slot keep their page with a link to the
         and notice.action and notice.widget=='tabs' and notice.style=='notice'
         and #notice.values==1 and notice.values[1].label=='Controls')
     assert(notice.label=='These settings have been merged into Controls and can also be edited there')
+    assert(notice.description=='Opens these settings on the Controls page.')
     local selector=f.menu.selectors['player.quickslots']
     assert(fieldOf(page.menu,selector.id) and fieldOf(page.menu,f.definitions.Beta.settings.Size)
         and page.menu.storage.file=='Scripts/cache/config.ini','the page edits the slot rows in the central config')
@@ -1092,8 +1148,10 @@ test('category-unique templates share a picker and the others get Enabled toggle
                 if item.id==toggles[1].id then labels[#labels+1]=item.label end
             end
             assert(#labels==1 and labels[1]=='Gamma', 'a slotted toggle names its template')
+            -- As on a module page, an Enabled toggle stands in for its template's heading.
             for _, item in ipairs(menu.pageBySlot['player.quickslots'].menu.fields) do
-                assert(item.style==nil, 'slot rows share one group, so none stands in for its heading')
+                assert(item.style==nil or item.id==toggles[1].id and item.style=='category',
+                    'only a template\'s toggle stands in for its heading')
             end
         end
     end

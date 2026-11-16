@@ -2,6 +2,10 @@
 
 ## v1.9.1
 
+- Template pickers, template toggles, the merged-settings notice and the Templates tab's rows have descriptions.
+- The quickslots page in ModCore Controls reads like a module page: the Template picker,
+  then the chosen template's settings under its own heading.
+- A template picker's side panel describes the selected template, from its `description`.
 - Requires ModCore Settings 1.9.0 or newer and UE4SSLuaEventBridge 1.3.0 or newer.
 - Live previews on module pages: a template declaring `preview={background=<picture>}`
   gives its module page a preview in ModCore Settings' side panel. While the page is open,

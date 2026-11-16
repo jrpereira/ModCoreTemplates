@@ -13,6 +13,8 @@
 -- It runs as pure Lua 5.4: only the standard string, table, math and utf8 libraries and the
 -- base functions that touch nothing outside it. context.files(subfolder) gives the names
 -- directly inside <root>/<subfolder>: {} for a missing folder, nil and why on failure.
+-- context.head(path, count) gives the first count bytes (at most 4096) of the file at
+-- <root>/<path>, or nil and why: enough to check a picture's header before listing it.
 --
 -- Rules, per field:
 --   * A fixed choice wins over a listed one with its key, wherever it stands; between list
@@ -84,6 +86,7 @@ end
 -- options:
 --   files(root, subfolder) -> names | {} | nil, why   the host's folder listing
 --   load(path, env) -> chunk | nil, why             loadfile by default
+--   read(root, path, count) -> bytes | nil, why       a file's first bytes; io.open by default
 --   report(event, detail)                           a problem, once per list file and reason
 -- Returns expand(menu): menu itself when it holds no from entry, else a copy with every
 -- from entry resolved. Keeps the last good result of each list file between builds.
@@ -92,6 +95,13 @@ function M.expander(options)
     local files=assert(options.files,'menu_from needs files')
     local load=options.load or function(path,env) return loadfile(path,'t',env) end
     local report=options.report or function() end
+    local read=options.read or function(root,path,count)
+        local file,why=io.open(root..'/'..path,'rb')
+        if not file then return nil,why end
+        local bytes=file:read(count)
+        file:close()
+        return bytes or ''
+    end
     local good,labels,reported={},{},{}
     local function once(id,why)
         local detail=id..': '..tostring(why)
@@ -110,6 +120,10 @@ function M.expander(options)
         local context={directory=root,files=function(subfolder)
             assert(relative(subfolder),'invalid subfolder '..tostring(subfolder))
             return files(root,subfolder)
+        end,head=function(path,count)
+            assert(relative(path),'invalid path '..tostring(path))
+            assert(math.type(count)=='integer' and count>=1 and count<=4096,'invalid count '..tostring(count))
+            return read(root,path,count)
         end}
         local result
         ok,result,why=pcall(list,context)

@@ -10,7 +10,8 @@ assert(paths.templates==root..'/Scripts/cache/templates.lua')
 local templates={
     {id='a',template={label='Wheels',category='player.quickslots',module='Fangdango'}},
     {id='b',template={label='Double Sidebar',category='player.quickslots',module='Fangdango'}},
-    {id='c',template={label='Preymonition',category='npc.attacks',module='Preymonition'}},
+    {id='c',template={label='Preymonition',category='npc.attacks',module='Preymonition',
+        description='Shows incoming attacks;\nfrom every side. '}},
     {id='d',template={label='Built In "Quoted"',category='player.quickslots'}},
 }
 local state={['player.quickslots']={settings={},selections={b={}}},['npc.attacks']={settings={},selections={}}}
@@ -49,6 +50,9 @@ local function row(label) for _,item in ipairs(menu.fields) do if item.label==la
 local blank='\u{A0}'
 assert(row('Double Sidebar').values[1].label=='Active' and row('Wheels').values[1].label==blank
     and row('Preymonition').values[1].label==blank,'only the selected template shows as active')
+-- A row is described by its template, as one trimmed line; a template without one has none.
+assert(row('Preymonition').description=='Shows incoming attacks; from every side.'
+    and row('Wheels').description==nil,tostring(row('Preymonition').description))
 -- Without names the folders are shown as they are.
 local unnamed=hooks.menu({page='ModCoreTemplates',directory=root})
 assert(unnamed.groups[1].label=='TemplatesPage' and unnamed.groups[2].label=='Fangdango')

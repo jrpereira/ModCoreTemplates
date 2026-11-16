@@ -29,9 +29,12 @@ end
 
 local function menu(context)
     local groups, fields = {}, {}
-    local function display(id, group, label, value)
+    -- description (optional): the template's, as one line for the side panel.
+    local function display(id, group, label, value, description)
+        description = type(description) == 'string'
+            and description:gsub('%c', ' '):match('^%s*(.-)%s*$'):sub(1, 4096) or ''
         fields[#fields + 1] = {id=id, group=group, label=clean(label), default=0, widget='text',
-            values={{value=0, label=value}}}
+            values={{value=0, label=value}}, description=description ~= '' and description or nil}
     end
     local list = read(context.directory)
     if not list then
@@ -69,7 +72,8 @@ local function menu(context)
             local group = 'Module' .. m .. '_' .. c
             subgroups[#subgroups + 1] = {id=group, label=categoryLabel(category)}
             for _, template in ipairs(entry.byCategory[category]) do
-                display(template.listed, group, template.label, template.active == true and ACTIVE or BLANK)
+                display(template.listed, group, template.label, template.active == true and ACTIVE or BLANK,
+                    template.description)
             end
         end
     end
