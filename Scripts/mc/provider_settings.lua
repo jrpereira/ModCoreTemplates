@@ -1,5 +1,6 @@
 local U = require('mc.util')
 local Contributions = require('menu_contributions')
+local From = require('menu_from')
 local M = {}
 local function finite(v) return type(v) == 'number' and v == v and math.abs(v) <= 1000000000 end
 -- Menu text: nonempty, no separators or controls, no edge whitespace, at most 4096 bytes.
@@ -62,6 +63,46 @@ local function choiceDomain(source, where)
     assert(#values >= 2 and #values <= 64, where .. ': picker requires 2..64 choices')
     for index, value in ipairs(values) do labels[index] = byValue[value] end
     return {type='enum',values=values,labels=labels,notes=notes,sounds=sounds}
+end
+
+-- A keyed choice list: {key=,label=,note=,sound=} choices, stored and handed to the template
+-- as their keys, and {from=<list file>} entries whose choices ModCoreSettings lists from the
+-- module's own files each time the menu opens (the file relative to the module's Scripts/).
+local function isKeyed(source)
+    local first = type(source) == 'table' and source[1]
+    return type(first) == 'table' and (first.key ~= nil or first.from ~= nil)
+end
+M.isKeyed = isKeyed
+local function keyedDomain(source, where)
+    local count = U.array(source, where .. ' values')
+    assert(count >= 1 and count <= 64, where .. ': keyed values take 1..64 entries')
+    local values, labels, choices, seen, listed = {}, {}, {}, {}, false
+    for index, entry in ipairs(source) do
+        local at = where .. ' value ' .. index
+        assert(type(entry) == 'table', at .. ' must be a table')
+        if entry.from ~= nil then
+            allowed(entry, {from=true}, at)
+            assert(From.relative(entry.from) and entry.from:match('%.lua$'),
+                at .. ': from is a .lua file relative to the module\'s Scripts folder')
+            choices[#choices + 1], listed = {from=entry.from}, true
+        else
+            allowed(entry, {key=true,label=true,note=true,sound=true}, at)
+            assert(From.validKey(entry.key), at .. ': a key is letters, digits and _ . -, not a number')
+            assert(not seen[entry.key], at .. ': duplicate key ' .. entry.key)
+            seen[entry.key] = true
+            text(entry.label, at .. ' label')
+            if entry.note ~= nil then assert(#text(entry.note, at .. ' note') <= 64, at .. ': note too long') end
+            if entry.sound ~= nil then
+                assert(type(entry.sound) == 'string' and #entry.sound <= 256
+                    and (entry.sound == 'none' or entry.sound:match('^/Game/[%w_/%.%-]+$')),
+                    at .. ': sound must be a /Game/ event path or none')
+            end
+            values[#values + 1], labels[#labels + 1] = entry.key, entry.label
+            choices[#choices + 1] = {key=entry.key,label=entry.label,note=entry.note,sound=entry.sound}
+        end
+    end
+    assert(listed or #values >= 2, where .. ': keyed values need two choices or a from entry')
+    return {type='enum',keyed=true,listed=listed,values=values,labels=labels,choices=choices}
 end
 
 -- A range is a low and a high value on one track: ModCoreSettings' range editor. It stores
@@ -149,6 +190,8 @@ local function valueDomain(source, declared, where)
                 where .. ': delta and min/max pairs need type=\'range\'')
             allowed(source, {min=true,max=true,step=true,suffix=true}, where .. ' integer')
             domain = {type='integer',min=source.min,max=source.max,step=source.step,suffix=source.suffix}
+        elseif isKeyed(source) then
+            domain = keyedDomain(source, where)
         else
             domain = choiceDomain(source, where)
         end
@@ -280,6 +323,7 @@ function M.template(menu, variations)
             local domain = valueDomain(sourceGroup.values, sourceGroup.type, 'template field ' .. id)
             local field = {id=id,label=sourceGroup.label,type=domain.type,values=domain.values,
                 labels=domain.labels,notes=domain.notes,sounds=domain.sounds,min=domain.min,
+                keyed=domain.keyed,listed=domain.listed,choices=domain.choices,
                 max=domain.max,step=domain.step,delta=domain.delta,suffix=domain.suffix,
                 default=sourceGroup.default,widget=sourceGroup.widget,style=sourceGroup.style,
                 description=sourceGroup.description}
@@ -333,6 +377,7 @@ function M.template(menu, variations)
                 local domain = valueDomain(source.values, source.type, 'template field ' .. id)
                 local field = {id=id,label=source.label,type=domain.type,values=domain.values,
                     labels=domain.labels,notes=domain.notes,sounds=domain.sounds,min=domain.min,
+                    keyed=domain.keyed,listed=domain.listed,choices=domain.choices,
                     max=domain.max,step=domain.step,delta=domain.delta,suffix=domain.suffix,
                     default=source.default,widget=source.widget,style=source.style,
                     description=source.description}
@@ -390,7 +435,8 @@ function M.normalize(declaration)
             allowed(source, {id=true,label=true,type=true,order=true,default=true,values=true,
                 labels=true,notes=true,sounds=true,min=true,max=true,step=true,delta=true,
                 suffix=true,widget=true,style=true,description=true,visibleWhen=true,visibleValues=true,
-                visiblePlayer=true,labelWhen=true,labelTexts=true,dim=true,linkProvider=true}, 'provider field')
+                visiblePlayer=true,labelWhen=true,labelTexts=true,dim=true,linkProvider=true,
+                keyed=true,listed=true,choices=true}, 'provider field')
             identifier(source.id, 'provider field id'); text(source.label, 'provider field label')
             assert(not fields[source.id], 'duplicate provider field ' .. source.id)
             local field = U.copy(source)
@@ -451,6 +497,22 @@ function M.normalize(declaration)
                     'invalid provider integer range/step')
                 assert(field.default >= field.min and field.default <= field.max,
                     'provider default outside range')
+            elseif field.keyed then
+                -- Keys come checked from the template's values; rules may name fixed keys only.
+                assert(field.type == 'enum' and field.min == nil and field.max == nil and field.step == nil
+                    and field.suffix == nil and field.notes == nil and field.sounds == nil,
+                    'a keyed enum carries its notes and sounds in its choices')
+                assert(field.widget ~= 'switch', 'a keyed enum is not a switch')
+                assert(not field.listed or field.widget == 'picker' or field.widget == 'cycler',
+                    'listed choices show in a picker or cycler')
+                assert(field.widget ~= 'tabs' or #field.choices <= 8, 'provider tabs support at most 8 choices')
+                local seen = {}
+                for _, value in ipairs(field.values) do seen[value] = true end
+                assert(From.validKey(field.default) and (field.listed or seen[field.default]),
+                    'provider default must match a choice' .. (field.listed and ' or be a key' or ''))
+                for _, value in ipairs(field.dim and field.dim or {}) do
+                    assert(seen[value], 'provider dim value must be a fixed choice')
+                end
             else
                 assert(field.min == nil and field.max == nil and field.step == nil and field.suffix == nil,
                     'an enum cannot declare an integer range/suffix')
@@ -521,7 +583,7 @@ function M.normalize(declaration)
                     local choices, seen = {}, {}
                     for _, value in ipairs(source.values) do choices[value] = true end
                     for _, value in ipairs(matched) do
-                        assert(finite(value) and choices[value] and not seen[value],
+                        assert((finite(value) or type(value) == 'string') and choices[value] and not seen[value],
                             'provider ' .. kind .. ' value must be a distinct source choice')
                         seen[value] = true
                     end

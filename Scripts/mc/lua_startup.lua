@@ -177,6 +177,15 @@ function M.start(options, api)
         end
     end
     bootstrap=Bootstrap.new(configured)
+    -- Module pages' live previews in ModCoreSettings' side panel.
+    if api.ModRef and type(api.RegisterConsoleCommandHandler)=='function' then
+        local byId={}
+        for _,category in ipairs(configured.categories or {}) do byId[category.id]=category end
+        local ok,why=pcall(require('mc.preview').new,{shared=api.ModRef,register=api.RegisterConsoleCommandHandler,
+            session=function() return bootstrap and bootstrap.session end,categories=byId,
+            log=configured.log and require('mc_log').wrap(configured.log) or nil})
+        if not ok and configured.log then require('mc_log').wrap(configured.log).warn('preview unavailable: ',tostring(why)) end
+    end
     return bootstrap
 end
 return M

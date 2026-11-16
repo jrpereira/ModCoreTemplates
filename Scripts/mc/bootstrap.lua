@@ -194,7 +194,7 @@ function M.new(options)
             session=Session.new(options,options.categories,templates,locations,function(partial)
                 session=partial
             end)
-            self.menu,self.runtime=session.menu,session.runtime
+            self.menu,self.runtime,self.session=session.menu,session.runtime,session
             self.menuController=session.menuController
             -- Object notifications cover only categories with templates; they start
             -- before the runtime's first snapshot.

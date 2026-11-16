@@ -162,6 +162,40 @@ menu's change sound when the row changes to that choice, or `'none'` for silence
 values={[0]='None', [1]={label='Short Swoosh', sound='/Game/Audio/AK_Events/Events/UI/UI_Inventory/UI_Claws_Equip'}}
 ```
 
+### Listed choices
+
+A keyed picker lists `{key=, label=, note=, sound=}` choices and saves the chosen key. Among
+them, `{from=<file>}` entries name a list file relative to the template module's `Scripts/`;
+MCT publishes each with the module's folder, and ModCore Settings runs it every time it
+builds the page, splicing the choices it returns in that place:
+
+```lua
+{id='.Incoming', label='Attack incoming', default='chime', values={
+    {key='none', label='None'},
+    {key='chime', label='Chime', note='flat', sound='/Game/Audio/AK_Events/Events/UI/UI_Gameplay/UI_AA_Cooldown_Ended'},
+    {from='choices/cue_sounds.lua'},
+}}
+-- Scripts/choices/cue_sounds.lua: pure Lua 5.4, run in ModCore Settings' Lua state
+return function(context)
+    local names = context.files('sounds')     -- names directly inside <module>/sounds
+    local out = {}
+    for _, name in ipairs(names or {}) do
+        local key = name:lower():match('^cue_([%w_]+)%.wav$')
+        if key then out[#out + 1] = {key=key, label=key, note='cue'} end
+    end
+    table.sort(out, function(a, b) return a.key < b.key end)
+    return out
+end
+```
+
+Keys are letters, digits and `_ . -`, never a number. The `default` may be a listed key.
+Rules (`visible`, `label`, `dim`) may name fixed keys only, and a listed picker shows as a
+`picker` or `cycler`. Because the files decide what is offered, a listed picker accepts any
+well-formed saved key and delivers it unchanged: the template must fall back for a key whose
+file is gone. ModCore Settings' reference describes the list file's sandbox, the failure
+rules and the placeholder for a field left with fewer than two choices. The settings
+reference (`tools/settings_reference.lua`) lists what the module's folder holds.
+
 A field may declare `conditions`, in ModCore Settings' menu-data shapes:
 
 ```lua
@@ -225,6 +259,25 @@ Enabling a template detaches the enabled one in its group before the new one att
 and a failed detach holds the new one back. Groups are separate: a category-unique
 template never displaces a priority-unique one, and templates without `uniqueBy` attach
 alongside both. Categories do not declare `uniqueBy`.
+
+### Live preview
+
+A template may declare `preview={background='images/x.jpg', sound='Sound'}` (a picture in
+its module folder; `sound` names the menu group whose settings make the preview sound when
+ModCore Settings' sound button is on Auto). Its module page then gets ModCore Settings' live preview: while the page is open,
+the page's selected templates that declare `preview` attach to the preview host with the
+page's current values, applied or not, and reattach on every change. Each gets its own
+Overlay layer, `objects={hud=<the menu's widget>, cue=<layer>}`, and params with
+`preview=true` and a 1920 by 1080 `screen`.
+
+A category plays a script into it in a loop: `preview={length=<ms>, events={{at=<ms>,
+attack=<n>, event={...}}, ...}}`. Each event reaches the template's `update` callback with
+`preview=true`, the menu widget as `indicator`, a `path` shared by one attack's events and
+new each loop, a `sequence`, and `silent=true` when the sound button is Off, or on Auto
+while none of the template's `sound` settings is selected. npc.attacks loops four attacks (left, right, ahead,
+behind: arrow, then critical, then resolved) and one unblockable attack, 9.4 s in all.
+A template that declares `preview` keeps preview events to its preview attachment and game
+events away from it, and shows its preview attachment without waiting for combat.
 
 ## Startup integration
 

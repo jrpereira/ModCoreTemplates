@@ -1,6 +1,7 @@
 local Layout = require('mc.layout')
 local U = require('mc.util')
 local Provider = require('mc.provider_settings')
+local From = require('menu_from')
 local M = {}
 
 -- Pages are described as ModCoreSettings menu data (see its menu_data.lua): groups and
@@ -101,7 +102,8 @@ function M.generate(registry, options)
         end
         return groupId
     end
-    local function field(settingId, source, groupId)
+    -- root: the module folder of the template declaring it, for listed choices.
+    local function field(settingId, source, groupId, root)
         local item = {id = settingId, label = source.label, group = groupId, default = source.default,
             description = source.description, style = source.style,
             type = source.type == 'navigation' and 'enum' or source.type}
@@ -109,7 +111,20 @@ function M.generate(registry, options)
         if source.widget ~= 'picker' and source.widget ~= 'slider' and source.widget ~= 'range' then
             item.widget = source.widget
         end
-        if source.type == 'enum' or source.type == 'navigation' then
+        if source.keyed then
+            -- Fixed choices by key; ModCoreSettings lists each from entry's choices from the
+            -- module's files every time the menu opens.
+            item.values = {}
+            for index, choice in ipairs(source.choices) do
+                if choice.from then
+                    assert(root, settingId .. ': listed choices need a template module')
+                    item.values[index] = {from = choice.from, root = root}
+                else
+                    item.values[index] = U.copy(choice)
+                end
+            end
+            item.dim = source.dim and U.copy(source.dim) or nil
+        elseif source.type == 'enum' or source.type == 'navigation' then
             item.values = choices(source.values, source.labels, source.notes, source.sounds)
             item.dim = source.dim and U.copy(source.dim) or nil
             item.action = source.type == 'navigation' or nil
@@ -302,7 +317,7 @@ function M.generate(registry, options)
                         groupSections[groupId].within = headingId
                         local settingId = namedId(scopePrefix .. publicName(source.id),
                             {'provider', identity, source.id})
-                        local item = field(settingId, source, groupId)
+                        local item = field(settingId, source, groupId, moduleRoot(entry.location))
                         if providerGroup.variationSource then item.visible = owned end
                         if source.visibleWhen then
                             local sourceId = providerFieldIds[source.visibleWhen]
@@ -519,7 +534,7 @@ function M.generate(registry, options)
         end
         return selected
     end
-    local categoryOwned, moduleOwned, moduleCategories, moduleRoots = {}, {}, {}, {}
+    local categoryOwned, moduleOwned, moduleCategories, moduleRoots, modulePreviews = {}, {}, {}, {}, {}
     -- Modules whose templates all moved to a slot keep an entry that opens the slot.
     local slotModules = {}
     for _, entry in ipairs(entries) do
@@ -543,6 +558,14 @@ function M.generate(registry, options)
             moduleOwned[module], moduleCategories[module] = moduleOwned[module] or {}, moduleCategories[module] or {}
             moduleRoots[module] = parent
             moduleOwned[module][entry.id], moduleCategories[module][template.category] = true, true
+            -- A template may give its module page a live preview: preview={background=<picture
+            -- in the module folder>}; the first one declared names the background.
+            if type(template.preview) == 'table' and parent and not modulePreviews[module] then
+                local background = template.preview.background
+                assert(background == nil or type(background) == 'string' and background:match('^[%w_%-./]+$')
+                    and not background:find('..', 1, true), entry.location .. ': invalid preview background')
+                modulePreviews[module] = {background = background and parent .. '/' .. background or nil}
+            end
         end
     end
     for _, category in ipairs(registry.categories:list()) do
@@ -594,6 +617,8 @@ function M.generate(registry, options)
             configPath=root and root .. '/config.ini' or nil, rows=selectedRows,
             menu=providerMenu(module, selectedRows, false, root and 'config.ini' or nil)}
         page.decode = makeDecoder(page.rows, moduleCategories[module], moduleOwned[module])
+        page.categories, page.owned = moduleCategories[module], moduleOwned[module]
+        if modulePreviews[module] then page.menu.preview, page.preview = modulePreviews[module], true end
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
     end
     -- A module whose templates all moved to a slot keeps its own page over the slot's
@@ -671,7 +696,8 @@ M.NONE = 'None'
 
 -- Whether a row is a keyed enum: its choices carry text keys, stored as text.
 function M.keyed(r)
-    return r.type == 'enum' and type(r.values) == 'table' and r.values[1] ~= nil and r.values[1].key ~= nil
+    local first = r.type == 'enum' and type(r.values) == 'table' and r.values[1]
+    return type(first) == 'table' and (first.key ~= nil or first.from ~= nil)
 end
 
 -- Whether a row accepts a value: one of an enum's values, a whole number within an
@@ -679,8 +705,14 @@ end
 function M.accepts(r, value)
     if r.type == 'range' then return type(value) == 'string' and Provider.rangeText(r._bounds, value) == value end
     if M.keyed(r) then
-        for _, choice in ipairs(r.values) do if choice.key == value then return true end end
-        return false
+        -- A listed field takes any well-formed key: its choices change with the module's
+        -- files, and the template falls back for one that is gone.
+        local listed = false
+        for _, choice in ipairs(r.values) do
+            if choice.key == value then return true end
+            if choice.from then listed = true end
+        end
+        return listed and From.validKey(value)
     end
     if type(value) ~= 'number' or value ~= value then return false end
     if r.type == 'integer' then return value >= r.values.min and value <= r.values.max and value % 1 == 0 end

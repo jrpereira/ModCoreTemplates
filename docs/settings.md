@@ -79,6 +79,13 @@ Field types are inferred from `values`:
   slot categories.
 - **Picker**: a map of numbers to labels, optionally `{label=, note=, sound=}` per choice.
   `widget` shows it as `picker` (default), `tabs` (up to 8), `cycler` or `switch`.
+- **Keyed picker**: a list of `{key=, label=, note=, sound=}` choices, saved and delivered
+  to the template as the key (`settings.Style == 'fiend'`), so adding or reordering choices
+  never moves a saved one. It may also hold `{from='choices/x.lua'}` entries: a list file in
+  the module's `Scripts/` whose choices ModCore Settings puts in that place every time the
+  menu opens, so files added to the mod while the game runs appear the next time. A listed
+  picker accepts any well-formed saved key, and the template gets it even when its file is
+  gone: fall back for a key you can't serve. See [MENUS.md](MENUS.md#listed-choices).
 
 Conditions (`visible`, `label`, `dim`) change how a row is shown, not what is saved or
 delivered to the template.

@@ -5,6 +5,7 @@
     "Scripts/vendor/mc_ini.lua": "ModCoreSettings",
     "Scripts/vendor/mc_log.lua": "ModCoreSettings",
     "Scripts/vendor/menu_contributions.lua": "ModCoreSettings",
+    "Scripts/vendor/menu_from.lua": "ModCoreSettings",
     "Scripts/vendor/safe_file.lua": "ModCoreSettings",
     "Scripts/vendor/settings_api.lua": "ModCoreSettings",
     "tests/support/lifetimes.lua": "UE4SSLuaEXtensions",

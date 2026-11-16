@@ -62,6 +62,27 @@ for _, name in ipairs(dofile(mct .. '/Scripts/categories/mc.lua')) do
 end
 local model = Model.build(categories, templates, locations)
 local menu = Menu.generate(model.registry)
+-- Listed choices, as ModCoreSettings lists them when the menu opens: here from the module's
+-- files as the repository holds them, which is what a release ships.
+local From = require('menu_from')
+local expand = From.expander({
+    files = function(root, subfolder)
+        local pipe = io.popen('ls -1A "' .. root .. '/' .. subfolder .. '" 2>/dev/null')
+        if not pipe then return nil, 'cannot list ' .. subfolder end
+        local names = {}
+        for line in pipe:lines() do names[#names + 1] = line end
+        pipe:close()
+        return names
+    end,
+    report = function(_, detail) io.stderr:write('settings_reference: ', detail, '\n') end})
+for _, row in ipairs(menu.rows) do
+    if Menu.keyed(row) and From.listed(row.values) then
+        local field = expand({fields = {{id = row.id, values = row.values, default = row.default,
+            widget = row.widget}}}).fields[1]
+        assert(field, row.id .. ': lists fewer than two choices')
+        row.values, row.default, row._listed = field.values, field.default, true
+    end
+end
 local rows = {}
 for _, row in ipairs(menu.rows) do rows[row.id] = row end
 
@@ -95,8 +116,13 @@ local function options(row)
         return text
     end
     local out = {}
-    for _, choice in ipairs(row.values) do out[#out + 1] = ('%s (`%d`)'):format(choice.label, choice.value) end
-    return table.concat(out, ', ')
+    for _, choice in ipairs(row.values) do
+        out[#out + 1] = choice.key and ('%s (`%s`)'):format(choice.label, choice.key)
+            or ('%s (`%d`)'):format(choice.label, choice.value)
+    end
+    local text = table.concat(out, ', ')
+    if row._listed then text = text .. '; the list follows the files in the mod folder each time the menu opens' end
+    return text
 end
 local function default(row)
     if row.type == 'integer' then return tostring(row.default) .. (row.values.suffix or '') end

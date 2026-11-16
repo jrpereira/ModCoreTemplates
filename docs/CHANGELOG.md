@@ -1,7 +1,22 @@
 # Changelog
 
-## Unreleased
+## v1.9.0
 
+- Requires ModCore Settings 1.9.0 or newer.
+- A template's `preview` declaration reaches its module page, and the preview attaches the
+  templates themselves; before, the menu model dropped it and no page showed a preview.
+- Preview events carry `silent=true` when ModCore Settings' preview sound button is Off, or
+  on Auto while none of the template's `preview.sound` settings is selected.
+- Live previews on module pages: a template declaring `preview={background=<picture>}`
+  gives its module page a preview in ModCore Settings' side panel. While the page is open,
+  its selected preview templates attach to it with the page's current values (applied or
+  not) and its category's script plays in a loop; for npc.attacks, four attacks (left,
+  right, ahead, behind) and one unblockable attack. Preview events carry `preview=true`.
+- Template pickers can be keyed: `{key=, label=, note=, sound=}` choices, saved and delivered
+  as their keys. A keyed picker may hold `{from='choices/x.lua'}` entries, list files in the
+  module's `Scripts/` that ModCore Settings runs each time the menu opens, so files added to
+  the mod while the game runs become choices. Needs ModCore Settings with listed choices.
+- The settings reference lists a listed picker's choices from the module's folder.
 - Requires UE4SSLuaEventBridge 1.3.0. `MC_NPCAttackIndicator` requests its two
   hooks with `Hooks.Request`, which waits for the indicator's class to load
   without polling, and removes them with `Remove()`. With an older bridge the

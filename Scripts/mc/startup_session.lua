@@ -42,7 +42,7 @@ function M.new(options,categories,templates,locations,own)
     local model
     model,self.menu,self.runtime=compile(options,categories,templates,locations,{defer=options.defer,
         unavailable=options.unavailableSignals,awakeChanged=options.awakeChanged,layoutChanged=options.layoutChanged})
-    self.categories=model.categories
+    self.categories,self.model=model.categories,model
     local savedValues=options.menuValues
     local configSources={}
     if options.menuRoot then

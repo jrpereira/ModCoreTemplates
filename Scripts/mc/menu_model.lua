@@ -88,7 +88,7 @@ function M.build(definitions, templates, locations)
         -- Preserve template identity: callbacks may close over this table.
         template.settings = values
         local metadata = {id=template.id, localId=template.localId, providerId=template.providerId, label=template.label, category=template.category,
-            module=template.module, menu=declaration}
+            module=template.module, menu=declaration, preview=template.preview}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             unique=unique, priority=template.priority or Runtime.DEFAULT_PRIORITY, order=index, location=assert(locations[index], 'template source path required')}
     end
