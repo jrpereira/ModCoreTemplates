@@ -2,6 +2,10 @@
 
 ## v1.9.1
 
+- Fixed: on a fresh install, ModCore Templates could not save its settings or publish its
+  menu (`Scripts/cache/...: No such file or directory`), leaving the settings of every
+  module using templates (Preymonition, Fangdango) greyed out in the mod menu. The
+  `Scripts/cache` folder is now created at startup.
 - Template pickers, template toggles, the merged-settings notice and the Templates tab's rows have descriptions.
 - The quickslots page in ModCore Controls reads like a module page: the Template picker,
   then the chosen template's settings under its own heading.

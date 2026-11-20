@@ -46,6 +46,10 @@ function M.new(options,categories,templates,locations,own)
     local savedValues=options.menuValues
     local configSources={}
     if options.menuRoot then
+        -- Scripts/cache is not part of the release ZIP; create it before anything is
+        -- written there (config, templates list, menu contribution).
+        local prepared,why=pcall(Layout.prepare,options.menuRoot)
+        if not prepared then pcall(options.host.onError,{stage='config',message=tostring(why)}) end
         local paths=Layout.paths(options.menuRoot)
         local centralRows,seen={},{}
         local function include(rows)
