@@ -76,8 +76,9 @@ do
         runtime:signal(signal)
         return checks.n
     end
-    -- With no category to reconcile, nothing is checked at all.
-    assert(cost('MC_CombatStart')==0,'combat does not reconcile a ready-timed category')
+    -- With no category to reconcile, nothing is checked but the one root whose screen
+    -- combat start reads (screen_change_test.lua).
+    assert(cost('MC_CombatStart')==1,'combat does not reconcile a ready-timed category')
     assert(cost('MC_CombatEnd')==0)
     assert(take()=='')
     assert(cost('MC_PlayerUnready')>1,'the opposite of its hook reconciles it')

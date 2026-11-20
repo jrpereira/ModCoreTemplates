@@ -6,6 +6,9 @@
   menu (`Scripts/cache/...: No such file or directory`), leaving the settings of every
   module using templates (Preymonition, Fangdango) greyed out in the mod menu. The
   `Scripts/cache` folder is now created at startup.
+- Templates follow a resolution, window size or UI scale change made mid-session: at the
+  next loading-screen fade-out or combat start, MCT reads the screen once and updates
+  every attached template laid out for another one with the new `params.screen`.
 
 ## v1.9.1
 

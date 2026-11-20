@@ -123,6 +123,13 @@ nested table. `0` and `false` are valid overrides. Screen reference points are
 `left=0`, `center=width/2`, `right=width`, `bottom=0`, `middle=height/2`, `top=height`;
 account for the target parent's coordinate system.
 
+`params.screen` also carries `scale`, the UI scale its width and height are divided by.
+It is read when a template attaches or updates, and read again at every
+`MC_PlayerReady` and `MC_CombatStart`: when the width, height or scale changed (a new
+resolution, window size or UI scale), every attached template is updated with the new
+screen, as a settings change would. Lay out from `params.screen` in `attach` and
+`update`. A preview keeps its own screen.
+
 Use supplied objects during callbacks. For subscriptions, register cleanup with
 `params.onCleanup(unsubscribe)`. Cleanup also runs after world teardown, when
 the attachment's widgets have been collected: never call a widget kept from an

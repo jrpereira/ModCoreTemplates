@@ -22,6 +22,10 @@ M.UPDATES = {MC_NPCAttackIndicator=true}
 -- per attachment: wake starts the template's event intake, sleep ends it, and
 -- update carries an update event.
 M.TEMPLATE_EVENTS = {wake=true, sleep=true, update=true}
+-- The signals at which the screen is read again (see screenMoved): moments that come
+-- after the game's options can have changed the resolution, window or UI scale, and
+-- before an attack can show.
+M.SCREEN_CHECKS = {MC_PlayerReady=true, MC_CombatStart=true}
 -- MCT's own event, published after a turn touches a layoutEvent category.
 M.LAYOUT_EVENT = 'templates.layout.changed'
 -- category.hooks names the signals that time its templates:
@@ -402,6 +406,35 @@ function M.new(host, definitions, templates, state, options)
             trace(record.definition.id, operation, ' not ready: ', why)
         end
         return false
+    end
+    -- Templates lay out from the screen they attached with. Reads the screen once and
+    -- marks every attachment laid out for another width, height or scale, so the next
+    -- reconcile updates it as a settings revision would. Returns the set of their
+    -- categories. A lent category's templates are detached; the preview keeps its screen.
+    local function sameScreen(left, right)
+        return type(left) == 'table' and type(right) == 'table' and left.width == right.width
+            and left.height == right.height and left.scale == right.scale
+    end
+    local function screenMoved()
+        local moved = {}
+        for _, categoryName in ipairs(categoryOrder) do
+            for _, id in ipairs(categories[categoryName].order) do
+                for token, attached in pairs(categories[categoryName].templates[id].attached) do
+                    if not turnScreen and host.valid(attached.object) then
+                        local ok, screen = pcall(mutate, function() return host.screen(attached.object) end)
+                        if ok and type(screen) == 'table' then turnScreen = screen end
+                    end
+                    if turnScreen and not sameScreen(turnScreen, attached.screen) then
+                        attached.resized, moved[categoryName] = true, true
+                        if log then
+                            log.debug(id, ' ', tostring(token), ': screen now ', turnScreen.width, 'x',
+                                turnScreen.height, ' @', tostring(turnScreen.scale))
+                        end
+                    end
+                end
+            end
+        end
+        return moved
     end
     -- A selected template is awake while its category's wake hook holds. Waking
     -- and sleeping reach it as its wake and sleep events, called as
@@ -1068,7 +1101,7 @@ function M.new(host, definitions, templates, state, options)
                             and host.valid(object) and host.ready(object)
                             and (not shared or shared.attached[token])
                             and retainsTargets(record.waiting[token],bundles[token],host)
-                            and (not old or old.revision ~= record.revision)
+                            and (not old or old.revision ~= record.revision or old.resized)
                             and not (failedInTurn[record] and failedInTurn[record][token])
                             and (old or (attachOpen(category) and settledFor(token,object))) then
                             local operation = old and 'update' or 'attach'
@@ -1199,10 +1232,13 @@ function M.new(host, definitions, templates, state, options)
             fired[name] = firings
             if log then log.debug('signal ', name) end
             if self.phase ~= 'running' then return end
+            local resized = M.SCREEN_CHECKS[name] and screenMoved() or {}
             local affected = {}
             for _, categoryName in ipairs(categoryOrder) do
                 local hooks = categories[categoryName].hooks
-                if hooks then
+                if resized[categoryName] then
+                    affected[#affected + 1] = categoryName
+                elseif hooks then
                     for _, hook in ipairs({hooks.attach or false, hooks.wake or false, hooks.sleep or false}) do
                         if hook == name or hook == M.SIGNALS[name] then
                             affected[#affected + 1] = categoryName
