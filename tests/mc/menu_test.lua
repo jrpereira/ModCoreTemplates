@@ -513,9 +513,10 @@ test('generated data goes into Scripts/cache', function()
         local input=assert(io.open(paths.config,'rb')); local content=input:read('a'); input:close()
         for _,row in ipairs(f.menu.rows) do
             if Menu.keyed(row) then
+                local section,key=Menu.placeOf(row)
                 for index,choice in ipairs(row.values) do
-                    if iniValue(content,'Templates',row.id)==choice.key then
-                        content=Ini.set(content,'Templates',row.id,tostring(index))
+                    if iniValue(content,section,key)==choice.key then
+                        content=Ini.set(content,section,key,tostring(index))
                     end
                 end
             end
@@ -552,17 +553,17 @@ test('module settings are initialized in each template module folder', function(
         sizes[definition.id]=definition.settings.Size
     end
     assert(sizes.Alpha_Alpha and sizes.Beta_Beta,'loading prefixes template ids with their module')
-    sizes.Alpha,sizes.Beta=sizes.Alpha_Alpha,sizes.Beta_Beta
+    -- Each is saved in its module's config as [<Module>.<Template>] <Setting>.
     for _,name in ipairs({'Alpha','Beta'}) do
         local input=assert(io.open(modules..'/'..name..'/config.ini','rb'))
         local content=input:read('*a');input:close()
-        assert(iniValue(content,'Templates',sizes[name]),content)
+        assert(iniValue(content,name..'.'..name,'Size'),content)
     end
     local central=io.open(menuRoot..'/Scripts/cache/config.ini','rb')
     local centralContent=central and central:read('*a') or ''
     if central then central:close() end
-    assert(not centralContent:find(sizes.Alpha,1,true)
-        and not centralContent:find(sizes.Beta,1,true),
+    assert(not centralContent:find('[Alpha.Alpha]',1,true)
+        and not centralContent:find('[Beta.Beta]',1,true),
         'module settings stay in their module configs')
     boot:stop()
 end)
@@ -988,9 +989,16 @@ test('slot values are stored in the central config', function()
     local menuRoot=testRoot..'/slot-menu'
     local centralPath=Layout.prepare(menuRoot).config
     -- Unknown keys are ignored, even repeated or non-numeric; an invalid value falls back.
+    -- Each row is saved at its own section and key.
+    local places={}
+    for _,row in ipairs(f.menu.rows) do places[row.id]={Menu.placeOf(row)} end
+    local text=''
+    for _,saved in ipairs({{selector.id,beta},{alphaSize,'33'},{betaSize,'999'}}) do
+        text=Ini.set(text,places[saved[1]][1],places[saved[1]][2],saved[2])
+    end
+    text=Ini.set(text,places[betaSize][1],'Unknown','1')..'Unknown=x\n[Templates]\nMCT_WheelsX=5\n'
     local out=assert(io.open(centralPath,'wb'))
-    out:write('[Templates]\n'..selector.id..'='..beta..'\n'..alphaSize..'=33\n'..betaSize..'=999\n'
-        ..'Unknown=1\nUnknown=x\nMCT_WheelsX=5\n')
+    out:write(text)
     out:close()
     local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
     local barrier
@@ -1001,7 +1009,7 @@ test('slot values are stored in the central config', function()
     barrier()
     assert(boot.phase=='running',f.errors[1] and f.errors[1].message)
     local central=read(centralPath)
-    assert(iniValue(central,'Templates',betaSize)=='20','invalid saved values fall back to defaults')
+    assert(iniValue(central,places[betaSize][1],places[betaSize][2])=='20','invalid saved values fall back to defaults')
     assert(io.open(modules..'/Alpha/config.ini')==nil and io.open(modules..'/Beta/config.ini')==nil,
         'slot templates keep no module config')
     assert(boot.menuController:values()[selector.id]==beta and boot.menuController:values()[alphaSize]==33)
@@ -1039,9 +1047,12 @@ compatibility('slot rows splice into the host slot and Apply reaches the runtime
     files['/mcc/config.ini'],files['/mcc/mod_settings.ini']='[Main]\nSpeed=0\n',host
     local f=slotFixture(nil,nil,true)
     local page=f.menu.pageBySlot['player.quickslots']
-    local config={'[Templates]'}
-    for _,row in ipairs(page.rows) do config[#config+1]=row.id..'='..row.default end
-    files['/mct/Scripts/cache/config.ini']=table.concat(config,'\n')..'\n'
+    local config=''
+    for _,row in ipairs(page.rows) do
+        local section,key=Menu.placeOf(row)
+        config=Ini.set(config,section,key,row.default)
+    end
+    files['/mct/Scripts/cache/config.ini']=config
     local mcc={id='ModCoreControls',name='Controls',path='/mcc/mod_settings.ini',
         choices=choices.parse(host),settingsCount=3,testOnly=false}
     local manifest=compiled(page.menu)

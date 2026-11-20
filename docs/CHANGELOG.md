@@ -9,6 +9,11 @@
 - Templates follow a resolution, window size or UI scale change made mid-session: at the
   next loading-screen fade-out or combat start, MCT reads the screen once and updates
   every attached template laid out for another one with the new `params.screen`.
+- Template settings are saved per template: `[<Module>.<Template>] <Setting>` in the
+  supplying mod's `config.ini` (for example `[Preymonition.Omens] ParryStyle=chevron`),
+  and template pickers and shared category fields under `[<category>]`. Templates declare
+  nothing for it and menu ids are unchanged. Values saved by earlier builds under
+  `[Templates]` are not read: those settings start at their defaults.
 
 ## v1.9.1
 

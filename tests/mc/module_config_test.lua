@@ -34,7 +34,9 @@ assert(preview.pageByModule.Fangdango.menu.storage.file=='config.ini')
 
 local centralPath=Layout.prepare(menuRoot).config
 local saved=assert(io.open(moduleRoot..'/config.ini','wb'))
-saved:write('[Templates]\n'..sizeId..'=73\n');saved:close()
+-- Template settings are saved as [<Module>.<Template>] <Setting>; a long key left in
+-- [Templates] by an older build is ignored and kept.
+saved:write('[Templates]\n'..sizeId..'=11\n[Fangdango.Wheels]\nSize=73\n');saved:close()
 local startupError
 local host={valid=function() return true end,identity=function(value) return value end,
     ready=function() return true end,parent=function() end,screen=function()
@@ -51,7 +53,8 @@ boot:registerTemplate(location)
 barrier();assert(boot.phase=='running',startupError)
 local moduleConfig=assert(io.open(moduleRoot..'/config.ini','rb'))
 local moduleContent=moduleConfig:read('*a');moduleConfig:close()
-assert(iniValue(moduleContent,'Templates',sizeId)=='73','saved module value was rewritten')
+assert(iniValue(moduleContent,'Fangdango.Wheels','Size')=='73','saved module value was rewritten')
+assert(iniValue(moduleContent,'Templates',sizeId)=='11','an old key is left alone')
 local central=io.open(centralPath,'rb')
 local centralContent=central and central:read('*a') or ''
 if central then central:close() end

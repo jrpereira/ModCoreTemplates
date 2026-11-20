@@ -23,24 +23,44 @@ local function validText(spec, value)
     return value ~= nil and (pcall(Provider.validateText, spec.format, value))
 end
 
--- The first assignment of each owned key in [Templates]. Unknown or legacy keys are
--- ignored, even when repeated.
+-- Where each owned setting is saved, by setting id: its section and key (Menu.placeOf).
+local function places(rows, textSettings)
+    local out = {}
+    for _, row in ipairs(rows) do
+        local section, key = Menu.placeOf(row)
+        out[row.id] = {section=section, key=key}
+    end
+    for settingId, spec in pairs(textSettings or {}) do
+        local section, key = Menu.placeOf({id=settingId, storage=spec.storage})
+        out[settingId] = {section=section, key=key}
+    end
+    return out
+end
+
+-- The first assignment of each owned setting at its place, by setting id. Unknown or
+-- legacy keys are ignored, even when repeated.
 local function firstEntries(content, owned)
-    local found = {}
-    for _, entry in ipairs(Ini.entries(Ini.parse(content), 'Templates')) do
-        if owned[entry.key] and not found[entry.key] then found[entry.key] = entry end
+    local doc, bySection, found = Ini.parse(content), {}, {}
+    for settingId, place in pairs(owned) do
+        local entries = bySection[place.section]
+        if not entries then
+            entries = {}
+            for _, entry in ipairs(Ini.entries(doc, place.section)) do
+                if not entries[entry.key] then entries[entry.key] = entry end
+            end
+            bySection[place.section] = entries
+        end
+        found[settingId] = entries[place.key]
     end
     return found
 end
 
 -- Configuration never prevents startup. A missing setting is added and an invalid one
 -- is rewritten with its default, such as a selected template whose provider is gone.
--- A repeated key or Templates section keeps its first value.
+-- A repeated key or section keeps its first value.
 local function ensureConfig(path, rows, textSettings)
     local original = read(path)
-    local owned = {}
-    for _, row in ipairs(rows) do owned[row.id] = true end
-    for settingId in pairs(textSettings or {}) do owned[settingId] = true end
+    local owned = places(rows, textSettings)
     local present = firstEntries(original or '', owned)
     local changes, missing = {}, {}
     for _, row in ipairs(rows) do
@@ -49,9 +69,9 @@ local function ensureConfig(path, rows, textSettings)
             assert(accepted(row, row.default), 'invalid default setting ' .. row.id)
             local entry = present[row.id]
             if not entry then
-                missing[#missing + 1] = {row.id, default}
+                missing[#missing + 1] = {owned[row.id], default}
             elseif not accepted(row, parsed(row, entry.value)) then
-                changes[#changes + 1] = {row.id, default}
+                changes[#changes + 1] = {owned[row.id], default}
             end
         end
     end
@@ -59,16 +79,20 @@ local function ensureConfig(path, rows, textSettings)
         Provider.validateText(spec.format, spec.default)
         local entry = present[settingId]
         if not entry then
-            missing[#missing + 1] = {settingId, spec.default}
+            missing[#missing + 1] = {owned[settingId], spec.default}
         elseif not validText(spec, entry.value) then
-            changes[#changes + 1] = {settingId, spec.default}
+            changes[#changes + 1] = {owned[settingId], spec.default}
         end
     end
-    table.sort(missing, function(a, b) return a[1] < b[1] end)
+    -- Added keys go by section, then key.
+    table.sort(missing, function(a, b)
+        if a[1].section ~= b[1].section then return a[1].section < b[1].section end
+        return a[1].key < b[1].key
+    end)
     if #missing == 0 and #changes == 0 and original then return false end
     local output = original or ''
-    for _, change in ipairs(changes) do output = Ini.set(output, 'Templates', change[1], change[2]) end
-    for _, change in ipairs(missing) do output = Ini.set(output, 'Templates', change[1], change[2]) end
+    for _, change in ipairs(changes) do output = Ini.set(output, change[1].section, change[1].key, change[2]) end
+    for _, change in ipairs(missing) do output = Ini.set(output, change[1].section, change[1].key, change[2]) end
     -- An existing config with nothing owned still gains its [Templates] section.
     if output == '' then output = '[Templates]\n' end
     return writeChanged(path, output)
@@ -80,7 +104,7 @@ local function readConfigValues(path, textSettings, rows)
     for _, row in ipairs(rows) do known[row.id] = row end
     for key in pairs(textSettings or {}) do known[key] = true end
     local values = {}
-    for key, entry in pairs(firstEntries(content, known)) do
+    for key, entry in pairs(firstEntries(content, places(rows, textSettings))) do
         if textSettings and textSettings[key] then
             local ok, text = pcall(Provider.validateText, textSettings[key].format, entry.value)
             if ok then values[key] = text end

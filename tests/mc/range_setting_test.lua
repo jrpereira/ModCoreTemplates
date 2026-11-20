@@ -82,8 +82,11 @@ else
 end
 
 local selectorId=preview.selectors[category.id].id
+-- Saved as [<Module>.<Template>] <Setting>; the category picker under [<category>].
+assert(field.storage.section=='Preymonition.Center' and field.storage.key=='Grow')
+local growSection,growKey=field.storage.section,field.storage.key
 local saved=assert(io.open(moduleRoot..'/config.ini','wb'))
-saved:write('[Templates]\n'..selectorId..'='..selectorValue..'\n');saved:close()
+saved:write('['..category.id..']\nTemplate='..selectorValue..'\n');saved:close()
 local startupError
 local host={valid=function() return true end,identity=function(value) return value end,
     ready=function() return true end,parent=function() end,screen=function()
@@ -101,13 +104,13 @@ local function config()
     local text=file:read('*a');file:close()
     return text
 end
-assert(iniValue(config(),'Templates',growId)=='20|60','a missing range is written with its default')
+assert(iniValue(config(),growSection,growKey)=='20|60','a missing range is written with its default')
 local function state()
     return boot.menu.decodeState(boot.menuController:values())[category.id].selections.Preymonition_Center
 end
 assert(state().Grow[1]==20 and state().Grow[2]==60,'the template reads {low, high}')
 -- Apply: settings_api v2 carries the range as its stored text.
-local text=Ini.set(config(),'Templates',growId,'30|80')
+local text=Ini.set(config(),growSection,growKey,'30|80')
 saved=assert(io.open(moduleRoot..'/config.ini','wb'));saved:write(text);saved:close()
 local providerId=page.id
 assert(boot.menuController:apply({providerId=providerId,revision=1,values={[selectorId]=selectorValue,[growId]='30|80'}}))
@@ -118,11 +121,11 @@ assert(not pcall(boot.menuController.apply,boot.menuController,
     'a range the track cannot hold is refused')
 -- A saved range the track cannot hold is rewritten with the default at the next start.
 assert(require('mc.menu_files').readConfigValues(moduleRoot..'/config.ini',{},page.rows)[growId]=='30|80')
-text=Ini.set(config(),'Templates',growId,'30|35')
+text=Ini.set(config(),growSection,growKey,'30|35')
 saved=assert(io.open(moduleRoot..'/config.ini','wb'));saved:write(text);saved:close()
 assert(require('mc.menu_files').readConfigValues(moduleRoot..'/config.ini',{},page.rows)[growId]==nil,
     'an invalid range is left out')
 assert(require('mc.menu_files').ensureConfig(moduleRoot..'/config.ini',page.rows,{}))
-assert(iniValue(config(),'Templates',growId)=='20|60','an invalid range is rewritten with its default')
+assert(iniValue(config(),growSection,growKey)=='20|60','an invalid range is rewritten with its default')
 boot:stop()
 print('PASS: a template range is menu data, stored as text and read as {low, high}')

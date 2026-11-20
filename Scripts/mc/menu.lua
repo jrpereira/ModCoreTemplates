@@ -86,6 +86,20 @@ function M.generate(registry, options)
         pageRows[currentCategory][#pageRows[currentCategory] + 1] = fields
         return fields.id
     end
+    -- Where a row is saved, in its page's config file: [<Module>.<Template>] <Setting> for a
+    -- template's rows, [<category>] <Setting> for its category's pickers and shared fields.
+    -- Rows that save nothing (actions, links, text) keep none. Two rows at one place fail
+    -- the menu, so startup rejects the later provider file.
+    local addresses = {}
+    local function storeAt(item, section, name)
+        if item.action or item.link or item.widget == 'text' or item.widget == 'table' then return end
+        local address = M.address(section, name)
+        local place = '[' .. address.section .. '] ' .. address.key
+        assert(addresses[place] == nil or addresses[place] == item.id,
+            'menu storage clash: ' .. item.id .. ' and ' .. tostring(addresses[place]) .. ' at ' .. place)
+        addresses[place], item.storage = item.id, address
+        return address
+    end
     local function picker(settingId, label, group, list, visible, title, default, description)
         return row({id = settingId, label = text(label), group = group, type = 'enum', values = list,
             default = default == nil and (list[1].key or list[1].value) or default, visible = visible,
@@ -235,6 +249,7 @@ function M.generate(registry, options)
                     local isQuickslots = category == 'player.quickslots'
                     picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil, nil,
                         'Only one template from this list can be active at a time. None turns them all off.')
+                    storeAt(rows[#rows], category, 'Template')
                     selectors[category] = {id = selector, byValue = byValue}
                     categoryValues = values
                 else
@@ -244,6 +259,7 @@ function M.generate(registry, options)
                     picker(selector, title(suffix) .. ' (priority ' .. priority .. ')', aggregateGroup, list, nil,
                         nil, nil, 'Only one template from this list can be active at a time, alongside those'
                             .. ' chosen at other priorities. None turns this list off.')
+                    storeAt(rows[#rows], category, publicName('Priority ' .. priority) .. 'Template')
                 end
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
@@ -261,7 +277,8 @@ function M.generate(registry, options)
                 local settingId = namedId(publicName(category) .. publicName(name),
                     {'category_text', category, name})
                 textIds[name] = settingId
-                textSettings[settingId] = {default=default, format=staticFormats[name]}
+                textSettings[settingId] = {default=default, format=staticFormats[name],
+                    storage=storeAt({id=settingId}, category, publicName(name))}
             end
             -- Shared category fields show while any template is selected; with more than
             -- the category picker they always show.
@@ -275,6 +292,7 @@ function M.generate(registry, options)
                     local settingId = namedId(publicName(category) .. publicName(source.id),
                         {'category_provider', category, source.id})
                     row(field(settingId, source, groupId))
+                    storeAt(rows[#rows], category, publicName(source.id))
                     rows[#rows]._control = true
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     if slot then slotRow(selected) end
@@ -289,6 +307,8 @@ function M.generate(registry, options)
                 local templateScope = (template.providerId and publicName(template.providerId) .. '_' or '')
                     .. publicName(template.localId or template.id)
                 local scopePrefix = templateScope .. '_'
+                local section = template.providerId and template.providerId .. '.' .. (template.localId or template.id)
+                    or template.id
                 local definition = {id=entry.id,scope=templateScope,fields={},enabled=template.menu.enabled}
                 local providerGroups = Provider.normalize(template.menu)
                 definition.settings, definition.navigation = {}, {}
@@ -309,6 +329,7 @@ function M.generate(registry, options)
                         template.defaultEnabled == true and 1 or 0,
                         described(template, 4096) or 'Turns this template on or off.')
                     definition.enabledId = ownerSelector
+                    storeAt(rows[#rows], section, 'Enabled')
                     rows[#rows]._control, rows[#rows].style, rows[#rows].widget = true, 'category', 'switch'
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
@@ -347,6 +368,7 @@ function M.generate(registry, options)
                                 values = U.copy(source.labelTexts)}
                         end
                         row(item)
+                        storeAt(item, section, publicName(source.id))
                         -- Slot rows carry no group rules, so each takes the rule its group or
                         -- field would apply.
                         if slot then
@@ -741,6 +763,20 @@ end
 -- The key of a template picker's None choice. A loaded template's id holds an '_', so
 -- none can take it; a template id 'None' is refused.
 M.NONE = 'None'
+-- A row's place in its config file: section and key, each spelled with letters, digits
+-- and _ . : - only (others become _).
+function M.address(section, name)
+    local function spelled(value)
+        local result = tostring(value):gsub('[^%w_.:-]', '_')
+        return result
+    end
+    return {section = spelled(section), key = spelled(name)}
+end
+-- Where a row's value is read and written: its storage, else the page's [Templates] by id.
+function M.placeOf(r)
+    if r.storage then return r.storage.section, r.storage.key end
+    return 'Templates', r.id
+end
 
 -- Whether a row is a keyed enum: its choices carry text keys, stored as text.
 function M.keyed(r)

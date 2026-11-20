@@ -20,13 +20,35 @@ a manifest. Leftover `mod_settings.ini` files from older builds are ignored.
 | `<Provider>/config.ini` (the template's module root) | Settings of templates whose page is the module page (the default) |
 | `log_level.txt` (MCT root) | Optional log level |
 
+Inside each file, a template's settings are saved in a section of their own,
+`[<Module>.<Template>]`, under their own names, and a category's template pickers and
+shared fields in the category's section, `[<category>]`:
+
+```ini
+[npc.attacks]
+Priority10Template=Preymonition_Omens
+
+[Preymonition.Omens]
+Enabled=1
+ParryStyle=chevron
+ParrySize=30|80
+```
+
+`<Module>` is the module id ModCoreSettings gives for the template's mod folder, and
+`<Template>` the template's declared `id`. A key is the setting's name as the template
+declares it (a relative field id joined to its group: `Parry` + `.Style` is
+`ParryStyle`); a template's on/off toggle is `Enabled`. Templates declare nothing for
+this. Keys left by older builds in a `[Templates]` section are ignored: those
+settings start at their defaults.
+
 Keep all of these when updating. Unknown or retired keys are ignored. Invalid saved
 values fall back to the defaults and never block startup.
 
 ## Settings
 
 MCT generates these rows. Every id is derived from the category, module and template,
-so nothing is stored to keep it, and it is prefixed `MCT_`. A template's rows are named
+so nothing is stored to keep it, and it is prefixed `MCT_`. These are the menu ids; the
+config saves each row under its section and name, as above. A template's rows are named
 `MCT_<Module>_<Id>_...`: `<Module>` is the module id ModCoreSettings gives for the
 template's mod folder (its `mod.json` `id`, else the folder name) and `<Id>` the
 template's declared `id`.

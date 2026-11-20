@@ -183,8 +183,9 @@ add('Templates are reusable components. A module that uses a template gains the 
     .. ' always match what is installed.')
 add()
 add('Change these settings in the mod menu and press Apply. Each template below names the'
-    .. ' `config.ini` that keeps its values, in the `[Templates]` section, with the keys and numbers'
-    .. ' listed. A saved value that is not valid falls back to its default.')
+    .. ' `config.ini` that keeps its values, in a section of its own named after the module and the'
+    .. ' template, with the keys and numbers listed. A template picker is saved in its category\'s'
+    .. ' section. A saved value that is not valid falls back to its default.')
 add()
 add('## Templates in this module')
 
@@ -223,16 +224,24 @@ for _, template in ipairs(templates) do
         where = 'on this module\'s page'
     end
     add(('- **Category:** %s. The settings appear %s.'):format(categoryName, where))
+    -- Where a row is saved, as `[<section>] <key>=<value>`.
+    local function place(settingId, value)
+        local section, key = Menu.placeOf(assert(rows[settingId], settingId .. ': no generated row'))
+        return ('[%s] %s=%s'):format(section, key, value)
+    end
     if selector then
         local scope = template.uniqueBy == 'priority'
             and ('of this category with priority %s'):format(template.priority or Runtime.DEFAULT_PRIORITY) or 'of this category'
-        add(('- **Turn on:** choose %s in the %s template picker (`%s=%s`). Only one template %s'
-            .. ' is active at a time.'):format(template.label, categoryName, selector, definition.id, scope))
+        add(('- **Turn on:** choose %s in the %s template picker (`%s`). Only one template %s'
+            .. ' is active at a time.'):format(template.label, categoryName, place(selector, definition.id), scope))
     else
-        add(('- **Turn on:** set %s (`%s`) to Enabled (`1`).'):format(template.label,
-            assert(owner, template.label .. ': no Enabled toggle')))
+        add(('- **Turn on:** set %s (`%s`) to Enabled.'):format(template.label,
+            place(assert(owner, template.label .. ': no Enabled toggle'), 1)))
     end
-    add('- **Saved in:** ' .. config .. ', section `[Templates]`.')
+    local section
+    for _, settingId in pairs(definition.settings) do section = Menu.placeOf(rows[settingId]) end
+    if owner then section = Menu.placeOf(rows[owner]) end
+    add('- **Saved in:** ' .. config .. (section and (', section `[' .. section .. ']`.') or '.'))
 
     -- Sections in declaration order: variations first, then the menu's groups.
     local sections = {}
@@ -281,7 +290,8 @@ for _, template in ipairs(templates) do
             local label = row.label
             local note = notes(row, owner)
             if note ~= '' then label = label .. '<br>*' .. note .. '*' end
-            add(('| %s | %s | %s | `%s` |'):format(cell(label), cell(options(row)), cell(default(row)), settingId))
+            local _, key = Menu.placeOf(row)
+            add(('| %s | %s | %s | `%s` |'):format(cell(label), cell(options(row)), cell(default(row)), key))
         end
     end
 end
