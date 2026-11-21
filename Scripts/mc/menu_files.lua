@@ -57,6 +57,12 @@ end
 
 -- Configuration never prevents startup. A missing setting is added and an invalid one
 -- is rewritten with its default, such as a selected template whose provider is gone.
+-- The shortest text that reads back as the same number: 0.1, not 0.10000000000000001.
+local function numberText(value)
+    local text = string.format('%.15g', value)
+    if tonumber(text) ~= value then text = string.format('%.17g', value) end
+    return text
+end
 -- A repeated key or section keeps its first value.
 local function ensureConfig(path, rows, textSettings)
     local original = read(path)
@@ -65,7 +71,7 @@ local function ensureConfig(path, rows, textSettings)
     local changes, missing = {}, {}
     for _, row in ipairs(rows) do
         if not row.action then
-            local default = type(row.default) == 'string' and row.default or string.format('%.17g', row.default)
+            local default = type(row.default) == 'string' and row.default or numberText(row.default)
             assert(accepted(row, row.default), 'invalid default setting ' .. row.id)
             local entry = present[row.id]
             if not entry then

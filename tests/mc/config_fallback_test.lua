@@ -51,6 +51,15 @@ os.remove(path)
 assert(MenuFiles.ensureConfig(path,rows,text)==true)
 values=MenuFiles.readConfigValues(path,text,rows)
 assert(values.Template==0 and values.Size==5 and values.Label=='Wheel')
+-- A fractional default is written as the shortest text that reads back the same.
+os.remove(path)
+local fractions={{id='Opacity',type='enum',values={{value=0.1,label='Faint'},{value=0.7,label='Strong'}},default=0.1},
+    {id='Third',type='enum',values={{value=1/3,label='Third'}},default=1/3}}
+assert(MenuFiles.ensureConfig(path,fractions,{})==true)
+content=read()
+assert(iniValue(content,'Templates','Opacity')=='0.1',content)
+values=MenuFiles.readConfigValues(path,{},fractions)
+assert(values.Opacity==0.1 and values.Third==1/3,content)
 -- SafeFile keeps the replaced file as <path>.old.
 os.remove(path)
 os.remove(path..'.old')
