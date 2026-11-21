@@ -871,7 +871,18 @@ function M.new(host, definitions, templates, state, options)
             end
             return false
         end
-        local _,requiredObjects=Selectors.resolve(category.requiredGraph,candidates,host)
+        local shared=category.shared
+        local sharedActive=shared and sharedWanted(category)
+        -- The category's objects are read once per pass, for every graph that needs them:
+        -- the required one, the shared one and each attachable template's.
+        local wanted={category.requiredGraph}
+        if sharedActive then wanted[#wanted+1]=shared.graph end
+        for _,id in ipairs(category.order) do
+            if attachable(category.templates[id]) then wanted[#wanted+1]=category.templates[id].graph end
+        end
+        local passSets,_,passBundles=Selectors.resolve(Selectors.merge(category.graph,wanted),candidates,host)
+        local function resolvePass(graph) return Selectors.restrict(graph,passSets,passBundles) end
+        local _,requiredObjects=resolvePass(category.requiredGraph)
         for token,object in pairs(requiredObjects) do allObjects[token]=object end
         if category.attachDelay then
             -- Forget roots that are gone; a pending delay for one then does nothing.
@@ -882,17 +893,16 @@ function M.new(host, definitions, templates, state, options)
                 end
             end
         end
-        local shared,sharedObjects,sharedBundles=category.shared,{},{ }
-        local sharedActive=shared and sharedWanted(category)
+        local sharedObjects,sharedBundles={},{}
         if sharedActive then
-            local _,objects,bundles=Selectors.resolve(shared.graph,candidates,host)
+            local _,objects,bundles=resolvePass(shared.graph)
             sharedObjects,sharedBundles=objects,bundles
             for token,object in pairs(objects) do allObjects[token]=object end
         end
         for _,id in ipairs(category.order) do
             local record=category.templates[id]
             if attachable(record) then
-                local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
+                local _,objects,bundles=resolvePass(record.graph)
                 -- A managed template may reparent its own targets. Keep those valid
                 -- targets in the resolved bundle until the manager detaches
                 -- them, including reconciliations without a settings change.

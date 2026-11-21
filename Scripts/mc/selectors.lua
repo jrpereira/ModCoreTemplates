@@ -172,6 +172,62 @@ function M.project(graph, targets)
     return projected
 end
 
+-- The smallest projection of graph holding every selector of the given projections.
+function M.merge(graph, projections)
+    local wanted = {}
+    for _, projection in ipairs(projections) do
+        for name in pairs(projection.byName) do wanted[name] = true end
+    end
+    local merged = {byName={}, order={}, roots={}}
+    for _, name in ipairs(graph.order) do
+        if wanted[name] then
+            merged.byName[name] = graph.byName[name]
+            merged.order[#merged.order + 1] = name
+            merged.roots[name] = graph.roots[name]
+        end
+    end
+    return merged
+end
+
+-- What resolve(projection, ...) returns, taken from the sets and bundles of a graph that
+-- holds the projection (M.merge): a projection holds each selector's dependencies, so
+-- each of its selectors resolves the same in the larger graph. Bundles are new tables.
+function M.restrict(projection, sets, bundles)
+    local ownSets, union, ownBundles = {}, {}, {}
+    for _, name in ipairs(projection.order) do
+        local selector, matches = projection.byName[name], {}
+        for id, object in pairs(sets[name] or {}) do matches[id] = object end
+        ownSets[name] = matches
+        if not selector.create and not selector.from then
+            for id, object in pairs(matches) do
+                ownBundles[id] = ownBundles[id] or {}
+                if selector.attach then union[id] = object end
+            end
+        end
+    end
+    for id, bundle in pairs(ownBundles) do
+        local full = bundles[id]
+        for name in pairs(projection.byName) do bundle[name] = full[name] end
+    end
+    M.requireMembers(projection, union, ownBundles)
+    return ownSets, union, ownBundles
+end
+
+-- Drops from union each root whose bundle misses a required member.
+function M.requireMembers(graph, union, bundles)
+    for id, bundle in pairs(bundles) do
+        if union[id] then
+            for name, selector in pairs(graph.byName) do
+                if selector.from and selector.required
+                    and bundle[graph.roots[name]] == union[id] and bundle[name] == nil then
+                    union[id] = nil
+                    break
+                end
+            end
+        end
+    end
+end
+
 function M.resolve(graph, candidates, host)
     local sets, union, bundles = {}, {}, {}
     local function beneath(object, roots)
@@ -217,17 +273,7 @@ function M.resolve(graph, candidates, host)
         end
         sets[name] = matches
     end
-    for id, bundle in pairs(bundles) do
-        if union[id] then
-            for name, selector in pairs(graph.byName) do
-                if selector.from and selector.required
-                    and bundle[graph.roots[name]] == union[id] and bundle[name] == nil then
-                    union[id] = nil
-                    break
-                end
-            end
-        end
-    end
+    M.requireMembers(graph, union, bundles)
     return sets, union, bundles
 end
 
