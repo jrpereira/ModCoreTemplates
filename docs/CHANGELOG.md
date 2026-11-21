@@ -11,9 +11,10 @@
   every attached template laid out for another one with the new `params.screen`.
 - Template settings are saved per template: `[<Module>.<Template>] <Setting>` in the
   supplying mod's `config.ini` (for example `[Preymonition.Omens] ParryStyle=chevron`),
-  and template pickers and shared category fields under `[<category>]`. Templates declare
-  nothing for it and menu ids are unchanged. Values saved by earlier builds under
-  `[Templates]` are not read: those settings start at their defaults.
+  the active template of each category under `[Templates]` (for example
+  `PlayerQuickslots=Fangdango_SingleUnderbar`), and shared category fields under
+  `[<category>]`. Templates declare nothing for it and menu ids are unchanged. Values
+  saved by earlier builds are not read: those settings start at their defaults.
 
 ## v1.9.1
 

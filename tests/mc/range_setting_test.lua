@@ -82,11 +82,11 @@ else
 end
 
 local selectorId=preview.selectors[category.id].id
--- Saved as [<Module>.<Template>] <Setting>; the category picker under [<category>].
+-- Saved as [<Module>.<Template>] <Setting>; the category's pick as [Templates] <Category>.
 assert(field.storage.section=='Preymonition.Center' and field.storage.key=='Grow')
 local growSection,growKey=field.storage.section,field.storage.key
 local saved=assert(io.open(moduleRoot..'/config.ini','wb'))
-saved:write('['..category.id..']\nTemplate='..selectorValue..'\n');saved:close()
+saved:write('[Templates]\nPlayerQuickslots='..selectorValue..'\n');saved:close()
 local startupError
 local host={valid=function() return true end,identity=function(value) return value end,
     ready=function() return true end,parent=function() end,screen=function()

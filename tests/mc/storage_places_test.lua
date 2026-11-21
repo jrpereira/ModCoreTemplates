@@ -1,5 +1,6 @@
 -- Where generated rows are saved: a template's rows as [<Module>.<Template>] <Setting>,
--- its category's pickers and shared fields as [<category>] <Setting>. Templates declare
+-- a category's template picks as [Templates] <Category>, its shared fields as
+-- [<category>] <Setting>. Templates declare
 -- nothing for it; their menu ids are unchanged.
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Menu=require('mc.menu')
@@ -46,7 +47,7 @@ at(omens.settings.ParryStyle,'Preymonition.Omens','ParryStyle')
 at(omens.settings.ParrySize,'Preymonition.Omens','ParrySize')
 at(omens.enabledId,'Preymonition.Omens','Enabled')
 at(menu.definitions[category.id].Bars.settings.ParryWidth,'Preymonition.Bars','ParryWidth')
-at('MCT_NpcAttacksPriority10Template',category.id,'Priority10Template')
+at('MCT_NpcAttacksPriority10Template','Templates','NpcAttacksPriority10')
 at('MCT_NpcAttacksGlow',category.id,'Glow')
 -- A category's text setting has no row; it is saved beside the shared fields.
 local note=menu.textSettings.MCT_NpcAttacksNote

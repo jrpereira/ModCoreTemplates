@@ -20,13 +20,14 @@ a manifest. Leftover `mod_settings.ini` files from older builds are ignored.
 | `<Provider>/config.ini` (the template's module root) | Settings of templates whose page is the module page (the default) |
 | `log_level.txt` (MCT root) | Optional log level |
 
-Inside each file, a template's settings are saved in a section of their own,
-`[<Module>.<Template>]`, under their own names, and a category's template pickers and
-shared fields in the category's section, `[<category>]`:
+Inside each file, the active templates are saved under `[Templates]`, one key per
+category (`<Category>Priority<n>` for a picker per priority), and each template's
+settings in a section of their own, `[<Module>.<Template>]`, under their own names. A
+category's shared fields, where it declares any, go in its section, `[<category>]`:
 
 ```ini
-[npc.attacks]
-Priority10Template=Preymonition_Omens
+[Templates]
+PlayerQuickslots=Fangdango_SingleUnderbar
 
 [Preymonition.Omens]
 Enabled=1
@@ -38,7 +39,7 @@ ParrySize=30|80
 `<Template>` the template's declared `id`. A key is the setting's name as the template
 declares it (a relative field id joined to its group: `Parry` + `.Style` is
 `ParryStyle`); a template's on/off toggle is `Enabled`. Templates declare nothing for
-this. Keys left by older builds in a `[Templates]` section are ignored: those
+this. Keys left by older builds (`MCT_...` under `[Templates]`) are ignored: those
 settings start at their defaults.
 
 Keep all of these when updating. Unknown or retired keys are ignored. Invalid saved

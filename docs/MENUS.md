@@ -376,12 +376,13 @@ settings.
 
 Setting IDs use `MCT_` and are derived from the category, module and template,
 so they survive regeneration, including adding a template before an existing one. The
-config saves a template's rows as `[<Module>.<Template>] <Setting>` and a category's
-pickers and shared fields as `[<category>] <Setting>` (see [settings.md](settings.md)),
-through ModCoreSettings' per-field storage.
+config saves a category's template pick as `[Templates] <Category>`, a template's rows
+as `[<Module>.<Template>] <Setting>` and a category's shared fields as
+`[<category>] <Setting>` (see [settings.md](settings.md)), through ModCoreSettings'
+per-field storage.
 Template pickers are keyed enums: each choice's key is the template's full id
 (`<Module>_<Id>`), `None` selects no template, and the config saves the key, such as
-`[player.quickslots] Template=Fangdango_SingleUnderbar`. ModCoreSettings shows the choices to DMM by
+`[Templates] PlayerQuickslots=Fangdango_SingleUnderbar`. ModCoreSettings shows the choices to DMM by
 position and translates on load and Apply. A saved key that is no longer offered loads
 as the default.
 

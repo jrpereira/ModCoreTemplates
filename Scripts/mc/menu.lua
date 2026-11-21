@@ -87,7 +87,8 @@ function M.generate(registry, options)
         return fields.id
     end
     -- Where a row is saved, in its page's config file: [<Module>.<Template>] <Setting> for a
-    -- template's rows, [<category>] <Setting> for its category's pickers and shared fields.
+    -- template's rows, [Templates] <Category> for a category's template picks (and
+    -- <Category>Priority<n> per priority), [<category>] <Setting> for its shared fields.
     -- Rows that save nothing (actions, links, text) keep none. Two rows at one place fail
     -- the menu, so startup rejects the later provider file.
     local addresses = {}
@@ -249,7 +250,7 @@ function M.generate(registry, options)
                     local isQuickslots = category == 'player.quickslots'
                     picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil, nil,
                         'Only one template from this list can be active at a time. None turns them all off.')
-                    storeAt(rows[#rows], category, 'Template')
+                    storeAt(rows[#rows], 'Templates', publicName(category))
                     selectors[category] = {id = selector, byValue = byValue}
                     categoryValues = values
                 else
@@ -259,7 +260,7 @@ function M.generate(registry, options)
                     picker(selector, title(suffix) .. ' (priority ' .. priority .. ')', aggregateGroup, list, nil,
                         nil, nil, 'Only one template from this list can be active at a time, alongside those'
                             .. ' chosen at other priorities. None turns this list off.')
-                    storeAt(rows[#rows], category, publicName('Priority ' .. priority) .. 'Template')
+                    storeAt(rows[#rows], 'Templates', publicName(category) .. publicName('Priority ' .. priority))
                 end
                 rows[#rows]._control = true
                 if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end

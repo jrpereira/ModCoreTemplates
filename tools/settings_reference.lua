@@ -184,8 +184,8 @@ add('Templates are reusable components. A module that uses a template gains the 
 add()
 add('Change these settings in the mod menu and press Apply. Each template below names the'
     .. ' `config.ini` that keeps its values, in a section of its own named after the module and the'
-    .. ' template, with the keys and numbers listed. A template picker is saved in its category\'s'
-    .. ' section. A saved value that is not valid falls back to its default.')
+    .. ' template, with the keys and numbers listed. The active template of a category is saved'
+    .. ' under `[Templates]`. A saved value that is not valid falls back to its default.')
 add()
 add('## Templates in this module')
 
