@@ -98,7 +98,23 @@ function M.new(categories, api, log)
     -- Parents of known roots and their owners; clearing one may remove a root.
     local panelAddresses = {}
     local pendingRemoval = {}
-    local built = {}
+    -- Readiness markers by owner token, each with a weak handle on its owner so the
+    -- marker goes once the owner dies (a save load or HUD rebuild makes new tokens).
+    local built, builtHandles = {}, {}
+    local function mark(id, owner, value)
+        built[id] = value
+        if value == nil then
+            Objects.release(builtHandles[id])
+            builtHandles[id] = nil
+        elseif builtHandles[id] == nil then
+            builtHandles[id] = Objects.hold(owner)
+        end
+    end
+    local function pruneBuilt()
+        for id, handle in pairs(builtHandles) do
+            if not Objects.get(handle) then mark(id, nil, nil) end
+        end
+    end
     local sink, getEpoch, subscribed, active = nil, nil, false, true
     local mutationDepth, wakePending = 0, false
     local identityFailureReported=false
@@ -227,7 +243,7 @@ function M.new(categories, api, log)
                 if pendingRemoval[safe(owner,'GetAddress')] or not source.valid(ownerParent) then
                     return false
                 end
-                built[ownerToken] = nil
+                mark(ownerToken, nil, nil)
             end
             if built[ownerToken] == true then return true end
             -- Nested game HUDs are children of another UserWidget. IsInViewport
@@ -417,6 +433,7 @@ function M.new(categories, api, log)
         local armed, waiting = false, false
         -- Rebuilt from live roots so addresses from an earlier map cannot match.
         panelAddresses, knownAddresses = {}, {}
+        pruneBuilt()
         for _,object in ipairs(knownObjects()) do
             if source.valid(object) then
                 armed = true
@@ -514,7 +531,7 @@ function M.new(categories, api, log)
                 local owner = unwrap(context)
                 if not ours(owner) then return missed() end
                 local id = token(owner)
-                if id then built[id] = true; wakeKnown() end
+                if id then mark(id, owner, true); wakeKnown() end
                 refreshHooks()
             end)
         end
@@ -526,7 +543,7 @@ function M.new(categories, api, log)
             if type(address) == 'number' then pendingRemoval[address] = true end
             if isa(owner,'/Script/UMG.UserWidget') then
                 local id = token(owner)
-                if id then built[id] = false; wakeKnown() end
+                if id then mark(id, owner, false); wakeKnown() end
             end
             refreshHooks()
         end,function(context)
@@ -548,7 +565,7 @@ function M.new(categories, api, log)
                 end
                 if source.valid(child) and isa(child,'/Script/UMG.UserWidget') then
                     local id = token(child)
-                    if id then built[id] = nil end
+                    if id then mark(id, nil, nil) end
                 end
                 wakeKnown()
                 refreshHooks()
@@ -590,12 +607,20 @@ function M.new(categories, api, log)
         sink, getEpoch, subscribed = callback, epoch, true
         return function() sink, getEpoch, subscribed = nil,nil,false end
     end
+    -- How many readiness markers are kept; for tests.
+    function source.readinessMarkers()
+        local count = 0
+        for _ in pairs(built) do count = count + 1 end
+        return count
+    end
     function source.stop()
         if not active then return end
         active, sink, getEpoch, subscribed = false,nil,nil,false
         mutationDepth, wakePending = 0, false
         removeHooks()
         forgetKnown()
+        for id in pairs(builtHandles) do mark(id, nil, nil) end
+        built = {}
         Objects.release(layoutHandle)
         layoutHandle = nil
     end

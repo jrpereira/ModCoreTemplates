@@ -241,6 +241,12 @@ hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(owner))
 assert(#calls==4) -- the destroyed HUD is ignored
 hooks['/Script/UMG.UserWidget:AddToViewport'].post(wrap(nextOwner))
 assert(#calls==5 and calls[5][2]==nextRoot)
+-- A readiness marker goes when its owner dies, at the next hook update.
+assert(source.readinessMarkers()==1)
+nextOwner.alive=false
+source.watch({category.objects.switcher})
+assert(source.readinessMarkers()==0,'a dead owner keeps no readiness marker')
+nextOwner.alive=true
 runtime:stop(); source.stop()
 assert(next(hooks)==nil)
 do
