@@ -468,60 +468,40 @@ function M.generate(registry, options)
             assert(M.accepts(r, value), 'invalid ' .. r.type .. ' ' .. settingId)
             effective[settingId] = value
         end
+        -- Each included category decodes to its selected template ids: every picker's
+        -- choice, then every enabled toggle. A category with a selection has its shared
+        -- values checked; decodeState computes the settings themselves.
         local result = {}
-        local function readSelection(definition, category)
-            local selection = {settings = {}}
-            if not definition then return selection end
-            selection.id = definition.id
-            local config = selection.settings
-            local shared = categorySettings[category]
-            if shared then
+        local function select(category, definition)
+            local selections = result[category]
+            if #selections == 0 then
+                local shared, config = categorySettings[category], {}
                 for name, default in pairs(shared.static) do
                     local supplied = values[shared.textIds[name]]
                     config[name] = supplied == nil and default or supplied
                 end
-                for name, settingId in pairs(shared.fields) do
-                    config[name] = effective[settingId]
-                end
+                for name, settingId in pairs(shared.fields) do config[name] = effective[settingId] end
                 Provider.validateCategory(registry.categories:getCategory(category).menu, config)
             end
-            if definition.settings then
-                for name, settingId in pairs(definition.settings) do
-                    config[name] = exposed(settingId, effective[settingId])
-                end
-            end
-            return selection
-        end
-        -- Each category decodes to its selected templates: every picker's choice, then
-        -- every enabled toggle.
-        local function selectionsFor(category)
-            local selections = result[category] or {}
-            result[category] = selections
-            return selections
+            selections[#selections + 1] = {id = definition.id}
         end
         for _, selector in ipairs(pickers) do
-          local category = selector.category
-          if not includedCategories or includedCategories[category] then
-            local selections = selectionsFor(category)
-            local definition = decoded[category][effective[selector.id]]
-            if definition and (not owned or owned[definition.id]) then
-                selections[#selections + 1] = readSelection(definition, category)
+            local category = selector.category
+            if not includedCategories or includedCategories[category] then
+                result[category] = result[category] or {}
+                local definition = decoded[category][effective[selector.id]]
+                if definition and (not owned or owned[definition.id]) then select(category, definition) end
             end
-          end
         end
         for category, templates in pairs(multiSelectors) do
-          if not includedCategories or includedCategories[category] then
-            local selections = selectionsFor(category)
-            if owned then selections._partial, selections._known = true, {} end
-            for _, item in ipairs(templates) do
-                if not owned or owned[item.definition.id] then
-                    if owned then selections._known[item.definition.id] = true end
-                if effective[item.id] == 1 then
-                    selections[#selections + 1] = readSelection(item.definition, category)
-                end
+            if not includedCategories or includedCategories[category] then
+                result[category] = result[category] or {}
+                for _, item in ipairs(templates) do
+                    if (not owned or owned[item.definition.id]) and effective[item.id] == 1 then
+                        select(category, item.definition)
+                    end
                 end
             end
-          end
         end
         return result
       end
