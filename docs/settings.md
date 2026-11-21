@@ -128,9 +128,10 @@ read-only and save nothing.
 
 ### Merged notice
 
-When all of a module's templates have moved to a slot on another page,
-the module page shows only `MCT_MergedNotice`: a link to the slot, such as Controls.
-It is navigation and saves nothing.
+When all of a module's templates have moved to a slot on another page, the module
+page starts with `MCT_MergedNotice`, a link to the slot (such as Controls), and then
+lists the module's own settings in that slot, editable there too and saved in the
+central config like the slot's. The notice itself is navigation and saves nothing.
 
 ## Logging
 
