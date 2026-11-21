@@ -539,7 +539,7 @@ function M.new(host, definitions, templates, state, options)
     -- second, one pending timer, until it has, at most RETRIES times. The game's pause
     -- menu shows the HUD, so this does not wait for play to resume.
     local RETRIES = 40
-    local reconcile
+    local reconcile, reconcileCategory
     local function laidOut(category)
         for _, record in pairs(category.templates) do
             if record.enabled and not next(record.attached) then return false end
@@ -799,330 +799,335 @@ function M.new(host, definitions, templates, state, options)
             if not host.valid(object) then candidates[id] = nil end
         end
         for _, name in ipairs(names or categoryOrder) do
-            local category = categories[name]
-            local resolved,allObjects={},{}
-            -- A lend whose objects died (a save load, a HUD rebuild) or whose preview
-            -- went ends here, before anything reads them.
-            if category.lend and category.lend.active and not lendAlive(category.lend) then
-                endLend(category,'lent objects gone')
-            end
-            local function exposeSharedTargets(record,bundles,sharedAttached)
-                for token,bundle in pairs(bundles or {}) do
-                    local attached=sharedAttached and sharedAttached[token]
-                    for _,targetName in ipairs(record.sharedTargets) do
-                        bundle[targetName]=attached and attached[targetName] or nil
-                    end
+            -- One category's failure is reported with its id and does not stop the others.
+            local ok, why = pcall(reconcileCategory, name)
+            if not ok then report('reconcile', nil, name .. ': ' .. tostring(why)) end
+        end
+    end
+    function reconcileCategory(name)
+        local category = categories[name]
+        local resolved,allObjects={},{}
+        -- A lend whose objects died (a save load, a HUD rebuild) or whose preview
+        -- went ends here, before anything reads them.
+        if category.lend and category.lend.active and not lendAlive(category.lend) then
+            endLend(category,'lent objects gone')
+        end
+        local function exposeSharedTargets(record,bundles,sharedAttached)
+            for token,bundle in pairs(bundles or {}) do
+                local attached=sharedAttached and sharedAttached[token]
+                for _,targetName in ipairs(record.sharedTargets) do
+                    bundle[targetName]=attached and attached[targetName] or nil
                 end
             end
-            -- Whether a root's attachDelay has passed. A root waits until no reconcile
-            -- has reached it for delay.ms; each one restarts its timer, up to a deadline of
-            -- DEADLINE times the delay from first sighting. Once settled, a root attaches
-            -- without waiting, so a later menu selection does not wait.
-            -- While it waits the root is hidden, so its unfinished native content never
-            -- shows; it is revealed in the same game-thread call that attaches it.
-            local settledThisTurn={}
-            local function settledFor(token,object)
-                local delay=category.attachDelay
-                if not delay or not defer then return true end
-                local rootState=delay.roots[token]
-                if rootState=='settled' then return true end
-                if settledThisTurn[token]~=nil then return settledThisTurn[token] end
-                settledThisTurn[token]=false
-                if not rootState then
-                    rootState={generation=0}
-                    local live=host.unwrap and host.unwrap(object) or object
-                    local ok,opacity=pcall(function() return live:GetRenderOpacity() end)
-                    local handle=ok and tonumber(opacity) and Objects.hold(live)
-                    if handle and pcall(function() live:SetRenderOpacity(0) end) then
-                        rootState.hidden,rootState.opacity=handle,tonumber(opacity)
-                    elseif handle then Objects.release(handle) end
-                end
-                -- Settles the root when it fires, unless the root is gone or settled, or
-                -- a later reconcile restarted its timer (generation; nil for the deadline).
-                local function settleAfter(ms,generation)
-                    return pcall(defer,ms,function()
-                        -- Reveal inside a turn, so the reveal publishes the layout event.
-                        serialize(function()
-                            if delay.roots[token]~=rootState
-                                or generation and rootState.generation~=generation then return end
-                            delay.roots[token]='settled'
-                            if tracing() then trace(category.id..' '..tostring(token),'attachDelay settled') end
-                            revealRoot(rootState,category)
-                            if self.phase=='running' then reconcile() end
-                        end)
-                    end)
-                end
-                local ok,why=true,nil
-                if rootState.generation==0 then ok,why=settleAfter(delay.ms*M.ATTACH_DEADLINE) end
-                rootState.generation=rootState.generation+1
-                delay.roots[token]=rootState
-                if ok then ok,why=settleAfter(delay.ms,rootState.generation) end
-                if not ok then
-                    delay.roots[token],settledThisTurn[token]='settled',true
-                    revealRoot(rootState,category)
-                    report('attach delay',nil,why)
-                    return true
-                end
-                return false
+        end
+        -- Whether a root's attachDelay has passed. A root waits until no reconcile
+        -- has reached it for delay.ms; each one restarts its timer, up to a deadline of
+        -- DEADLINE times the delay from first sighting. Once settled, a root attaches
+        -- without waiting, so a later menu selection does not wait.
+        -- While it waits the root is hidden, so its unfinished native content never
+        -- shows; it is revealed in the same game-thread call that attaches it.
+        local settledThisTurn={}
+        local function settledFor(token,object)
+            local delay=category.attachDelay
+            if not delay or not defer then return true end
+            local rootState=delay.roots[token]
+            if rootState=='settled' then return true end
+            if settledThisTurn[token]~=nil then return settledThisTurn[token] end
+            settledThisTurn[token]=false
+            if not rootState then
+                rootState={generation=0}
+                local live=host.unwrap and host.unwrap(object) or object
+                local ok,opacity=pcall(function() return live:GetRenderOpacity() end)
+                local handle=ok and tonumber(opacity) and Objects.hold(live)
+                if handle and pcall(function() live:SetRenderOpacity(0) end) then
+                    rootState.hidden,rootState.opacity=handle,tonumber(opacity)
+                elseif handle then Objects.release(handle) end
             end
-            local _,requiredObjects=Selectors.resolve(category.requiredGraph,candidates,host)
-            for token,object in pairs(requiredObjects) do allObjects[token]=object end
-            if category.attachDelay then
-                -- Forget roots that are gone; a pending delay for one then does nothing.
-                for token,rootState in pairs(category.attachDelay.roots) do
-                    if not candidates[token] then
-                        category.attachDelay.roots[token]=nil
+            -- Settles the root when it fires, unless the root is gone or settled, or
+            -- a later reconcile restarted its timer (generation; nil for the deadline).
+            local function settleAfter(ms,generation)
+                return pcall(defer,ms,function()
+                    -- Reveal inside a turn, so the reveal publishes the layout event.
+                    serialize(function()
+                        if delay.roots[token]~=rootState
+                            or generation and rootState.generation~=generation then return end
+                        delay.roots[token]='settled'
+                        if tracing() then trace(category.id..' '..tostring(token),'attachDelay settled') end
                         revealRoot(rootState,category)
-                    end
+                        if self.phase=='running' then reconcile() end
+                    end)
+                end)
+            end
+            local ok,why=true,nil
+            if rootState.generation==0 then ok,why=settleAfter(delay.ms*M.ATTACH_DEADLINE) end
+            rootState.generation=rootState.generation+1
+            delay.roots[token]=rootState
+            if ok then ok,why=settleAfter(delay.ms,rootState.generation) end
+            if not ok then
+                delay.roots[token],settledThisTurn[token]='settled',true
+                revealRoot(rootState,category)
+                report('attach delay',nil,why)
+                return true
+            end
+            return false
+        end
+        local _,requiredObjects=Selectors.resolve(category.requiredGraph,candidates,host)
+        for token,object in pairs(requiredObjects) do allObjects[token]=object end
+        if category.attachDelay then
+            -- Forget roots that are gone; a pending delay for one then does nothing.
+            for token,rootState in pairs(category.attachDelay.roots) do
+                if not candidates[token] then
+                    category.attachDelay.roots[token]=nil
+                    revealRoot(rootState,category)
                 end
             end
-            local shared,sharedObjects,sharedBundles=category.shared,{},{ }
-            local sharedActive=shared and sharedWanted(category)
-            if sharedActive then
-                local _,objects,bundles=Selectors.resolve(shared.graph,candidates,host)
-                sharedObjects,sharedBundles=objects,bundles
+        end
+        local shared,sharedObjects,sharedBundles=category.shared,{},{ }
+        local sharedActive=shared and sharedWanted(category)
+        if sharedActive then
+            local _,objects,bundles=Selectors.resolve(shared.graph,candidates,host)
+            sharedObjects,sharedBundles=objects,bundles
+            for token,object in pairs(objects) do allObjects[token]=object end
+        end
+        for _,id in ipairs(category.order) do
+            local record=category.templates[id]
+            if attachable(record) then
+                local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
+                -- A managed template may reparent its own targets. Keep those valid
+                -- targets in the resolved bundle until the manager detaches
+                -- them, including reconciliations without a settings change.
+                for token,attached in pairs(record.attached) do
+                    if record.manager and record.manager:hasState(attached.root)
+                        and objects[token] and host.identity(objects[token]) == host.identity(attached.object)
+                        and targetsValid(attached.targets,host) then
+                        for targetName,target in pairs(attached.targets) do
+                            if bundles[token][targetName] == nil then
+                                bundles[token][targetName] = target
+                            end
+                        end
+                    end
+                end
+                resolved[id]={objects=objects,bundles=bundles}
+                if tracing() then
+                    local found,known=0,0
+                    for _ in pairs(objects) do found=found+1 end
+                    for _ in pairs(candidates) do known=known+1 end
+                    trace(id,'enabled, ',found,' root(s) resolved from ',known,' candidate(s)')
+                end
                 for token,object in pairs(objects) do allObjects[token]=object end
+            else
+                trace(id,'not enabled')
             end
-            for _,id in ipairs(category.order) do
-                local record=category.templates[id]
-                if attachable(record) then
-                    local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
-                    -- A managed template may reparent its own targets. Keep those valid
-                    -- targets in the resolved bundle until the manager detaches
-                    -- them, including reconciliations without a settings change.
-                    for token,attached in pairs(record.attached) do
-                        if record.manager and record.manager:hasState(attached.root)
-                            and objects[token] and host.identity(objects[token]) == host.identity(attached.object)
-                            and targetsValid(attached.targets,host) then
-                            for targetName,target in pairs(attached.targets) do
-                                if bundles[token][targetName] == nil then
-                                    bundles[token][targetName] = target
-                                end
-                            end
-                        end
-                    end
-                    resolved[id]={objects=objects,bundles=bundles}
-                    if tracing() then
-                        local found,known=0,0
-                        for _ in pairs(objects) do found=found+1 end
-                        for _ in pairs(candidates) do known=known+1 end
-                        trace(id,'enabled, ',found,' root(s) resolved from ',known,' candidate(s)')
-                    end
-                    for token,object in pairs(objects) do allObjects[token]=object end
-                else
-                    trace(id,'not enabled')
+        end
+        category.objects = allObjects
+        if shared then
+            for id,record in pairs(category.templates) do
+                if resolved[id] then
+                    exposeSharedTargets(record,resolved[id].bundles,shared.exposed)
                 end
             end
-            category.objects = allObjects
-            if shared then
-                for id,record in pairs(category.templates) do
-                    if resolved[id] then
-                        exposeSharedTargets(record,resolved[id].bundles,shared.exposed)
-                    end
-                end
-            end
-            -- Detach all outgoing templates before any incoming template attaches.
-            for _, id in ipairs(category.order) do
-                local record = category.templates[id]
-                local objects=resolved[id] and resolved[id].objects or {}
-                local bundles=resolved[id] and resolved[id].bundles or {}
-                for _, token in ipairs(keys(record.pending)) do
-                    local pending=record.pending[token]
-                    touch(category)
-                    local ok,why=pcall(function() return mutate(function()
-                        if host.valid(pending.object) and targetsValid(pending.targets,host) then
-                            assert(record.manager:detach(pending.root))
-                        else
-                            record.manager:forget(pending.root)
-                        end
-                    end) end)
-                    if ok then record.pending[token]=nil
+        end
+        -- Detach all outgoing templates before any incoming template attaches.
+        for _, id in ipairs(category.order) do
+            local record = category.templates[id]
+            local objects=resolved[id] and resolved[id].objects or {}
+            local bundles=resolved[id] and resolved[id].bundles or {}
+            for _, token in ipairs(keys(record.pending)) do
+                local pending=record.pending[token]
+                touch(category)
+                local ok,why=pcall(function() return mutate(function()
+                    if host.valid(pending.object) and targetsValid(pending.targets,host) then
+                        assert(record.manager:detach(pending.root))
                     else
-                        failedInTurn[record]=failedInTurn[record] or {}
-                        failedInTurn[record][token]=true
-                        report('rollback',record.definition.id,why)
+                        record.manager:forget(pending.root)
                     end
+                end) end)
+                if ok then record.pending[token]=nil
+                else
+                    failedInTurn[record]=failedInTurn[record] or {}
+                    failedInTurn[record][token]=true
+                    report('rollback',record.definition.id,why)
                 end
-                for _, token in ipairs(keys(record.attached)) do
-                    local attached = record.attached[token]
-                    if not host.valid(attached.object) or not targetsValid(attached.targets,host) then
-                        if attachable(record) and host.valid(attached.object)
-                            and objects[token] and host.ready(attached.object)
-                            and not retainsTargets(attached.targets,bundles[token],host) then
-                            record.waiting[token]=targetNames(attached.targets)
-                        end
-                        if record.manager then
-                            local ok,why=pcall(record.manager.forget,record.manager,attached.root)
-                            if not ok then report('forget',record.definition.id,why)
-                            else record.attached[token]=nil end
+            end
+            for _, token in ipairs(keys(record.attached)) do
+                local attached = record.attached[token]
+                if not host.valid(attached.object) or not targetsValid(attached.targets,host) then
+                    if attachable(record) and host.valid(attached.object)
+                        and objects[token] and host.ready(attached.object)
+                        and not retainsTargets(attached.targets,bundles[token],host) then
+                        record.waiting[token]=targetNames(attached.targets)
+                    end
+                    if record.manager then
+                        local ok,why=pcall(record.manager.forget,record.manager,attached.root)
+                        if not ok then report('forget',record.definition.id,why)
                         else record.attached[token]=nil end
-                    elseif not attachable(record) or not objects[token] or not host.ready(attached.object)
-                        or not sameTargets(attached.targets,bundles[token],host) then
-                        if attachable(record) and objects[token] and host.ready(attached.object)
-                            and not retainsTargets(attached.targets,bundles[token],host) then
-                            record.waiting[token]=targetNames(attached.targets)
+                    else record.attached[token]=nil end
+                elseif not attachable(record) or not objects[token] or not host.ready(attached.object)
+                    or not sameTargets(attached.targets,bundles[token],host) then
+                    if attachable(record) and objects[token] and host.ready(attached.object)
+                        and not retainsTargets(attached.targets,bundles[token],host) then
+                        record.waiting[token]=targetNames(attached.targets)
+                    end
+                    local failures = failedInTurn[record] or {}
+                    failedInTurn[record] = failures
+                    if not failures[token] then
+                        if invoke(record, 'detach', attached.object, attached.settings,
+                            attached.targets,attached.screen) then
+                            record.attached[token] = nil
+                        else failures[token] = true end
+                    end
+                end
+            end
+        end
+        -- Shared category objects are restored only after every template has
+        -- detached, and prepared before any incoming template can attach.
+        if shared then
+            for _,token in ipairs(keys(shared.attached)) do
+                local attached=shared.attached[token]
+                local current=sharedObjects[token]
+                if not sharedActive or not host.valid(attached.object)
+                    or not current or not host.ready(current)
+                    or not sameTargets(attached.targets,sharedBundles[token],host) then
+                    -- Nothing above reads the created canvas's parent, so a lent canvas
+                    -- (in the preview) keeps the shared attachment standing; when it does
+                    -- go, the canvas goes home before the shared objects release it.
+                    if category.lend and category.lend.active and category.lend.active.token==token then
+                        endLend(category,'shared objects detached')
+                    end
+                    if host.valid(attached.object) and targetsValid(attached.targets,host) then
+                        if invoke(shared,'detach',attached.object,nil,attached.targets,attached.screen) then
+                            shared.attached[token]=nil
+                            shared.exposed[token]=nil
                         end
-                        local failures = failedInTurn[record] or {}
-                        failedInTurn[record] = failures
-                        if not failures[token] then
-                            if invoke(record, 'detach', attached.object, attached.settings,
-                                attached.targets,attached.screen) then
-                                record.attached[token] = nil
-                            else failures[token] = true end
+                    else
+                        local ok,why=pcall(shared.manager.forget,shared.manager,attached.root)
+                        if not ok then report('forget',shared.definition.id,why)
+                        else shared.attached[token]=nil;shared.exposed[token]=nil end
+                    end
+                end
+            end
+            if sharedActive then
+                for _,token in ipairs(keys(sharedObjects)) do
+                    local object=sharedObjects[token]
+                    if not shared.attached[token] and host.valid(object) and host.ready(object)
+                        and attachOpen(category) and settledFor(token,object) then
+                        local targets=sharedBundles[token]
+                        local applied,screen,exposed=invoke(shared,'attach',object,nil,targets)
+                        if applied and host.valid(object) then
+                            shared.attached[token]={object=object,targets=targets,
+                                root=host.unwrap and host.unwrap(object) or object,screen=screen}
+                            shared.exposed[token]=exposed
                         end
                     end
                 end
             end
-            -- Shared category objects are restored only after every template has
-            -- detached, and prepared before any incoming template can attach.
-            if shared then
-                for _,token in ipairs(keys(shared.attached)) do
-                    local attached=shared.attached[token]
-                    local current=sharedObjects[token]
-                    if not sharedActive or not host.valid(attached.object)
-                        or not current or not host.ready(current)
-                        or not sameTargets(attached.targets,sharedBundles[token],host) then
-                        -- Nothing above reads the created canvas's parent, so a lent canvas
-                        -- (in the preview) keeps the shared attachment standing; when it does
-                        -- go, the canvas goes home before the shared objects release it.
-                        if category.lend and category.lend.active and category.lend.active.token==token then
-                            endLend(category,'shared objects detached')
-                        end
-                        if host.valid(attached.object) and targetsValid(attached.targets,host) then
-                            if invoke(shared,'detach',attached.object,nil,attached.targets,attached.screen) then
-                                shared.attached[token]=nil
-                                shared.exposed[token]=nil
+        end
+        if shared then
+            for id,record in pairs(category.templates) do
+                if resolved[id] then
+                    exposeSharedTargets(record,resolved[id].bundles,shared.exposed)
+                end
+            end
+        end
+        -- A requested lend takes the shared objects once they are attached. If it
+        -- cannot, it ends, and the applied templates attach again below.
+        local lend=category.lend
+        if lend and not lend.active then
+            local token=keys(shared.attached)[1]
+            local ok,lent,why=true,false,'nothing to lend: '..category.id..' is not in the game'
+            if token then ok,lent,why=pcall(lendMove,category,lend,token) end
+            local failed=not (ok and lent) and tostring(ok and why or lent)
+            -- Lent but not ready: the canvas stays in the preview and attaches again.
+            if failed and lend.active and failed:match('^not_ready') and attachLater(category,lend) then
+                if log then log.debug(category.id,': preview waits: ',failed) end
+                failed=false
+            end
+            if failed then
+                lend.failed=failed
+                if token and not lend.failed:match('^not_ready') then
+                    report('preview',lend.request.template,lend.failed)
+                end
+                endLend(category,lend.failed)
+            end
+        end
+        -- Outgoing templates sleep after they detach; incoming ones wake
+        -- before they attach.
+        syncAwake(category)
+        for _, id in ipairs(category.order) do
+            local record = category.templates[id]
+            if attachable(record) then
+                -- Not resolved above while a lend was pending.
+                if not resolved[id] then
+                    local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
+                    resolved[id]={objects=objects,bundles=bundles}
+                    if shared then exposeSharedTargets(record,bundles,shared.exposed) end
+                end
+                local objects,bundles=resolved[id].objects,resolved[id].bundles
+                for _, token in ipairs(keys(objects)) do
+                    local object, blocked = objects[token], false
+                    -- A unique template attaches only after every other template with its
+                    -- key has detached; a failed detach blocks the replacement.
+                    if record.unique then
+                        for otherId, other in pairs(category.templates) do
+                            if otherId ~= id and other.unique == record.unique
+                                and (other.attached[token] or other.pending[token]) then
+                                blocked = true
                             end
+                        end
+                    end
+                    local old = record.attached[token]
+                    if old and tracing() then
+                        trace(id..' '..tostring(token),'recorded attached at revision ',tostring(old.revision),
+                            ' (now ',tostring(record.revision),')',record.pending[token] and ', detach pending' or '',
+                            blocked and ', blocked' or '',shared and not shared.attached[token] and ', shared objects not attached' or '',
+                            not retainsTargets(record.waiting[token],bundles[token],host) and ', waiting for targets' or '',
+                            failedInTurn[record] and failedInTurn[record][token] and ', failed this turn' or '')
+                    end
+                    if not old and tracing() then
+                        local why={}
+                        if blocked then why[#why+1]='blocked by another template' end
+                        if record.pending[token] then why[#why+1]='detach pending' end
+                        if not attachOpen(category) then
+                            why[#why+1]='waiting for '..category.hooks.attach
+                        end
+                        if not host.valid(object) then why[#why+1]='root invalid'
+                        elseif not host.ready(object) then why[#why+1]='root not ready' end
+                        if shared and not shared.attached[token] then why[#why+1]='shared objects not attached' end
+                        if not retainsTargets(record.waiting[token],bundles[token],host) then
+                            why[#why+1]='waiting for targets'
+                        end
+                        if failedInTurn[record] and failedInTurn[record][token] then why[#why+1]='failed this turn' end
+                        local delayed=category.attachDelay and defer and category.attachDelay.roots[token]
+                        if category.attachDelay and defer and delayed~='settled' then
+                            why[#why+1]='waiting for attachDelay'
+                        end
+                        trace(id..' '..tostring(token),#why>0 and table.concat(why,', ') or 'attaching')
+                    end
+                    if not blocked and not record.pending[token]
+                        and host.valid(object) and host.ready(object)
+                        and (not shared or shared.attached[token])
+                        and retainsTargets(record.waiting[token],bundles[token],host)
+                        and (not old or old.revision ~= record.revision or old.resized)
+                        and not (failedInTurn[record] and failedInTurn[record][token])
+                        and (old or (attachOpen(category) and settledFor(token,object))) then
+                        local operation = old and 'update' or 'attach'
+                        local targets = bundles[token]
+                        local applied,screen=invoke(record, operation, object, nil, targets)
+                        if applied and host.valid(object) then
+                            record.waiting[token]=nil
+                            record.attached[token] = {object=object, revision=record.revision,
+                                settings=copy(record.settings), targets=targets,
+                                root=host.unwrap and host.unwrap(object) or object,screen=screen}
                         else
-                            local ok,why=pcall(shared.manager.forget,shared.manager,attached.root)
-                            if not ok then report('forget',shared.definition.id,why)
-                            else shared.attached[token]=nil;shared.exposed[token]=nil end
-                        end
-                    end
-                end
-                if sharedActive then
-                    for _,token in ipairs(keys(sharedObjects)) do
-                        local object=sharedObjects[token]
-                        if not shared.attached[token] and host.valid(object) and host.ready(object)
-                            and attachOpen(category) and settledFor(token,object) then
-                            local targets=sharedBundles[token]
-                            local applied,screen,exposed=invoke(shared,'attach',object,nil,targets)
-                            if applied and host.valid(object) then
-                                shared.attached[token]={object=object,targets=targets,
-                                    root=host.unwrap and host.unwrap(object) or object,screen=screen}
-                                shared.exposed[token]=exposed
-                            end
-                        end
-                    end
-                end
-            end
-            if shared then
-                for id,record in pairs(category.templates) do
-                    if resolved[id] then
-                        exposeSharedTargets(record,resolved[id].bundles,shared.exposed)
-                    end
-                end
-            end
-            -- A requested lend takes the shared objects once they are attached. If it
-            -- cannot, it ends, and the applied templates attach again below.
-            local lend=category.lend
-            if lend and not lend.active then
-                local token=keys(shared.attached)[1]
-                local ok,lent,why=true,false,'nothing to lend: '..category.id..' is not in the game'
-                if token then ok,lent,why=pcall(lendMove,category,lend,token) end
-                local failed=not (ok and lent) and tostring(ok and why or lent)
-                -- Lent but not ready: the canvas stays in the preview and attaches again.
-                if failed and lend.active and failed:match('^not_ready') and attachLater(category,lend) then
-                    if log then log.debug(category.id,': preview waits: ',failed) end
-                    failed=false
-                end
-                if failed then
-                    lend.failed=failed
-                    if token and not lend.failed:match('^not_ready') then
-                        report('preview',lend.request.template,lend.failed)
-                    end
-                    endLend(category,lend.failed)
-                end
-            end
-            -- Outgoing templates sleep after they detach; incoming ones wake
-            -- before they attach.
-            syncAwake(category)
-            for _, id in ipairs(category.order) do
-                local record = category.templates[id]
-                if attachable(record) then
-                    -- Not resolved above while a lend was pending.
-                    if not resolved[id] then
-                        local _,objects,bundles=Selectors.resolve(record.graph,candidates,host)
-                        resolved[id]={objects=objects,bundles=bundles}
-                        if shared then exposeSharedTargets(record,bundles,shared.exposed) end
-                    end
-                    local objects,bundles=resolved[id].objects,resolved[id].bundles
-                    for _, token in ipairs(keys(objects)) do
-                        local object, blocked = objects[token], false
-                        -- A unique template attaches only after every other template with its
-                        -- key has detached; a failed detach blocks the replacement.
-                        if record.unique then
-                            for otherId, other in pairs(category.templates) do
-                                if otherId ~= id and other.unique == record.unique
-                                    and (other.attached[token] or other.pending[token]) then
-                                    blocked = true
+                            if not old and record.manager then
+                                local root=host.unwrap and host.unwrap(object) or object
+                                if root and record.manager:hasState(root) then
+                                    record.pending[token]={object=object,root=root,targets=targets}
                                 end
                             end
-                        end
-                        local old = record.attached[token]
-                        if old and tracing() then
-                            trace(id..' '..tostring(token),'recorded attached at revision ',tostring(old.revision),
-                                ' (now ',tostring(record.revision),')',record.pending[token] and ', detach pending' or '',
-                                blocked and ', blocked' or '',shared and not shared.attached[token] and ', shared objects not attached' or '',
-                                not retainsTargets(record.waiting[token],bundles[token],host) and ', waiting for targets' or '',
-                                failedInTurn[record] and failedInTurn[record][token] and ', failed this turn' or '')
-                        end
-                        if not old and tracing() then
-                            local why={}
-                            if blocked then why[#why+1]='blocked by another template' end
-                            if record.pending[token] then why[#why+1]='detach pending' end
-                            if not attachOpen(category) then
-                                why[#why+1]='waiting for '..category.hooks.attach
-                            end
-                            if not host.valid(object) then why[#why+1]='root invalid'
-                            elseif not host.ready(object) then why[#why+1]='root not ready' end
-                            if shared and not shared.attached[token] then why[#why+1]='shared objects not attached' end
-                            if not retainsTargets(record.waiting[token],bundles[token],host) then
-                                why[#why+1]='waiting for targets'
-                            end
-                            if failedInTurn[record] and failedInTurn[record][token] then why[#why+1]='failed this turn' end
-                            local delayed=category.attachDelay and defer and category.attachDelay.roots[token]
-                            if category.attachDelay and defer and delayed~='settled' then
-                                why[#why+1]='waiting for attachDelay'
-                            end
-                            trace(id..' '..tostring(token),#why>0 and table.concat(why,', ') or 'attaching')
-                        end
-                        if not blocked and not record.pending[token]
-                            and host.valid(object) and host.ready(object)
-                            and (not shared or shared.attached[token])
-                            and retainsTargets(record.waiting[token],bundles[token],host)
-                            and (not old or old.revision ~= record.revision or old.resized)
-                            and not (failedInTurn[record] and failedInTurn[record][token])
-                            and (old or (attachOpen(category) and settledFor(token,object))) then
-                            local operation = old and 'update' or 'attach'
-                            local targets = bundles[token]
-                            local applied,screen=invoke(record, operation, object, nil, targets)
-                            if applied and host.valid(object) then
-                                record.waiting[token]=nil
-                                record.attached[token] = {object=object, revision=record.revision,
-                                    settings=copy(record.settings), targets=targets,
-                                    root=host.unwrap and host.unwrap(object) or object,screen=screen}
-                            else
-                                if not old and record.manager then
-                                    local root=host.unwrap and host.unwrap(object) or object
-                                    if root and record.manager:hasState(root) then
-                                        record.pending[token]={object=object,root=root,targets=targets}
-                                    end
-                                end
-                                local failures = failedInTurn[record] or {}
-                                failedInTurn[record] = failures
-                                failures[token] = record.revision
-                            end
+                            local failures = failedInTurn[record] or {}
+                            failedInTurn[record] = failures
+                            failures[token] = record.revision
                         end
                     end
                 end
