@@ -55,7 +55,9 @@ MCC supplies the Controls page that hosts quickslot visual settings.
 
 MCT installs its registration client as `Mods/shared/mc.lua`. Providers register
 from their `Scripts/main.lua` before MCT's startup barrier; MCT does not scan
-installed mods for templates.
+installed mods for templates. A provider must load after MCT: UE4SS starts the mods in
+`mods.txt` first, then mod folders alphabetically, so a provider's folder sorts after
+`3_ModCore_Templates` and stays out of `mods.txt`.
 
 ## Settings and lifecycle
 

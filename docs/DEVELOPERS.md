@@ -28,7 +28,12 @@ MC.registerTemplate('nudge') -- loads sibling mc_nudge.lua at MCT startup
 ```
 
 Register each template separately before the startup barrier, from a file directly in
-your mod's `Scripts` folder. Late registrations are rejected; duplicate file
+your mod's `Scripts` folder. Your mod must load after MCT: UE4SS starts the mods listed in
+`mods.txt` first, then the mod folders in alphabetical order, so keep your mod out of
+`mods.txt` and give its folder a name that sorts after `3_ModCore_Templates` (the
+first-party providers use `9_`). A mod that starts first cannot `require('mc')` on a fresh
+install, and its registration fails because MCT has not opened it yet; MCT does not queue
+it. Late registrations are rejected; duplicate file
 registrations are ignored. A template file outside a mod's `Scripts` folder, or any
 other invalid template, is reported and skipped without removing other valid templates.
 
