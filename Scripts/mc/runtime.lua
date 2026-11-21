@@ -1215,7 +1215,7 @@ function M.new(host, definitions, templates, state, options)
                             -- A callback answering MCT's own layout event must not
                             -- publish another, or the two would feed each other.
                             if event.name~=M.LAYOUT_EVENT then touch(record.category) end
-                            local params={settings=copy(attached.settings),screen=attached.screen,
+                            local params={settings=copy(attached.settings),screen=copy(attached.screen),
                                 state=copy(state)}
                             return callback(params,copy(event),TemplateTargets.arrange(record.targetTree,
                                 attached.targets,host.unwrap,host.valid))

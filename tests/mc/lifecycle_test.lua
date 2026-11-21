@@ -558,8 +558,10 @@ test('control state reaches callbacks and live attachments without a rebuild', f
     f.a.update=function() updates=updates+1 end
     f.a.events={['controls.group.focus']=function(params,event,objects)
         events[#events+1]={from=event.group.from,to=event.group.to,
-            current=params.state.controls.group.to,params=params,objects=objects}
+            current=params.state.controls.group.to,params=params,objects=objects,center=params.screen.center}
         params.state.controls.group.to=99
+        -- A callback writing into its params cannot reach the stored screen.
+        params.screen.center=0
     end}
     local runtime=Runtime.new(f.host,f.categories,{f.a},state)
     runtime:select('player.quickslots',{a={size=3}});runtime:start()
@@ -569,14 +571,17 @@ test('control state reaches callbacks and live attachments without a rebuild', f
     assert(state.controls.group.to==2)
     assert(#events==1 and events[1].from==1 and events[1].to==2 and events[1].current==2)
     assert(events[1].objects.slots==one and events[1].params.settings.size==3
-        and events[1].params.screen.center==960)
+        and events[1].center==960)
+    state.revision=2
+    runtime:stateChanged({name='controls.group.focus',revision=2,group={from=1,to=2}})
+    assert(#events==2 and events[2].center==960,'an event callback changed the stored screen')
     -- A rebuild for another reason reads the current state.
     runtime:select('player.quickslots',{a={size=4}})
     assert(updates==1)
     runtime:select('player.quickslots',{})
-    state.revision=2;state.controls.group.from=2;state.controls.group.to=1
-    runtime:stateChanged({name='controls.group.focus',revision=2,group={from=2,to=1}})
-    assert(#events==1,'inactive template received an event')
+    state.revision=3;state.controls.group.from=2;state.controls.group.to=1
+    runtime:stateChanged({name='controls.group.focus',revision=3,group={from=2,to=1}})
+    assert(#events==2,'inactive template received an event')
 end)
 
 test('templates without an event handler are untouched by state changes', function()
