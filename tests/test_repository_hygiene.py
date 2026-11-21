@@ -97,6 +97,16 @@ class HygieneTests(unittest.TestCase):
                 '{"allowed_paths": [], "vendored": {"Scripts/vendor/a.lua": "Owner", "tests/c.lua": "Owner"}}')
             git("add", ".")
             self.assertIn("tests/c.lua: listed as vendored but missing", "\n".join(hygiene.check(root, [":index"])))
+            # A workflow is vendored with a '#' header, as shell and Python files are.
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / ".github/workflows/w.yml").write_text(
+                "# Vendored from Owner (owner). Do not edit copies; change the source and re-vendor.\nname: W\n")
+            (root / "repository-policy.json").write_text(
+                '{"allowed_paths": [], "vendored": {"Scripts/vendor/a.lua": "Owner", ".github/workflows/w.yml": "Owner"}}')
+            (root / "Scripts/vendor/a.lua").write_text(header + "return {}\n")
+            (root / "Scripts/vendor/b.lua").unlink()
+            git("add", "-A")
+            self.assertFalse(hygiene.check(root, [":index"]))
             (root / "repository-policy.json").write_text('{"allowed_paths": [], "vendored": ["a.lua"]}')
             git("add", ".")
             self.assertIn("vendored must map paths", "\n".join(hygiene.check(root, [":index"])))

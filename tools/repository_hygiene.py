@@ -49,7 +49,7 @@ def git(root, *args):
 # owner: {"Scripts/vendor/mc_log.lua": "ModCoreSettings"}. A copy keeps its owner's path
 # and starts with the owner header; an owner lists its own sources the same way.
 VENDOR_HEADER = "Vendored from {owner} (owner). Do not edit copies; change the source and re-vendor."
-VENDOR_COMMENTS = {".lua": "--", ".py": "#", ".sh": "#", ".ps1": "#"}
+VENDOR_COMMENTS = {".lua": "--", ".py": "#", ".sh": "#", ".ps1": "#", ".yml": "#", ".yaml": "#"}
 OWNER = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 def vendor_header(path, owner):
