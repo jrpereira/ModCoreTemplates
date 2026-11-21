@@ -150,7 +150,7 @@ function M.start(options, api)
     -- No group has focus until ModCore Controls reports its Default wheel.
     configured.state=configured.state or {revision=0,controls={group={}}}
     if not configured.events and api.ModRef and type(api.RegisterConsoleCommandHandler)=='function' then
-        -- Event delivery failures go through MCT's logger and its log_level.txt.
+        -- Event delivery failures go through MCT's logger and its level.
         local eventApi=setmetatable({log=configured.log},{__index=api})
         configured.events=Events.hub(eventApi,configured.state,function(event)
             if bootstrap and bootstrap.runtime then bootstrap.runtime:stateChanged(event) end

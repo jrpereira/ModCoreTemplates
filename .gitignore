@@ -4,7 +4,6 @@
 
 # User state and generated installation payloads
 config.ini
-log_level.txt
 identity-catalog.lua
 menu-profile.lua
 menu-pages.lua

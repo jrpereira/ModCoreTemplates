@@ -3,7 +3,7 @@
 -- Mods copy this file unchanged into their Scripts/vendor folder.
 --
 -- Failures are written through api.log, the caller's mc_log logger (or a plain
--- function(message)), so they follow its log_level.txt. Without one, a WARN-level
+-- function(message)), so they follow its level. Without one, a WARN-level
 -- mc_log logger is used.
 local M={focus='controls.group.focus',global='controls.slots.global',layout='templates.layout.changed'}
 local definitions

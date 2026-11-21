@@ -9,8 +9,7 @@ package.path = scripts .. '/vendor/?.lua;' .. scripts .. '/?.lua;' .. package.pa
 local Registration=require('mc.registration')
 Registration.install(scripts..'/mc_client.lua',mods..'/shared/mc.lua')
 local registrations=Registration.publisher(assert(ModRef,'ModRef unavailable'),mods)
--- The level comes from log_level.txt in the mod folder; WARN without it.
-local log = require('mc_log').new({name='ModCoreTemplates', path=root .. '/log_level.txt'})
+local log = require('mc_log').new({name='ModCoreTemplates'})
 registrations:begin()
 local function listedCategories()
     local names = assert(loadfile(root .. '/Scripts/categories/mc.lua'))()

@@ -76,8 +76,9 @@ fallback: a kept wrapper would read freed memory after a save loads. See
 
 ## Logging
 
-Logs appear in `UE4SS.log`. The default level is WARN. For more detail, put
-`debug` in `Mods/3_ModCore_Templates/log_level.txt` and restart.
+Logs appear in `UE4SS.log`. The default level is WARN. For more detail, install the
+UE4SS Lua Log Bridge and raise ModCoreTemplates's level on its Logs page, or set
+`ModCoreTemplates=DEBUG` under `[Levels]` in the bridge's `config.ini`.
 
 ## Documentation
 

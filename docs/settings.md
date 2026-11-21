@@ -18,7 +18,6 @@ a manifest. Leftover `mod_settings.ini` files from older builds are ignored.
 |---|---|
 | `Scripts/cache/config.ini` (MCT root) | Each category's template picks and shared fields, whichever page shows them |
 | `<Provider>/config.ini` (the template's module root) | Each template's Enabled toggle and settings, on module, category and slot pages alike |
-| `log_level.txt` (MCT root) | Optional log level |
 
 In MCT's config the active templates are saved under `[Templates]`, one key per
 category (`<Category>Priority<n>` for a picker per priority), and a category's shared
@@ -138,8 +137,8 @@ slot saves them. The notice itself is navigation and saves nothing.
 
 ## Logging
 
-The default level is WARN. For more detail, put a level (`trace`, `debug`, `info`,
-`warn`, `error` or `critical`) in `log_level.txt` at the MCT root and restart. Messages
-appear in `UE4SS.log`.
+The default level is WARN. For more detail, install the UE4SS Lua Log Bridge and raise
+ModCoreTemplates' level on its Logs page, or set `ModCoreTemplates=DEBUG` under
+`[Levels]` in the bridge's `config.ini`. Messages appear in `UE4SS.log`.
 
 See [Template menus](MENUS.md) for how fields are declared and placed.

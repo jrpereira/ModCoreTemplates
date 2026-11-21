@@ -2,15 +2,19 @@
 -- Leveled logging shared by the ModCore modules. Mods copy this file unchanged into their
 -- own Scripts/vendor folder.
 --
---   local log=require('mc_log').new({name='ModCoreControls',path=root..'/log_level.txt'})
+--   local log=require('mc_log').new({name='ModCoreControls'})
 --   log.debug('mapped ',count,' keys')   -- written only at DEBUG or TRACE
 --   log.warn('config unavailable: ',why)
 --
--- Levels, lowest first: TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL. A message is written
--- when its level is at or above the module's level, read once from the file at `path`:
--- one level name, any case. A missing, empty or unknown level means WARN; logging never
--- prevents startup. Arguments are converted and joined only when the message is written.
-local M={version=1,default='WARN',levels={'TRACE','DEBUG','INFO','WARN','ERROR','CRITICAL'}}
+-- With the UE4SS Lua Log Bridge installed, new returns the bridge's logger for the name
+-- (UE4SSLuaLogBridge().Register(name)); its levels are set per mod and category in the
+-- bridge's config.ini or the ModCore Settings menu. Without it, lines at WARN and above go
+-- to UE4SS.log through print. Either way the calls, log.level, log.enabled and the line
+-- format, "[Name] LEVEL message", are the same.
+--
+-- Levels, lowest first: TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL. Arguments are converted
+-- and joined only when the message is written; logging never prevents startup.
+local M={version=2,default='WARN',levels={'TRACE','DEBUG','INFO','WARN','ERROR','CRITICAL'}}
 local rank={}
 for index,name in ipairs(M.levels) do rank[name]=index end
 
@@ -21,29 +25,36 @@ function M.parse(text)
     return rank[name] and name or nil
 end
 
--- The level a file names; the file's text when it names none; nil when it is missing.
-local function read(path)
-    local ok,file=pcall(io.open,path,'rb')
-    if not ok or not file then return nil end
-    local read,text=pcall(file.read,file,256)
-    pcall(file.close,file)
-    if not read then return nil end
-    return M.parse(text),text
+-- The bridge's logger for options, or nil and why when the bridge is present but refuses;
+-- nil alone without the bridge.
+local function bridged(name,options)
+    local Bridge=UE4SSLuaLogBridge
+    if Bridge==nil then return nil end
+    local ok,logs=pcall(Bridge)
+    if not ok or type(logs)~='table' then return nil,tostring(logs) end
+    local settings={level=M.parse(options.level),categories=options.categories}
+    local registered,logger,code,message=pcall(function() return logs.Register(name,settings) end)
+    if not registered then return nil,tostring(logger) end
+    if logger==nil then return nil,tostring(message or code) end
+    return logger
 end
 
--- options: name (message prefix), level (a level name, overrides the file), path (level
--- file), write (function(line); defaults to print).
+-- options: name (message prefix and the bridge's module name), level (a level name; the
+-- module's level when the bridge's settings name none), categories (a list, registered
+-- with the bridge), write (function(line): a plain logger writing there, without the
+-- bridge; defaults to print). A path option, once a level file, is ignored.
 function M.new(options)
     options=options or {}
-    local prefix='['..tostring(options.name or 'ModCore')..'] '
-    local write=options.write or function(line) print(line..'\n') end
-    local level,unknown=M.parse(options.level),nil
-    if not level and options.path then
-        local text
-        level,text=read(options.path)
-        if not level and text and text:match('%S') then unknown=text:match('^%s*(.-)%s*$') end
+    local name=tostring(options.name or 'ModCore')
+    local unavailable
+    if not options.write then
+        local logger,why=bridged(name,options)
+        if logger then return logger end
+        unavailable=why
     end
-    level=level or M.default
+    local prefix='['..name..'] '
+    local write=options.write or function(line) print(line..'\n') end
+    local level=M.parse(options.level) or M.default
     local threshold=rank[level]
     local logger={level=level}
     local function emit(name,...)
@@ -64,7 +75,7 @@ function M.new(options)
         local name=first==logger and second or first
         return (rank[tostring(name):upper()] or 0)>=threshold
     end
-    if unknown then logger.warn('unknown log level "',unknown,'"; using ',M.default) end
+    if unavailable then logger.warn('UE4SS Lua Log Bridge unavailable (',unavailable,'); writing ',level,' and above') end
     return logger
 end
 
