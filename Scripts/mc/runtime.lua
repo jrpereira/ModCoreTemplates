@@ -1103,11 +1103,12 @@ function M.new(host, definitions, templates, state, options)
                         end
                         trace(id..' '..tostring(token),#why>0 and table.concat(why,', ') or 'attaching')
                     end
+                    -- An up-to-date attachment is skipped before any host call.
                     if not blocked and not record.pending[token]
+                        and (not old or old.revision ~= record.revision or old.resized)
                         and host.valid(object) and host.ready(object)
                         and (not shared or shared.attached[token])
                         and retainsTargets(record.waiting[token],bundles[token],host)
-                        and (not old or old.revision ~= record.revision or old.resized)
                         and not (failedInTurn[record] and failedInTurn[record][token])
                         and (old or (attachOpen(category) and settledFor(token,object))) then
                         local operation = old and 'update' or 'attach'
