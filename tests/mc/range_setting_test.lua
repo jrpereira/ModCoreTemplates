@@ -90,7 +90,9 @@ local selectorId=preview.selectors[category.id].id
 -- Saved as [<Module>.<Template>] <Setting>; the category's pick as [Templates] <Category>.
 assert(field.storage.section=='Preymonition.Center' and field.storage.key=='Grow')
 local growSection,growKey=field.storage.section,field.storage.key
-local saved=assert(io.open(moduleRoot..'/config.ini','wb'))
+-- The pick lives in MCT's central config, the template's settings in its module's.
+local centralPath=Layout.prepare(menuRoot).config
+local saved=assert(io.open(centralPath,'wb'))
 saved:write('[Templates]\nPlayerQuickslots='..selectorValue..'\n');saved:close()
 local startupError
 local host={valid=function() return true end,identity=function(value) return value end,

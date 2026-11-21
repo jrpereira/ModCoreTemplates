@@ -11,10 +11,10 @@ below focus on menu declarations; callbacks must still declare their targets.
 └── Scripts/
     ├── categories/           Category definitions
     └── cache/
-        ├── config.ini        Central saved settings
+        ├── config.ini        Template picks and shared category fields
         └── mcs_menu.<generation>*       Published pages
 YourProvider/
-├── config.ini               Module-target settings, when generated
+├── config.ini               Its templates' settings, when generated
 └── Scripts/
     ├── main.lua             Registers templates
     └── mc_<name>.lua         Template declaration
@@ -24,11 +24,15 @@ Published pages and aggregate/category settings go into
 `Scripts/cache`. MCT describes its pages as menu data and publishes them through
 ModCoreSettings' menu-contribution client (`vendor/menu_contributions.lua`, copied
 unchanged from ModCoreSettings); ModCoreSettings builds the pages. MCT writes nothing
-at the mod root and never writes DMM manifests. Aggregate and category pages store
-their values in `Scripts/cache/config.ini` under the MCT root. A module-target page
-instead stores them in `config.ini` at that template module's root, so for instance,
-Fangdango settings are stored in `9_ModCore_Fangdango/config.ini`. Both locations
-contain user settings and must be preserved.
+at the mod root and never writes DMM manifests. Where a value is stored depends on the
+row, not the page that shows it. A category's rows (its template picker, priority
+pickers and shared fields) are stored in `Scripts/cache/config.ini` under the MCT root,
+so every page showing them edits one copy. A template's rows (its Enabled toggle and
+settings) are stored in `config.ini` at that template module's root, on module,
+category and slot pages alike: Fangdango's settings are stored in
+`9_ModCore_Fangdango/config.ini`. Pages therefore name their files relative to the
+Mods folder, their `configDirectory`. Both locations contain user settings and must be
+preserved.
 
 MCT replaces every file it writes (configs and published pages) by
 writing `<file>.new`, moving the current file to `<file>.old` and then renaming
@@ -69,9 +73,10 @@ category page rather than its module page.
   gated by its own rule: the Template picker and Enabled toggles always show, and the
   toggles are plain rows there, since slot rows share one group; other rows show while their
   template is selected, or while their variation value is selected. Navigation links
-  are left out. Values are stored in the central config. A module whose templates all
+  are left out. The picker is stored in the central config, each template's rows in its
+  own module's config. A module whose templates all
   moved to slots keeps its page in the module group. The page edits the same rows,
-  limited to its own templates, in the central config. It starts with a small notice,
+  limited to its own templates, where they are stored. It starts with a small notice,
   "These settings have been merged into Controls and can also be edited there", whose
   button opens the slot. That notice is the page's only
   link; navigation rows are left out, as in the slot. When the
@@ -367,7 +372,7 @@ sections are preserved. An invalid saved value is rewritten with its default; st
 continues.
 Startup creates `Scripts/categories` and `Scripts/cache` as
 needed. The central config and pages are stored directly in
-`Scripts/cache`; module-target configs are stored at their module roots. Without `menuRoot`,
+`Scripts/cache`; template settings are stored in their modules' `config.ini`. Without `menuRoot`,
 generation and Apply routing work in memory and do not write any files.
 
 With `menuShared`, MCT publishes its pages once the barrier has completed and withdraws

@@ -11,7 +11,9 @@ local M={}
 local function compile(options,categories,templates,locations,runtimeOptions)
     local model=MenuModel.build(categories,templates,locations)
     local menuOptions=U.copy(options.menu or {})
-    if options.menuRoot then menuOptions.version=Layout.version(options.menuRoot) end
+    if options.menuRoot then
+        menuOptions.version,menuOptions.root=Layout.version(options.menuRoot),options.menuRoot
+    end
     local menu=Menu.generate(model.registry,menuOptions)
     return model,menu,Runtime.new(options.host,model.categories,model.templates,options.state,runtimeOptions)
 end
@@ -50,24 +52,19 @@ function M.new(options,categories,templates,locations,own)
         -- written there (config, templates list, menu contribution).
         local prepared,why=pcall(Layout.prepare,options.menuRoot)
         if not prepared then pcall(options.host.onError,{stage='config',message=tostring(why)}) end
+        -- One source per file, whichever pages show its rows: a category's rows in the
+        -- central config, a template's in its own mod's config.ini (row._path).
         local paths=Layout.paths(options.menuRoot)
-        local centralRows,seen={},{}
-        local function include(rows)
-            for _,row in ipairs(rows) do
-                if not seen[row.id] then seen[row.id]=true;centralRows[#centralRows+1]=row end
+        configSources[1]={path=paths.config,rows={},textSettings=self.menu.textSettings}
+        local byPath={[paths.config]=configSources[1]}
+        for _,row in ipairs(self.menu.rows) do
+            local path=row._path or paths.config
+            if not byPath[path] then
+                byPath[path]={path=path,rows={},textSettings={}}
+                configSources[#configSources+1]=byPath[path]
             end
-        end
-        include(self.menu.aggregate.rows)
-        for _,page in ipairs(self.menu.pages) do
-            if page.category or page.slot then include(page.rows) end
-        end
-        configSources[1]={path=paths.config,rows=centralRows,textSettings=self.menu.textSettings}
-        for _,page in ipairs(self.menu.pages) do
-            if page.module then
-                configSources[#configSources+1]={
-                    path=assert(page.configPath,page.module..': config path unavailable'),
-                    rows=page.rows,textSettings={}}
-            end
+            local rows=byPath[path].rows
+            rows[#rows+1]=row
         end
         -- Configuration never prevents startup: a config that cannot be prepared or read
         -- is reported, and its settings run on their defaults.

@@ -36,11 +36,11 @@ function M.build(menu, root)
         version=version, attach=folder(root)}
     local pages, list = {aggregate}, aggregate
     if #menu.aggregate.rows > 0 then
-        aggregate.menu, aggregate.configDirectory = menu.aggregate.menu, root
+        aggregate.menu, aggregate.configDirectory = menu.aggregate.menu, menu.aggregate.configDirectory or root
         list = {id=M.id .. '.templates', name='Templates', author='ModCoreTemplates', version=version,
             configDirectory=root, visible=false, under=M.id}
     elseif showAggregate then
-        aggregate.configDirectory = root
+        aggregate.configDirectory = menu.aggregate.configDirectory or root
     else
         aggregate.link = 'settings:templates'
         -- Shown on its own, named as MCT, only when ModCore Settings has no Templates tab.
@@ -54,7 +54,7 @@ function M.build(menu, root)
         if page.category then
             pages[#pages + 1] = {id=page.id, name=page.name, author='ModCoreTemplates',
                 version=version, description='Templates and settings for ' .. page.name .. '.',
-                menu=page.menu, configDirectory=root, under=M.id}
+                menu=page.menu, configDirectory=page.configDirectory or root, under=M.id}
         end
     end
     -- A slot page stays hidden; its rows appear in the slot, edited and stored here.
@@ -68,7 +68,7 @@ function M.build(menu, root)
         if page.slot then
             pages[#pages + 1] = {id=page.id, name=page.name, author='ModCoreTemplates',
                 version=version, description='Templates and settings for ' .. page.name .. '.',
-                menu=page.menu, configDirectory=root, visible=false, under=parent}
+                menu=page.menu, configDirectory=page.configDirectory or root, visible=false, under=parent}
             local settings = {}
             for _, row in ipairs(page.rows) do
                 settings[#settings + 1] = row.id
@@ -86,17 +86,17 @@ function M.build(menu, root)
         if page.module then
             pages[#pages + 1] = {id=page.id, name=page.name,
                 description='Templates and settings for ' .. page.name .. '.',
-                menu=page.menu, configDirectory=page.moduleRoot or root,
+                menu=page.menu, configDirectory=page.configDirectory or page.moduleRoot or root,
                 attach=page.moduleRoot and folder(page.moduleRoot) or nil}
         end
     end
     -- A module whose settings all moved to a slot keeps its page; it edits the slot's
-    -- rows in the central config and links to the slot.
+    -- rows where they are stored and links to the slot.
     for _, page in ipairs(menu.pages) do
         if page.merged then
             pages[#pages + 1] = {id=page.id, name=page.name,
                 description='Templates and settings for ' .. page.name .. '.',
-                menu=page.menu, configDirectory=root, attach=folder(page.moduleRoot)}
+                menu=page.menu, configDirectory=page.configDirectory or root, attach=folder(page.moduleRoot)}
         end
     end
     if list ~= aggregate then pages[#pages + 1] = list end

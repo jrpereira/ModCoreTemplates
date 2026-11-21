@@ -85,16 +85,31 @@ function M.generate(registry, options)
         pageRows[currentCategory][#pageRows[currentCategory] + 1] = fields
         return fields.id
     end
-    -- Where a row is saved, in its page's config file: [<Module>.<Template>] <Setting> for a
-    -- template's rows, [Templates] <Category> for a category's template picks (and
-    -- <Category>Priority<n> per priority), [<category>] <Setting> for its shared fields.
-    -- Rows that save nothing (actions, links, text) keep none. Two rows at one place fail
-    -- the menu, so startup rejects the later provider file.
+    -- Where a row is saved: [<Module>.<Template>] <Setting> for a template's rows,
+    -- [Templates] <Category> for a category's template picks (and <Category>Priority<n> per
+    -- priority), [<category>] <Setting> for its shared fields. A category's rows live in
+    -- MCT's central config, whichever page shows them; a template's rows live in its own
+    -- mod's config.ini (moduleConfig), named relative to the Mods folder, every page's
+    -- configDirectory. Without options.root (nothing is published or saved) rows keep their
+    -- page's file. Rows that save nothing (actions, links, text) keep none. Two rows at one
+    -- place fail the menu, so startup rejects the later provider file.
+    local root = options.root and options.root:gsub('\\', '/'):gsub('/+$', '')
+    local mods = root and root:match('^(.*)/[^/]+$')
+    local central = root and root:match('([^/]+)$') .. '/' .. Layout.configFile
+    -- A template module's config, relative to the Mods folder and as a path; nil (the
+    -- central config) for a template outside a mod folder beside MCT's.
+    local function moduleConfig(parent)
+        if not (mods and parent) then return nil end
+        local within, name = parent:match('^(.*)/([^/]+)$')
+        if not within or within:lower() ~= mods:lower() then return nil end
+        return name .. '/config.ini', parent .. '/config.ini'
+    end
     local addresses = {}
-    local function storeAt(item, section, name)
+    local function storeAt(item, section, name, parent)
         if item.action or item.link or item.widget == 'text' or item.widget == 'table' then return end
         local address = M.address(section, name)
-        local place = '[' .. address.section .. '] ' .. address.key
+        address.file, item._path = moduleConfig(parent)
+        local place = (address.file or '') .. ' [' .. address.section .. '] ' .. address.key
         assert(addresses[place] == nil or addresses[place] == item.id,
             'menu storage clash: ' .. item.id .. ' and ' .. tostring(addresses[place]) .. ' at ' .. place)
         addresses[place], item.storage = item.id, address
@@ -328,7 +343,7 @@ function M.generate(registry, options)
                         template.defaultEnabled == true and 1 or 0,
                         described(template, 4096) or 'Turns this template on or off.')
                     definition.enabledId = ownerSelector
-                    storeAt(rows[#rows], section, 'Enabled')
+                    storeAt(rows[#rows], section, 'Enabled', moduleRoot(entry.location))
                     rows[#rows]._control, rows[#rows].style, rows[#rows].widget = true, 'category', 'switch'
                     if aggregateCategory then aggregateRows[#aggregateRows + 1] = rows[#rows] end
                     multiSelectors[category][#multiSelectors[category] + 1] = {
@@ -367,7 +382,7 @@ function M.generate(registry, options)
                                 values = U.copy(source.labelTexts)}
                         end
                         row(item)
-                        storeAt(item, section, publicName(source.id))
+                        storeAt(item, section, publicName(source.id), moduleRoot(entry.location))
                         -- Slot rows carry no group rules, so each takes the rule its group or
                         -- field would apply.
                         if slot then
@@ -404,8 +419,10 @@ function M.generate(registry, options)
         return conditioned(out)
     end
     -- A page's menu data. Values are stored in configFile (the central config by default),
-    -- relative to the page's config directory.
+    -- relative to the page's config directory; with options.root every page's default is
+    -- the central config, relative to the Mods folder.
     local function providerMenu(providerName, selectedRows, aggregatePage, configFile)
+        configFile = central or configFile
         local titles = 0
         for _, item in ipairs(selectedRows) do
             if item.style == 'title' then titles = titles + 1 end
@@ -594,7 +611,7 @@ function M.generate(registry, options)
             -- slotLabel heads it with its own label); the templates' groups keep their labels
             -- and styles but no rules: each row carries its slot visibility, and a heading
             -- shows while any of its rows does.
-            local menu = {storage = {file = Layout.configFile, section = 'Templates'},
+            local menu = {storage = {file = central or Layout.configFile, section = 'Templates'},
                 groups = {{id = 'Slot', style = 'none'}}, fields = {}}
             local aggregate, used, listed = {}, {}, {}
             for _, groupId in ipairs(aggregateGroupOrder) do aggregate[groupId] = true end
@@ -683,6 +700,12 @@ function M.generate(registry, options)
         page.categories, page.owned = entry.categories, entry.owned
         if modulePreviews[module] then page.menu.preview, page.preview = modulePreviews[module], true end
         pages[#pages + 1], pageByModule[module], providers[providerId] = page, page, page
+    end
+    -- Rows of several mods' configs on one page: each page's files are relative to the
+    -- Mods folder.
+    if mods then
+        aggregate.configDirectory = mods
+        for _, page in ipairs(pages) do page.configDirectory = mods end
     end
     local decodeAll = makeDecoder(rows, allCategories)
     local function decodeState(values)

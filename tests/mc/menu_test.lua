@@ -538,7 +538,8 @@ test('module settings are initialized in each template module folder', function(
     Layout.prepare(modules..'/Beta')
     local f=fixture(true,'module','module',modules)
     local definitions={category=f.category,[f.locations[1]]=f.a,[f.locations[2]]=f.b}
-    local menuRoot=testRoot..'/module-menu'
+    -- MCT sits beside the modules in one Mods folder, as installed.
+    local menuRoot=modules..'/3_ModCore_Templates'
     Layout.prepare(menuRoot)
     local barrier
     local boot=Bootstrap.new({host=f.host,categories={f.category},

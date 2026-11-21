@@ -16,19 +16,22 @@ a manifest. Leftover `mod_settings.ini` files from older builds are ignored.
 
 | File | Holds |
 |---|---|
-| `Scripts/cache/config.ini` (MCT root) | Category selections, shared category fields and the settings of templates on category or slot pages |
-| `<Provider>/config.ini` (the template's module root) | Settings of templates whose page is the module page (the default) |
+| `Scripts/cache/config.ini` (MCT root) | Each category's template picks and shared fields, whichever page shows them |
+| `<Provider>/config.ini` (the template's module root) | Each template's Enabled toggle and settings, on module, category and slot pages alike |
 | `log_level.txt` (MCT root) | Optional log level |
 
-Inside each file, the active templates are saved under `[Templates]`, one key per
-category (`<Category>Priority<n>` for a picker per priority), and each template's
-settings in a section of their own, `[<Module>.<Template>]`, under their own names. A
-category's shared fields, where it declares any, go in its section, `[<category>]`:
+In MCT's config the active templates are saved under `[Templates]`, one key per
+category (`<Category>Priority<n>` for a picker per priority), and a category's shared
+fields, where it declares any, in its section, `[<category>]`. In a provider's config
+each template's settings go in a section of their own, `[<Module>.<Template>]`, under
+their own names:
 
 ```ini
+; 3_ModCore_Templates/Scripts/cache/config.ini
 [Templates]
 PlayerQuickslots=Fangdango_SingleUnderbar
 
+; 9_ModCore_Preymonition/config.ini
 [Preymonition.Omens]
 Enabled=1
 ParryStyle=chevron
@@ -130,8 +133,8 @@ read-only and save nothing.
 
 When all of a module's templates have moved to a slot on another page, the module
 page starts with `MCT_MergedNotice`, a link to the slot (such as Controls), and then
-lists the module's own settings in that slot, editable there too and saved in the
-central config like the slot's. The notice itself is navigation and saves nothing.
+lists the module's own settings in that slot, editable there too and saved where the
+slot saves them. The notice itself is navigation and saves nothing.
 
 ## Logging
 

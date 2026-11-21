@@ -15,6 +15,12 @@
   `PlayerQuickslots=Fangdango_SingleUnderbar`), and shared category fields under
   `[<category>]`. Templates declare nothing for it and menu ids are unchanged. Values
   saved by earlier builds are not read: those settings start at their defaults.
+- Each value is stored in one place, whichever page shows it: a category's template
+  picks and shared fields in MCT's `Scripts/cache/config.ini`, every template's settings
+  in its own mod's `config.ini`, on module, category and slot pages alike (Fangdango's
+  quickslot bars included). Two modules supplying one category now share its picker
+  instead of each keeping a copy. Picks left in a provider's `config.ini` by earlier
+  builds are ignored. Requires ModCore Settings with per-row storage files.
 - A category that fails while MCT updates the HUD is reported with its id, and the other
   categories still attach, detach and wake their templates.
 - The 256-setting limit applies to each settings page, as in ModCore Settings, not to all
