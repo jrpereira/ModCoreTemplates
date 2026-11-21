@@ -246,8 +246,7 @@ function M.generate(registry, options)
                     local selectorName = category == 'player.quickslots' and 'Template'
                         or publicName(category) .. 'Template'
                     selector = namedId(selectorName, {'selector', category})
-                    local isQuickslots = category == 'player.quickslots'
-                    picker(selector, title(suffix), aggregateGroup, list, nil, isQuickslots or nil, nil,
+                    picker(selector, title(suffix), aggregateGroup, list, nil, nil, nil,
                         'Only one template from this list can be active at a time. None turns them all off.')
                     storeAt(rows[#rows], 'Templates', publicName(category))
                     selectors[category] = {id = selector, byValue = byValue}
@@ -528,25 +527,6 @@ function M.generate(registry, options)
                     else
                         selected[#selected + 1] = item
                     end
-
-                end
-            end
-        end
-        local quickslotsSelector = selectors['player.quickslots']
-            and selectors['player.quickslots'].id
-        local otherHeader = false
-        for _, item in ipairs(selected) do
-            if item.style == 'title' and item.id ~= quickslotsSelector then
-                otherHeader = true
-                break
-            end
-        end
-        if otherHeader then
-            for index, item in ipairs(selected) do
-                if item.id == quickslotsSelector then
-                    local selectorRow = U.copy(item)
-                    selectorRow.style = nil
-                    selected[index] = selectorRow
                 end
             end
         end
