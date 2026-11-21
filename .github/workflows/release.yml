@@ -53,4 +53,4 @@ jobs:
           python tools/release_notes.py --tag "$RELEASE_TAG" --output "$notes_file"
           flags+=(--notes-file "$notes_file")
           gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 "${flags[@]}" \
-            --target "$GITHUB_SHA" --title "ModCoreTemplates $RELEASE_TAG"
+            --target "$GITHUB_SHA" --title "${GITHUB_REPOSITORY#*/} $RELEASE_TAG"
