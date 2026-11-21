@@ -77,8 +77,9 @@ Identity includes the bridge's lifetime token, which distinguishes a reused
 address and full name through Unreal's object-item serial. MCT requires
 UE4SSLuaEventBridge 1.3.0 or newer: weak handles (`lifetimes.weak` and
 `lifetimes.captureObject`, available since API 6), the loop-start barrier, and
-`Hooks.Request` for `MC_NPCAttackIndicator`. Startup checks only for weak handles;
-without `Hooks.Request` the attack indicator alone is unavailable. If the bridge's
+`Hooks.Request` for `MC_NPCAttackIndicator`. Startup fails without weak handles or
+the loop-start barrier; without `Hooks.Request` only the attack indicator is
+unavailable. If the bridge's
 lifetime service is unavailable, nothing is kept or attached and the bridge's
 reason is reported once; there is no address fallback. A live
 hook survey found `UserWidget:Construct`, `Destruct` and `OnInitialized`
