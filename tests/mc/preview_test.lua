@@ -49,7 +49,7 @@ local other={id='Other_X',preview={},attach=function() error('another module\'s 
 local quiet={id='P_Quiet',attach=function() error('a template without preview must not attach') end}
 local decoded
 local session={
-    menu={definitions={['npc.attacks']={['P_Omens:1']={id='P_Omens',enabledId='MCT_P_Omens_Enabled',settings={SoundIncoming='MCT_SoundIncoming',OptionsVolume='MCT_OptionsVolume',Style='MCT_Style'}}}},
+    menu={definitions={['npc.attacks']={['P_Omens']={id='P_Omens',enabledId='MCT_P_Omens_Enabled',settings={SoundIncoming='MCT_SoundIncoming',OptionsVolume='MCT_OptionsVolume',Style='MCT_Style'}}}},
         providers={['Page.P']={id='Page.P',preview=true,categories={['npc.attacks']=true},owned={['P_Omens']=true,['P_Quiet']=true}},
         ['Page.Plain']={id='Page.Plain'}},
         decodeState=function(values) decoded=values;return {['npc.attacks']={settings={Shared=1},

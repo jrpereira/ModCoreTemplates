@@ -167,16 +167,16 @@ function M.new(options)
             if prefixes==true then prefixes={''} end
             if type(prefixes)=='table' then
                 soundIds={}
-                -- Keyed by the selector's value, not a list.
-                for _,definition in pairs(session.menu.definitions and session.menu.definitions[category] or {}) do
-                    if definition.id==id then
-                        for name,settingId in pairs(definition.settings or {}) do
-                            for _,prefix in ipairs(prefixes) do
-                                if type(prefix)=='string' and name:sub(1,#prefix)==prefix then soundIds[settingId]=true end
-                            end
+                -- Keyed by the template id.
+                local definitions=session.menu.definitions and session.menu.definitions[category] or {}
+                local definition=definitions[id]
+                if definition then
+                    for name,settingId in pairs(definition.settings or {}) do
+                        for _,prefix in ipairs(prefixes) do
+                            if type(prefix)=='string' and name:sub(1,#prefix)==prefix then soundIds[settingId]=true end
                         end
-                        if template.preview.sound==true and definition.enabledId then soundIds[definition.enabledId]=true end
                     end
+                    if template.preview.sound==true and definition.enabledId then soundIds[definition.enabledId]=true end
                 end
             end
             if attached then

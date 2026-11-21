@@ -192,10 +192,7 @@ add('## Templates in this module')
 for _, template in ipairs(templates) do
     local category = model.registry.categories:getCategory(template.category)
     local categoryName = title(template.category:gsub('%.', ' ')):gsub('^Npc ', 'NPC ')
-    local definition
-    for _, candidate in pairs(menu.definitions[template.category] or {}) do
-        if candidate.id == template.id then definition = candidate end
-    end
+    local definition = (menu.definitions[template.category] or {})[template.id]
     assert(definition, template.label .. ': no generated settings')
     -- A template is turned on by its uniqueBy picker or by its own Enabled toggle.
     local selector, owner

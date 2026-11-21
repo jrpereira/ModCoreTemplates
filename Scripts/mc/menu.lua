@@ -742,10 +742,7 @@ function M.generate(registry, options)
             local selections = {}
             local function selected(selection)
                 if not selection.id then return end
-                local definition
-                for _, candidate in pairs(decoded[category]) do
-                    if candidate.id == selection.id then definition = candidate; break end
-                end
+                local definition = decoded[category][selection.id]
                 if not definition.enabled then return end
                 local own = {}
                 for name, settingId in pairs(definition.settings) do own[name] = exposed(settingId, values[settingId]) end
