@@ -2,13 +2,18 @@ package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 -- Keyed template fields: fixed choices by key and {from=} entries that ModCoreSettings lists
 -- from the template module's files each time the menu opens.
 local Provider=require('mc.provider_settings')
+-- The compiled declaration and its normalized groups, as menu_model takes them.
+local function template(menu,variations)
+    local declaration=Provider.template(menu,variations)
+    return declaration,Provider.normalize(declaration)
+end
 local Model=require('mc.menu_model')
 local Menu=require('mc.menu')
 local From=require('menu_from')
 
 local SOUNDS={{key='none',label='None'},{key='chime',label='Chime',note='flat',sound='/Game/A/Chime'},
     {from='choices/cue_sounds.lua'},{key='last',label='Last'}}
-local _,groups=Provider.template({
+local _,groups=template({
     {id='Sound',label='Sound',fields={
         {id='.Incoming',label='Incoming',values=SOUNDS,default='ping'},
         {id='.Volume',label='Volume',values={min=0,max=200,step=10},default=100,
@@ -23,7 +28,7 @@ assert(#incoming.choices==4 and incoming.choices[3].from=='choices/cue_sounds.lu
 assert(groups[1].fields[3].keyed and not groups[1].fields[3].listed,'keyed without a list')
 
 local function rejects(menu,pattern)
-    local ok,why=pcall(Provider.template,menu,{})
+    local ok,why=pcall(template,menu,{})
     assert(not ok and tostring(why):find(pattern,1,true),tostring(why))
 end
 rejects({{id='K',label='K',values={{key='a',label='A'}},default='a'}},'two choices or a from entry')

@@ -309,7 +309,7 @@ function M.generate(registry, options)
                 local section = template.providerId and template.providerId .. '.' .. (template.localId or template.id)
                     or template.id
                 local definition = {id=entry.id,scope=templateScope,fields={},enabled=template.menu.enabled}
-                local providerGroups = Provider.normalize(template.menu)
+                local providerGroups = template.groups
                 definition.settings, definition.navigation = {}, {}
                 local providerFieldIds = {}
                 decoded[category][value] = definition

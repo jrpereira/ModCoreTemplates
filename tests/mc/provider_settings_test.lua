@@ -1,7 +1,12 @@
 package.path='./Scripts/?.lua;./Scripts/vendor/?.lua;'..package.path
 local Provider=require('mc.provider_settings')
+-- The compiled declaration and its normalized groups, as menu_model takes them.
+local function template(menu,variations)
+    local declaration=Provider.template(menu,variations)
+    return declaration,Provider.normalize(declaration)
+end
 
-local declaration,groups=Provider.template({
+local declaration,groups=template({
     {id='Opacity',label='Opacity',values='percent',default=100},
     {id='Wheels',label='Wheels',variation={style=0},fields={
         {id='.X',label='X',values={min=-1000,max=1000,step=10},default=0},
@@ -22,31 +27,31 @@ assert(groups[1].fields[1].widget=='picker' and groups[1].fields[1].style==nil)
 assert(groups[1].style=='none' and groups[3].style==nil)
 assert(groups[2].fields[1].type=='integer' and groups[2].fields[1].widget=='slider')
 
-local _,dropdown=Provider.template({
+local _,dropdown=template({
     {id='Display',label='Display',values={[0]='Off',[1]='On'},default=1,widget='switch'},
 }, {})
 assert(#dropdown==1 and dropdown[1].fields[1].widget=='switch','no empty Template group')
 
 local choices={}
 for value=1,9 do choices[value]='Choice '..value end
-local _,largePicker=Provider.template({
+local _,largePicker=template({
     {id='Choice',label='Choice',values=choices,default=1},
 }, {})
 assert(largePicker[1].fields[1].widget=='picker')
-assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,widget='tabs'}},{}),
+assert(not pcall(template,{{id='Choice',label='Choice',values=choices,default=1,widget='tabs'}},{}),
     'tabs take at most eight values')
-assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,tab=true}},{}),
+assert(not pcall(template,{{id='Choice',label='Choice',values=choices,default=1,tab=true}},{}),
     'tab is replaced by widget')
-assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,widget='slider'}},{}),
+assert(not pcall(template,{{id='Choice',label='Choice',values=choices,default=1,widget='slider'}},{}),
     'an enum takes no slider')
-assert(not pcall(Provider.template,{{id='Choice',label='Choice',values=choices,default=1,type='integer'}},{}),
+assert(not pcall(template,{{id='Choice',label='Choice',values=choices,default=1,type='integer'}},{}),
     'a declared type must match its values')
-local _,declared=Provider.template({{id='Choice',label='Choice',values=choices,default=1,type='enum',
+local _,declared=template({{id='Choice',label='Choice',values=choices,default=1,type='enum',
     widget='cycler',style='category'}},{})
 assert(declared[1].fields[1].type=='enum' and declared[1].fields[1].widget=='cycler'
     and declared[1].fields[1].style=='category','a declared type, widget and style are kept')
 
-local _,relativeGroups=Provider.template({
+local _,relativeGroups=template({
     {id='.Branch',label='Branch',variation={style=1},fields={
         {id='.Value',label='Value',values='percent',default=50},
     }},
@@ -54,14 +59,14 @@ local _,relativeGroups=Provider.template({
 assert(relativeGroups[2].id=='StyleBranch'
     and relativeGroups[2].fields[1].id=='StyleBranchValue')
 
-assert(not pcall(Provider.template,{{id='.X',label='X',values='percent',default=0}},{}))
-assert(not pcall(Provider.template,{{id='X',label='X',values='missing',default=0}},{}))
-assert(not pcall(Provider.template,{{id='G',label='G',fields={
+assert(not pcall(template,{{id='.X',label='X',values='percent',default=0}},{}))
+assert(not pcall(template,{{id='X',label='X',values='missing',default=0}},{}))
+assert(not pcall(template,{{id='G',label='G',fields={
     {id='.X',label='X',values='percent',default=101},
 }}},{}))
 
 local orientation={[7]='Horizontal',[5]='Vertical'}
-local _,conditional=Provider.template({
+local _,conditional=template({
     {id='Bars',label='Bars',fields={
         {id='.A',label='Orientation',values=orientation,default=7},
         {id='.KH',label='Keys',values={[0]='Above',[1]='Below'},default=0,
@@ -75,12 +80,12 @@ local kh,kv=conditional[1].fields[2],conditional[1].fields[3]
 assert(kh.visibleWhen=='BarsA' and kh.visibleValues[1]==7 and kh.labelWhen==nil)
 assert(kv.visibleWhen=='BarsA' and kv.visibleValues[1]==5)
 assert(kv.labelWhen=='BarsA' and kv.labelTexts[5]=='Vertical Keys' and kv.labelTexts[7]==nil)
-local _,plain=Provider.template({{id='Bars',label='Bars',fields={
+local _,plain=template({{id='Bars',label='Bars',fields={
     {id='.A',label='Orientation',values=orientation,default=7}}}},{})
 assert(plain[1].fields[1].visibleWhen==nil and plain[1].fields[1].labelWhen==nil)
 
 local function rejects(menu,variations,pattern)
-    local ok,why=pcall(Provider.template,menu,variations or {})
+    local ok,why=pcall(template,menu,variations or {})
     assert(not ok and tostring(why):find(pattern,1,true),tostring(why))
 end
 local function bars(dependent,first)
@@ -114,13 +119,13 @@ rejects({{id='Bars',label='Bars',fields={{id='.A',label='Orientation',values=ori
 rejects({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
     conditions={visible={field='.Style',values={0}}}}},
     {style={values={[0]='A',[1]='B'},default=0}},'must be absolute')
-local _,variationSource=Provider.template({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
+local _,variationSource=template({{id='K',label='K',values={[0]='A',[1]='B'},default=0,
     conditions={visible={field='Style',values={1}}}}},{style={values={[0]='A',[1]='B'},default=0}})
 assert(variationSource[2].fields[1].visibleWhen=='Style','a shared field may depend on a variation')
 
 -- A label key may list values; the player and dim conditions pass through; a choice may be
 -- a menu-data choice with a note and a sound.
-local _,shaped=Provider.template({
+local _,shaped=template({
     {id='Bars',label='Bars',fields={
         {id='.A',label='Orientation',values=orientation,default=7},
         {id='.K',label='Keys',default=0,values={[0]='None',[1]={label='Swoosh',note='Short',

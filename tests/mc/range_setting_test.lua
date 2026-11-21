@@ -4,6 +4,11 @@ local Layout=require('mc.layout')
 local Menu=require('mc.menu')
 local Model=require('mc.menu_model')
 local Provider=require('mc.provider_settings')
+-- The compiled declaration and its normalized groups, as menu_model takes them.
+local function template(menu,variations)
+    local declaration=Provider.template(menu,variations)
+    return declaration,Provider.normalize(declaration)
+end
 local Ini=require('mc_ini')
 -- A key's first value in a config section, as mc_ini reads it.
 local function iniValue(content,section,key)
@@ -13,7 +18,7 @@ end
 
 -- Declaring a range: {low, high} defaults become the stored '<low>|<high>'.
 local function fails(pattern,source)
-    local ok,err=pcall(Provider.template,{{id='Layout',label='Layout',fields={source}}})
+    local ok,err=pcall(template,{{id='Layout',label='Layout',fields={source}}})
     assert(not ok and tostring(err):find(pattern,1,true),'expected '..pattern..', got '..tostring(err))
 end
 local function range(change)
@@ -21,7 +26,7 @@ local function range(change)
     if change then change(source) end
     return source
 end
-local _,groups=Provider.template({{id='Layout',label='Layout',fields={range()}}})
+local _,groups=template({{id='Layout',label='Layout',fields={range()}}})
 local grow=groups[1].fields[1]
 assert(grow.type=='range' and grow.widget=='range' and grow.default=='20|60' and grow.bounds.deltaMin==10
     and grow.bounds.step==10,'a range normalizes')
@@ -39,7 +44,7 @@ assert(Provider.rangeText(grow.bounds,'20 | 60')=='20|60' and Provider.rangeText
     and Provider.rangeText(grow.bounds,{0,100})=='0|100' and Provider.rangeText(grow.bounds,'0|105')==nil)
 assert(Provider.rangePair('20|60')[1]==20 and Provider.rangePair('20|60')[2]==60)
 -- Pairs give each marker its own bounds; one delta number is both limits.
-local _,zoned=Provider.template({{id='Layout',label='Layout',fields={range(function(s)
+local _,zoned=template({{id='Layout',label='Layout',fields={range(function(s)
     s.values={min={0,60},max={40,100},step=10};s.default={40,60} end)}}})
 local zones=zoned[1].fields[1].bounds
 assert(zones.lowMax==40 and zones.highMin==60 and Provider.rangeText(zones,'50|60')==nil

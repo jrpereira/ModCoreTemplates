@@ -73,7 +73,8 @@ function M.build(definitions, templates, locations)
         declaration.enabled = template.enabled ~= false
         local values = U.copy(template.settings or {})
         overrideDefaults(declaration, values)
-        values = defaults(Provider.normalize(declaration), values)
+        local groups = Provider.normalize(declaration)
+        values = defaults(groups, values)
         -- id is unique across modules: for a template from a mod folder it is
         -- '<providerId>_<localId>' (see module_metadata). localId and providerId name the
         -- template's settings; label is what the menu shows.
@@ -88,7 +89,7 @@ function M.build(definitions, templates, locations)
         -- Preserve template identity: callbacks may close over this table.
         template.settings = values
         local metadata = {id=template.id, localId=template.localId, providerId=template.providerId, label=template.label, category=template.category,
-            module=template.module, description=template.description, menu=declaration, preview=template.preview,
+            module=template.module, description=template.description, menu=declaration, groups=groups, preview=template.preview,
             defaultEnabled=template.defaultEnabled}
         registry.templates[#registry.templates + 1] = {id=template.id, template=metadata,
             unique=unique, priority=template.priority or Runtime.DEFAULT_PRIORITY, order=index, location=assert(locations[index], 'template source path required')}

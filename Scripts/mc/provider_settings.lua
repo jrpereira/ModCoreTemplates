@@ -269,7 +269,7 @@ function M.template(menu, variations)
     menu, variations = menu or {}, variations or {}
     U.array(menu, 'template menu')
     assert(type(variations) == 'table', 'template variations must be a table')
-    local variationNames, variationFields, variationIds, variationChoices = {}, {}, {}, {}
+    local variationNames, variationFields, variationIds, variationChoices, variationDomains = {}, {}, {}, {}, {}
     local resolvedVariationIds = {}
     for name, source in pairs(variations) do
         identifier(name, 'variation id')
@@ -282,7 +282,7 @@ function M.template(menu, variations)
         assert(found, 'variation default must match a choice')
         if source.description ~= nil then text(source.description, 'variation description') end
         variationNames[#variationNames + 1] = name
-        variationChoices[name] = domain.values
+        variationChoices[name], variationDomains[name] = domain.values, domain
         local id = title(name):gsub('%s+', '')
         assert(not resolvedVariationIds[id], 'duplicate/reserved resolved variation id ' .. id)
         resolvedVariationIds[id], variationIds[name] = true, id
@@ -290,7 +290,7 @@ function M.template(menu, variations)
     table.sort(variationNames)
     for _, name in ipairs(variationNames) do
         local source = variations[name]
-        local domain = choiceDomain(source.values, 'variation ' .. name)
+        local domain = variationDomains[name]
         variationFields[#variationFields + 1] = {
             id=variationIds[name],label=title(name),type='enum',values=domain.values,
             labels=domain.labels,default=source.default,
@@ -389,8 +389,8 @@ function M.template(menu, variations)
             groups[#groups + 1] = group
         end
     end
-    local declaration = {enabled=true,target='module',groups=groups}
-    return declaration, M.normalize(declaration)
+    -- Normalized once by its caller, after it sets the target and saved defaults.
+    return {enabled=true,target='module',groups=groups}
 end
 
 -- The widgets each type shows as; the first is its default. navigation is an enum row
