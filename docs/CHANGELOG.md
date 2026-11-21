@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Quickslots on ModCore Controls' Visuals page and on a merged module page (Fangdango):
+  the template picker, labelled Quickslots, is the section's heading, and the chosen
+  template's settings follow right under it. The heading repeating the template's name
+  (Single Underbar, ...) is gone, and the slot's picker is no longer labelled Template.
+  Needs ModCore Settings from this round for the heading in the slot.
+
 - Log levels no longer come from `log_level.txt`. With the UE4SS Lua Log Bridge installed they
   are set on its Logs page or under `[Levels]` in its `config.ini`; without it, WARN and above.
 

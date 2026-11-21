@@ -75,6 +75,9 @@ function M.generate(registry, options)
     end
     local rows, groups, selectors, multiSelectors, pickers = {}, {}, {}, {}, {}
     local groupSections, groupOrder = {}, {}
+    -- A category-picker template's group labelled with the template's own label: its
+    -- category, by group id.
+    local namesTemplate = {}
     local aggregateGroups, aggregateGroupOrder = {}, {}
     local aggregateRows, pageRows, categoryLabels, currentCategory, currentOwner = {}, {}, {}, nil, nil
     local function row(fields)
@@ -359,9 +362,14 @@ function M.generate(registry, options)
                             groupVisible = rule(assert(providerFieldIds[providerGroup.variationSource],
                                 'group variation source must precede its group'), providerGroup.variationValues)
                         end
-                        groupId = groupId or group(key({identity, 'provider', providerGroup.id}),
-                            providerGroup.label, groupVisible, providerGroup.style,
-                            scopePrefix .. publicName(providerGroup.id))
+                        if not groupId then
+                            groupId = group(key({identity, 'provider', providerGroup.id}),
+                                providerGroup.label, groupVisible, providerGroup.style,
+                                scopePrefix .. publicName(providerGroup.id))
+                            if entry.unique == 'category' and providerGroup.label == template.label then
+                                namesTemplate[groupId] = category
+                            end
+                        end
                         -- Under a template's on/off heading row its groups are subgroups,
                         -- headed in ModCoreSettings' smaller subgroup style without a rule.
                         groupSections[groupId].within = headingId
@@ -418,6 +426,27 @@ function M.generate(registry, options)
         if out.type == 'range' then out.default = Provider.rangePair(out.default) end
         return conditioned(out)
     end
+    -- Where a category's picker stands in for its group's heading (style category), it
+    -- names the chosen template, so a group of that template labelled with its name goes
+    -- unheaded: its rows follow the picker's heading. A title row keeps them headed:
+    -- ModCoreSettings styles rows before a page's first heading as headings.
+    local function unheaded(sections, headed)
+        for _, section in ipairs(sections) do
+            local category = namesTemplate[section.id]
+            if category and headed[category] then section.style = 'none' end
+            if section.groups then unheaded(section.groups, headed) end
+        end
+    end
+    local function headedCategories(selectedRows)
+        local headed = {}
+        for _, item in ipairs(selectedRows) do
+            local selector = item._category and selectors[item._category]
+            if selector and selector.id == item.id and item.style == 'category' then
+                headed[item._category] = true
+            end
+        end
+        return headed
+    end
     -- A page's menu data. Values are stored in configFile (the central config by default),
     -- relative to the page's config directory; with options.root every page's default is
     -- the central config, relative to the Mods folder.
@@ -461,6 +490,7 @@ function M.generate(registry, options)
             if aggregatePage and stored.style == 'title' then stored.style = nil end
             menu.fields[#menu.fields + 1] = stored
         end
+        if not aggregatePage then unheaded(menu.groups, headedCategories(selectedRows)) end
         return menu
     end
     local schema = {}
@@ -607,10 +637,11 @@ function M.generate(registry, options)
                 if item._category == category and item._slot then selectedRows[#selectedRows + 1] = item end
             end
             -- As on a module page: the category's pickers, then each template's groups under
-            -- their own headings. The pickers share the unheaded group Slot (a host slot with
-            -- slotLabel heads it with its own label); the templates' groups keep their labels
-            -- and styles but no rules: each row carries its slot visibility, and a heading
-            -- shows while any of its rows does.
+            -- their own headings. The pickers share the unheaded group Slot, where the
+            -- category picker, labelled with the category, stands in for its heading; the
+            -- templates' groups keep their labels and styles but no rules: each row carries
+            -- its slot visibility, and a heading shows while any of its rows does. A group
+            -- named after its template goes unheaded, as the picker names it.
             local menu = {storage = {file = central or Layout.configFile, section = 'Templates'},
                 groups = {{id = 'Slot', style = 'none'}}, fields = {}}
             local aggregate, used, listed = {}, {}, {}
@@ -634,12 +665,13 @@ function M.generate(registry, options)
                 end
             end
             local selector = selectors[category] and selectors[category].id
+            if selector then unheaded(menu.groups, {[category] = true}) end
             for _, item in ipairs(selectedRows) do
                 local stored = plain(item)
                 -- A slot row keeps its other rules and takes its slot's visibility.
                 if aggregate[item.group] then stored.group, stored.style = 'Slot', nil end
-                -- The category picker is the page's Template entry.
-                if stored.id == selector then stored.label = 'Template' end
+                -- The category picker heads the slot's rows.
+                if stored.id == selector then stored.style = 'category' end
                 local conditions = stored.conditions or {}
                 conditions.visible = U.copy(item._slot.visible)
                 stored.conditions = next(conditions) and conditions or nil
@@ -679,12 +711,13 @@ function M.generate(registry, options)
         local entry = slotModules[module]
         local providerId = aggregateId .. '.module.' .. publicName(module)
         -- The notice is the page's only link: navigation rows stay out, as in the slot.
-        -- The template picker sits below the notice as in the slot, not in the title row.
+        -- The template picker sits below the notice as in the slot, heading the rows
+        -- after it rather than in the title row.
         local selectedRows = {}
         for _, item in ipairs(routedRows(entry.categories, entry.owned)) do
             if item.style == 'title' then
                 item = U.copy(item)
-                item.style = nil
+                item.style = 'category'
             end
             if not item.action then selectedRows[#selectedRows + 1] = item end
         end

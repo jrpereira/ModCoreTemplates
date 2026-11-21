@@ -79,7 +79,13 @@ category page rather than its module page.
   limited to its own templates, where they are stored. It starts with a small notice,
   "These settings have been merged into Controls and can also be edited there", whose
   button opens the slot. That notice is the page's only
-  link; navigation rows are left out, as in the slot. When the
+  link; navigation rows are left out, as in the slot. On the slot and on that page the
+  category picker, labelled with the category (`Quickslots`), stands in for its group's
+  heading (`style='category'`), and a template's group labelled with the template's own
+  label is unheaded (`style='none'`): the picker already names the template, so its
+  rows follow the picker's divider. Other template groups keep their headings. A page
+  whose picker sits in the title row, and the ModCore Templates page, keep every heading.
+  When the
   slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
   the hidden page under ModCore Templates instead, with the same storage and Apply.
 
