@@ -78,7 +78,6 @@ function M.generate(registry, options)
     local aggregateGroups, aggregateGroupOrder = {}, {}
     local aggregateRows, pageRows, categoryLabels, currentCategory, currentOwner = {}, {}, {}, nil, nil
     local function row(fields)
-        assert(#rows < 256, 'generated menu exceeds 256 settings')
         rows[#rows + 1] = fields
         fields._category = currentCategory
         fields._owner = currentOwner
@@ -439,6 +438,7 @@ function M.generate(registry, options)
                 listed[groupId] = section
             end
         end
+        assert(#selectedRows <= M.MAX_FIELDS, providerName .. ': page exceeds ' .. M.MAX_FIELDS .. ' settings')
         for _, item in ipairs(selectedRows) do
             local stored = plain(item)
             -- The aggregate lists several categories, so none takes the title row.
@@ -668,6 +668,8 @@ function M.generate(registry, options)
                 stored.conditions = next(conditions) and conditions or nil
                 menu.fields[#menu.fields + 1] = stored
             end
+            assert(#menu.fields <= M.MAX_FIELDS,
+                categoryLabels[category] .. ': slot page exceeds ' .. M.MAX_FIELDS .. ' settings')
             local page = {id=providerId, name=categoryLabels[category], slot=slot,
                 rows=selectedRows, menu=menu}
             page.decode = makeDecoder(page.rows, {[category]=true})
@@ -761,6 +763,8 @@ function M.generate(registry, options)
         pageByCategory=pageByCategory, pageByModule=pageByModule, pageBySlot=pageBySlot, providers=providers}
 end
 
+-- ModCoreSettings' limit on the fields of one published page.
+M.MAX_FIELDS = 256
 -- The key of a template picker's None choice. A loaded template's id holds an '_', so
 -- none can take it; a template id 'None' is refused.
 M.NONE = 'None'
