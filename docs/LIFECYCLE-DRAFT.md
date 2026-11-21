@@ -191,8 +191,9 @@ per attachment, in priority order:
   and `state`; `event` is `{name='wake' or 'sleep', signal=<signal or nil>}`. There
   are no objects or screen. A failing callback is reported and the template still
   changes state, so a later sleep can undo a partial wake.
-- `update(params, event)`: called at once, in the frame of the game call that caused
-  it. `params.settings` is the template's own table, not a copy: read it, do not
+- `update(params, event)`: called as soon as the event's source reports it. For
+  `MC_NPCAttackIndicator` that is the engine tick after the game's change, about one
+  frame later (see below). `params.settings` is the template's own table, not a copy: read it, do not
   change it. `event` is the update event with `name='update'` and `signal` set to
   its name. Objects in it are valid only during the call.
 

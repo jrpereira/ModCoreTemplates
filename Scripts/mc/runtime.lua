@@ -1389,8 +1389,9 @@ function M.new(host, definitions, templates, state, options)
         return false
     end
     -- Delivers an update event to the awake templates whose category takes it,
-    -- as update(params, event) with params.settings, at once and in the caller's
-    -- frame: a source inside a game call keeps that call's timing. The event
+    -- as update(params, event) with params.settings, synchronously in emit's call:
+    -- the timing is the source's (the attack indicator's bridge hook reports on
+    -- the next engine tick, about a frame after the game's change). The event
     -- may carry live objects valid only during the call; settings are the
     -- template's own, not copies. A failing template is reported and the rest
     -- still receive it.
