@@ -15,6 +15,15 @@
   `PlayerQuickslots=Fangdango_SingleUnderbar`), and shared category fields under
   `[<category>]`. Templates declare nothing for it and menu ids are unchanged. Values
   saved by earlier builds are not read: those settings start at their defaults.
+- A category that fails while MCT updates the HUD is reported with its id, and the other
+  categories still attach, detach and wake their templates.
+- The 256-setting limit applies to each settings page, as in ModCore Settings, not to all
+  modules' template settings together.
+- Fractional defaults are written to `config.ini` in their short form (`0.1`, not
+  `0.10000000000000001`).
+- Less work per HUD update: each category's objects are read once per pass, and
+  templates already up to date are skipped before any readiness check.
+- Template providers must load after MCT; the developer guide says how UE4SS orders mods.
 
 ## v1.9.1
 
