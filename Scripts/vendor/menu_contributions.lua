@@ -4,7 +4,7 @@
 -- variable per contributor; ModCoreSettings reads them while building the menu.
 -- Descriptors use contract 1, contract 2 when they carry slot rows or slot links,
 -- contract 3 when a page names a hooks file, or contract 4 when a page carries menu data.
-local M={version=8,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
+local M={version=9,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
 local PREFIX='MCS_MenuContrib_v1_'
 M.prefix,M.index=PREFIX,PREFIX..'index'
 local MAX_PAGES,MAX_ROWS,MAX_ROW_SETTINGS,MAX_MANIFEST=256,64,32,262144
@@ -74,8 +74,11 @@ local function check(contributor,contribution)
             and not page.description:find('%z')),'invalid '..where..' description')
         assert(page.visible==nil or type(page.visible)=='boolean','invalid '..where..' visible')
         -- module: listed in the ModCore browser group. tool: listed only under the ModCore
-        -- page's Developer Tools tab.
-        assert(page.group==nil or page.group=='module' or page.group=='tool','invalid '..where..' group')
+        -- page's Developer Tools tab. inner: listed nowhere; a page link opens it, and Back
+        -- returns to the link's page. It belongs to its parent page, so it needs under.
+        assert(page.group==nil or page.group=='module' or page.group=='tool' or page.group=='inner',
+            'invalid '..where..' group')
+        assert(page.group~='inner' or page.under~=nil,where..': an inner page needs under')
         -- A hooks page generates its manifest in ModCoreSettings each time the menu is built.
         if page.hooks~=nil then
             line(page.hooks,1024,where..' hooks')
