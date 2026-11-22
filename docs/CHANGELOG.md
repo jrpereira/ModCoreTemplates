@@ -1,17 +1,6 @@
 # Changelog
 
-## Unreleased
-
-- Quickslots on the Controls tab of the ModCore Settings page and on a merged module page (Fangdango):
-  the template picker, labelled Quickslots, is the section's heading, and the chosen
-  template's settings follow right under it. The heading repeating the template's name
-  (Single Underbar, ...) is gone, and the slot's picker is no longer labelled Template.
-  Needs ModCore Settings from this round for the heading in the slot.
-
-- Log levels no longer come from `log_level.txt`. With the UE4SS Lua Log Bridge installed they
-  are set on its Logs page or under `[Levels]` in its `config.ini`; without it, WARN and above.
-
-## v1.9.2
+## v1.10.0
 
 - Fixed: on a fresh install, ModCore Templates could not save its settings or show its
   menu, leaving the settings of every module using templates (Preymonition, Fangdango)
@@ -21,16 +10,22 @@
   new `params.screen`.
 - Template settings are saved per template: `[<Module>.<Template>] <Setting>` in the
   supplying mod's `config.ini` (for example `[Preymonition.Omens] ParryStyle=chevron`),
-  the active template of each category under `[Templates]` (for example
-  `PlayerQuickslots=Fangdango_SingleUnderbar`), and shared category fields under
-  `[<category>]`. Templates declare nothing for it and menu ids are unchanged. Values
-  saved by earlier builds are not read: those settings start at their defaults.
-- Each value is stored in one place, whichever page shows it: a category's template
-  picks and shared fields in MCT's `Scripts/cache/config.ini`, every template's settings
-  in its own mod's `config.ini`, on module, category and slot pages alike (Fangdango's
-  quickslot bars included). Two modules supplying one category now share its picker
-  instead of each keeping a copy. Picks left in a provider's `config.ini` by earlier
-  builds are ignored. Requires ModCore Settings with per-row storage files.
+  the active template of each category under `[Templates]` in MCT's
+  `Scripts/cache/config.ini` (for example `PlayerQuickslots=Fangdango_SingleUnderbar`),
+  and shared category fields under `[<category>]` there. Templates declare nothing for
+  it and menu ids are unchanged. Settings saved by 1.9.1 are not read: template picks
+  and template settings start at their defaults once.
+- Each value is stored in one place, whichever page shows it: module, category and slot
+  pages alike (Fangdango's quickslot bars included). Two modules supplying one category
+  share its picker instead of each keeping a copy.
+- Quickslots on the Controls tab of the ModCore Settings page and on a merged module page
+  (Fangdango): the template picker, labelled Quickslots, is the section's heading, and the
+  chosen template's settings follow right under it. The heading repeating the template's
+  name (Single Underbar, ...) is gone, and the slot's picker is no longer labelled
+  Template.
+- Log levels no longer come from `log_level.txt`. With the UE4SS Lua Log Bridge installed
+  they are set on its Logs page or under `[Levels]` in its `config.ini`; without it, WARN
+  and above.
 - A category that fails while MCT updates the HUD is reported with its id, and the other
   categories still attach, detach and wake their templates.
 - The 256-setting limit applies to each settings page, as in ModCore Settings, not to all

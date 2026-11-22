@@ -251,7 +251,7 @@ A preview attachment receives only preview events, never the game's, and shows w
 waiting for combat.
 
 A module whose templates sit in another provider's slot (player.quickslots, in ModCore
-Controls' Visuals) gets the preview on its own page too.
+Controls' Quickslots section) gets the preview on its own page too.
 
 #### Lending the game's widgets
 
