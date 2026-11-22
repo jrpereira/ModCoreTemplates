@@ -80,5 +80,4 @@ UE4SS Lua Log Bridge and raise ModCoreTemplates's level on its Logs page, or set
 - [Template menus](MENUS.md): fields, variations, placement and storage.
 - [Lifecycle reference](LIFECYCLE-DRAFT.md): registration, callbacks and events.
 - [Object discovery and limits](OBJECT-SOURCE.md): which objects templates get, and when.
-- [Build guide](BUILD.md): running the tests.
 - [Changelog](CHANGELOG.md): version history.

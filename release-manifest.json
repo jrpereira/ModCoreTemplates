@@ -61,7 +61,6 @@
     "Scripts/vendor/mc_log.lua": "Scripts/vendor/mc_log.lua",
     "README.md": "docs/README.md",
     "CHANGELOG.md": "docs/CHANGELOG.md",
-    "BUILD.md": "docs/BUILD.md",
     "DEVELOPERS.md": "docs/DEVELOPERS.md",
     "LIFECYCLE-DRAFT.md": "docs/LIFECYCLE-DRAFT.md",
     "MENUS.md": "docs/MENUS.md",
