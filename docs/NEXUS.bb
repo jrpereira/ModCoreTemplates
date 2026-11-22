@@ -1,5 +1,9 @@
 [b]ModCore Templates[/b]
 
+[center][b]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/b]
+[size=4][b]Tested for The Blood of Dawnwalker 1.2[/b][/size]
+[b]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/b][/center]
+
 ModCore Templates (MCT) provides an environment for modifying Dawnwalker's UI with Lua templates. Declare the objects and properties you want to change; MCT finds ready targets, manages their lifecycle and generates settings menus.
 
 [b]Features and benefits[/b]
