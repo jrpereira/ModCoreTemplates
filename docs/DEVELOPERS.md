@@ -74,8 +74,8 @@ appear in `objects`; dependencies are resolved automatically. Declare every
 property you change in `properties`, even when using a helper. The supplied
 `original` has the same object structure and contains captured values.
 
-For quickslots, select the template under **Controls → Visuals → Quickslots
-Visuals**, then Apply. If the slot is unavailable, MCS lists the fallback category
+For quickslots, select the template in the **Quickslots** picker on the **Controls** tab of
+the ModCore Settings page, then Apply. If the slot is unavailable, MCS lists the fallback category
 page under ModCore Templates. Selecting None restores the original translation.
 
 ## Add settings

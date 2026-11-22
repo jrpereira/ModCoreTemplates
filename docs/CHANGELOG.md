@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Quickslots on ModCore Controls' Visuals page and on a merged module page (Fangdango):
+- Quickslots on the Controls tab of the ModCore Settings page and on a merged module page (Fangdango):
   the template picker, labelled Quickslots, is the section's heading, and the chosen
   template's settings follow right under it. The heading repeating the template's name
   (Single Underbar, ...) is gone, and the slot's picker is no longer labelled Template.

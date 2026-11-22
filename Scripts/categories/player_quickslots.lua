@@ -20,7 +20,7 @@ local category = {
     -- Templates receive control events once the player is in the game.
     hooks = { wake = "MC_PlayerReady" },
     -- The Template picker and the selected template's settings appear in
-    -- ModCore Controls' Visuals section instead of an MCT or module page.
+    -- the Controls tab of the ModCore Settings page instead of an MCT or module page.
     slot = { provider = 'controls', slot = 'visuals' },
     -- MCT moves both wheels into its canvas and restores the native hierarchy
     -- when no quickslot template is selected. The game's own state picks the

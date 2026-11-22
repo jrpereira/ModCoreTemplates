@@ -206,8 +206,8 @@ for _, template in ipairs(templates) do
     local where
     local config = '`' .. moduleFolder .. '/config.ini`'
     if category.slot then
-        local host, slot = category.slot:match('^([^:]+):(.+)$')
-        where = ('in the %s page\'s %s section, and on this module\'s page'):format(title(host), title(slot))
+        local host = category.slot:match('^([^:]+):')
+        where = ('on the %s tab of the ModCore Settings page, and on this module\'s page'):format(title(host))
         config = '`' .. mctFolder .. '/' .. Layout.configFile .. '`'
     elseif template.menuTarget == 'templates' then
         where = ('on the %s page, under ModCore Templates'):format(categoryName)

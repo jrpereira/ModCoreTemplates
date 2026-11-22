@@ -59,8 +59,8 @@ One per category that has templates with `uniqueBy = 'category'`, and one per pr
 for templates with `uniqueBy = 'priority'`. Only one template in each picker can be active.
 
 - **Template** (`MCT_Template`): which template is active for `player.quickslots`.
-  Choose **None** to restore the original game state. It appears in ModCore Controls'
-  Visuals section, not on an MCT page.
+  Choose **None** to restore the original game state. It appears on the Controls
+  tab of the ModCore Settings page, as the Quickslots heading, not on an MCT page.
 - **`<Category>` Template** (`MCT_<Category>Template`, such as `MCT_PlayerRadialTemplate`):
   the same choice for category-unique templates in other categories, such as
   `player.radial`, `player.compass`, `player.charges`, `player.self` and `player.stats`.
