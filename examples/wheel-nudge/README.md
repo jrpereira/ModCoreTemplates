@@ -9,7 +9,7 @@ screen width and height. It uses MCT's `player.quickslots` category.
 2. Put this example's `mod.json` and `Scripts/` in `Mods/WheelNudge/` and enable
    it through UE4SS (for example, add `enabled.txt`).
 3. Restart. `Scripts/main.lua` registers sibling `mc_nudge.lua`.
-4. Open **Controls → Visuals → Quickslots Visuals**, select **Wheel Nudge**, and Apply.
+4. Open **ModCore Settings → Controls**, choose **Wheel Nudge** in the **Quickslots** picker, and Apply.
 5. Change Horizontal offset to `10` and Apply. With screen width 1920, this adds
    192 local translation units. Parent scaling can change the visible distance.
 6. Select None or another template to restore the original position.

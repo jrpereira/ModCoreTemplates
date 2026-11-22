@@ -1,4 +1,2 @@
-Compatibility with mod_settings.ini is implemented by ModCore Templates.
-Templates are reusable components whose settings expand the modules
-that use them and expose such settings as their own. For a list of settings,
-please consult SETTINGS.md
+This mod has no mod_settings.ini: its settings are on its page in the mod menu.
+For the list of settings, see docs/SETTINGS.md.

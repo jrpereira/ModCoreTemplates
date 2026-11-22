@@ -174,13 +174,8 @@ local function add(text) lines[#lines + 1] = text or '' end
 
 add('# ' .. moduleName .. ' settings')
 add()
-add(moduleName .. ' does not ship a `mod_settings.ini`. Compatibility with `mod_settings.ini` is'
-    .. ' implemented by ModCore Templates.')
-add()
-add('Templates are reusable components. A module that uses a template gains the template\'s settings'
-    .. ' and shows them as its own. When the game starts, ModCore Templates collects the settings of'
-    .. ' every installed template and ModCore Settings builds the menu pages from them, so the pages'
-    .. ' always match what is installed.')
+add(moduleName .. ' has no `mod_settings.ini`: its settings are on its page in the mod menu, grouped'
+    .. ' by the parts listed below.')
 add()
 add('Change these settings in the mod menu and press Apply. Each template below names the'
     .. ' `config.ini` that keeps its values, in a section of its own named after the module and the'
