@@ -78,7 +78,7 @@ assert(slotFields[own('player.quickslots','Wide').settings.LookSize].storage.fil
     and slotFields[own('player.quickslots','Bar').settings.LookSize].storage.file=='A/config.ini',
     'slot rows are saved in their template\'s mod')
 assert(slotFields[menu.selectors['player.quickslots'].id].storage.file==nil,'the slot pick stays central')
--- ModCoreSettings takes the files, when on LUA_PATH (not in CI).
+-- ModCoreSettings takes the files, when on LUA_PATH.
 local hasMenuData,MenuData=pcall(require,'menu_data')
 if hasMenuData then
     for _,page in ipairs({menu.pageByModule.A,slot}) do

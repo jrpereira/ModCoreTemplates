@@ -60,7 +60,7 @@ for _,field in ipairs(page.menu.fields) do published[field.id]=field end
 assert(published[omens.settings.ParryStyle].storage.section=='Preymonition.Omens'
     and published[omens.settings.ParryStyle].storage.key=='ParryStyle')
 assert(page.menu.storage.file=='config.ini')
--- ModCoreSettings compiles it to the row's own section and key, when on LUA_PATH (not in CI).
+-- ModCoreSettings compiles it to the row's own section and key, when on LUA_PATH.
 local hasMenuData,MenuData=pcall(require,'menu_data')
 if hasMenuData then
     local manifest=MenuData.manifest(page.menu)

@@ -17,7 +17,6 @@ mod_settings.ini
 /dist/
 __pycache__/
 *.py[cod]
-.pytest_cache/
 
 # Generated template state; created at runtime, never committed or shipped
 /Scripts/cache/

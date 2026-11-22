@@ -77,7 +77,7 @@ local field
 for _,item in ipairs(page.menu.fields) do if item.id==growId then field=item end end
 assert(field and field.type=='range' and field.values.min==0 and field.values.delta[1]==10 and field.values.suffix=='%'
     and field.default[1]==20 and field.default[2]==60 and field.widget==nil,'the page carries a range field')
--- ModCoreSettings compiles it, when its Scripts are on LUA_PATH (not in CI).
+-- ModCoreSettings compiles it, when its Scripts are on LUA_PATH.
 local hasMenuData,MenuData=pcall(require,'menu_data')
 if hasMenuData then
     local manifest=MenuData.manifest(page.menu)
