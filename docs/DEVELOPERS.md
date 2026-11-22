@@ -1,7 +1,7 @@
 # Developer guide
 
-A provider is your UE4SS mod. It registers templates with MCT; MCT loads each
-file in its own Lua state. Start with a managed template so MCT handles property
+A provider is your UE4SS mod. It registers templates with MCT, which loads each
+template file in its own Lua state. Start with a managed template so MCT handles property
 capture, restoration and settings updates.
 
 ## Create a provider
@@ -27,13 +27,12 @@ local MC = require('mc')
 MC.registerTemplate('nudge') -- loads sibling mc_nudge.lua at MCT startup
 ```
 
-Register each template separately before the startup barrier, from a file directly in
+Register each template separately while mods start, from a file directly in
 your mod's `Scripts` folder. Your mod must load after MCT: UE4SS starts the mods listed in
 `mods.txt` first, then the mod folders in alphabetical order, so keep your mod out of
 `mods.txt` and give its folder a name that sorts after `3_ModCore_Templates` (the
 first-party providers use `9_`). A mod that starts first cannot `require('mc')` on a fresh
-install, and its registration fails because MCT has not opened it yet; MCT does not queue
-it. Late registrations are rejected; duplicate file
+install, and its registration fails. Late registrations are rejected; duplicate file
 registrations are ignored. A template file outside a mod's `Scripts` folder, or any
 other invalid template, is reported and skipped without removing other valid templates.
 
@@ -41,8 +40,8 @@ other invalid template, is reported and skipped without removing other valid tem
 
 This complete `mc_nudge.lua` moves the ability wheel by 20 local units. `id` is
 required: a letter, then letters, digits, `_` or `.`, unique within its module. When
-MCT loads the file it prefixes `id` with the module id, which it asks ModCoreSettings for
-(the `id` in the module's `mod.json`, else the folder name): from then on `template.id` is
+MCT loads the file it prefixes `id` with the module id (the `id` in the module's
+`mod.json`, else the folder name): from then on `template.id` is
 `<Module>_<Id>`, such as `Fangdango_Wheels`, and `template.localId` keeps the declared `id`.
 The template's settings are named `MCT_<Module>_<Id>_...`, such as
 `MCT_Fangdango_Wheels_Enabled`, and a template picker saves the full id. Two templates
@@ -107,7 +106,7 @@ instead. From the folder holding both repositories, run:
 lua5.4 ModCoreTemplates/tools/settings_reference.lua YourProvider
 ```
 
-It loads your templates as MCT does and writes `docs/SETTINGS.md`, every template's
+It reads your templates and writes `docs/SETTINGS.md`, every template's
 settings with their options, defaults and saved keys, and `MOD_SETTINGS.txt`, a short
 pointer to it, at your module root. Commit both and list them in your release manifest
 (`"SETTINGS.md": "docs/SETTINGS.md"` and `"MOD_SETTINGS.txt": "MOD_SETTINGS.txt"`).
@@ -138,8 +137,8 @@ screen, as a settings change would. Lay out from `params.screen` in `attach` and
 Use supplied objects during callbacks. For subscriptions, register cleanup with
 `params.onCleanup(unsubscribe)`. Cleanup also runs after world teardown, when
 the attachment's widgets have been collected: never call a widget kept from an
-earlier callback, since UE4SS `IsValid` itself reads the freed object. Keep it
-as a weak handle and read it back, which returns nil once it died:
+earlier callback: after a save load that can crash the game. Hold it instead and
+read it back, which returns nil once it died:
 
 ```lua
 local Objects = require('mc').load('objects')
@@ -163,6 +162,5 @@ Template helpers share MCT's Lua module search path. Put your own helpers in a
 module-specific folder, for example `require('wheelnudge.layout')`, to avoid
 name collisions. Use `MC('widget')` for MCT's widget helpers.
 
-Run the [offline tests](BUILD.md), then test selection, repeated Apply, switching
-templates and restoration in game. Invalid objects receive no detach callback;
-MCT forgets them and runs managed cleanup without accessing dead widgets.
+Test selection, repeated Apply, switching templates and restoration in game. Objects
+that died receive no detach callback; managed cleanup still runs.

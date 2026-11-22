@@ -1,36 +1,25 @@
 # Lifecycle reference
 
-This describes the current `Scripts/mc/` implementation. The filename is retained
-for existing links. Provider authors should start with the
-[developer guide](DEVELOPERS.md); the host contract below is for runtime adapters.
+Provider authors should start with the [developer guide](DEVELOPERS.md); this page is
+the reference for registration, objects, callbacks and events.
 
 ## Startup and registration
 
-1. Load category definitions and construct the object source.
-2. Accept explicit provider paths through `MC.registerTemplate('name')`.
-3. At the one-shot startup barrier, close registration and load files. The barrier
-   is UE4SSLuaEventBridge's `onLoopStart`, which fires after UE4SS has started every
-   Lua mod; MCT then continues on the game thread. A bare `ExecuteInGameThread` is not
-   a barrier: the game thread already ticks while mods are starting.
-4. Validate metadata, templates and menus; restore settings and subscribe to Apply.
-5. Subscribe to lifecycle notifications before the first object snapshot.
-6. Attach selected templates when their objects are ready.
+1. Providers register template files with `MC.registerTemplate('name')` from their
+   `Scripts/main.lua`.
+2. Once every Lua mod has started, MCT closes registration and loads the files.
+3. MCT validates templates and menus and restores saved settings.
+4. Selected templates attach when their objects are ready.
 
 Each template file returns a table declaring `category` and `objects`. Its provider's
-`mod.json` supplies module identity, author and version. Registration loads no template
-code until the barrier. Late registrations are rejected, duplicates ignored, and a
-failing provider file is reported and skipped. Invalid categories or shared startup
-services fail startup.
+`mod.json` supplies module identity, author and version. No template code runs at
+registration. Late registrations are rejected, duplicates ignored, and a failing
+provider file is reported and skipped.
 
 An optional `template.loaded(onCleanup)` hook runs after metadata is applied.
 Register cleanup functions with `onCleanup` or return one. MCT runs them in reverse
 order on provider failure or session stop. Failed cleanup remains available for a
 later stop attempt. MCT cannot undo effects whose cleanup was never registered.
-
-For standalone hosts, `mc.bootstrap.new(options)` accepts categories, a host,
-`subscribeLoopStart(callback)` returning an unsubscribe function, and optional
-`execute(path)`. Its `registerTemplate(path)` accepts explicit paths until the
-barrier. Installed providers use the public client instead.
 
 ## Objects
 
@@ -70,7 +59,7 @@ id), whatever order the templates attach in. A created object may `adopt` a list
 existing objects: they move in as its children, optionally with `adoptLayout='canvas'`
 and `adoptOpacity`, and return to their saved parent, order and slot when it is
 released. Templates own visual layout. See [Object source](OBJECT-SOURCE.md) for
-native lookup and identity limits.
+how objects are found and their limits.
 
 ## Managed callbacks (default)
 
@@ -128,26 +117,20 @@ including no return, mean success for unmanaged callbacks.
 | Valid objects lose readiness, selection changes, or stop | Cleanup and restore | `detach` |
 | Objects become invalid | Cleanup and forget; no property restoration | Forget; no `detach` |
 
-Outgoing detaches precede incoming attaches. Failed detach can block a replacement
-on that object. Other templates/objects continue. Managed failures attempt
-restoration; unmanaged code must undo partial mutations itself. Repeating `stop()`
-can retry failed detaches. Callbacks run serially; reentrant work is queued.
-
-With menu subscriptions, use committed menu state as the selection authority.
-Standalone hosts may use `runtime:select(category, {[templateId]=overrides})` and
-`runtime:setCategorySettings(category, settings)`. An empty selection disables
-all templates in that category. Do not mix direct edits with a menu controller's
-saved snapshot. `runtime.errors` and `runtime:attachments(id)` expose diagnostics.
+Outgoing detaches precede incoming attaches. A failed detach can block a replacement
+on that object. Other templates and objects continue. Managed failures attempt
+restoration; unmanaged code must undo partial changes itself. Callbacks run one at a
+time.
 
 ## Helpers and events
 
 `local MC=require('mc')` exposes `valid`, `same`, `parent`, `call`, `hold`, `get`
 and `release` helpers. The first four take objects from the current call.
-`same` compares valid full names, not lifetime tokens. `parent` returns a UMG
+`same` tells whether two objects have the same full name. `parent` returns a UMG
 panel parent. `MC.call` returns the first method result or nil on failure.
-`MC.hold(object)` returns a UE4SSLuaEventBridge weak handle, or nil and a reason;
-`MC.get(handle)` returns the live object or nil once it died, without reading a
-dead object; `MC.release(handle)` drops it early.
+`MC.hold(object)` returns a handle, or nil and a reason;
+`MC.get(handle)` returns the live object or nil once it died; `MC.release(handle)`
+drops it early.
 `MC('widget')` and `MC.load('widget')` load the widget helper.
 
 `MC.template('wheels', defaults)` loads sibling `mc_wheels.lua`, with template
@@ -179,8 +162,8 @@ A category's `hooks` time its templates with MCT's signals:
 | `MC_CombatEnd` | Combat ends, or a loading screen finishes fading in | `MC_CombatStart` |
 
 A signal holds from when it fires until its opposite fires; none holds before it
-first fires. When the game hook behind a signal cannot be registered, a start
-signal holds for good and an end signal never fires. `player.quickslots` wakes on
+first fires. When a signal is unavailable in the game, a start signal holds for good
+and an end signal never fires. `player.quickslots` wakes on
 `MC_PlayerReady`. `npc.attacks` attaches on `MC_PlayerReady`, wakes on
 `MC_CombatStart`, sleeps on `MC_CombatEnd` and takes `MC_NPCAttackIndicator` updates.
 
@@ -192,14 +175,13 @@ per attachment, in priority order:
   are no objects or screen. A failing callback is reported and the template still
   changes state, so a later sleep can undo a partial wake.
 - `update(params, event)`: called as soon as the event's source reports it. For
-  `MC_NPCAttackIndicator` that is the engine tick after the game's change, about one
-  frame later (see below). `params.settings` is the template's own table, not a copy: read it, do not
+  `MC_NPCAttackIndicator` that is about one frame after the game's change (see below). `params.settings` is the template's own table, not a copy: read it, do not
   change it. `event` is the update event with `name='update'` and `signal` set to
   its name. Objects in it are valid only during the call.
 
 `MC_NPCAttackIndicator` turns the combat target indicator's icon changes into update
-events. It is hooked only while a template listens and needs UE4SSLuaEventBridge
-1.3.0; without it MCT logs that the indicator is unavailable. Events follow the game
+events. It needs UE4SSLuaEventBridge 1.3.0; without it MCT logs that the indicator is
+unavailable. Events follow the game
 by about one frame and carry an increasing `sequence`:
 
 | `kind` | Fields | Meaning |
@@ -211,37 +193,5 @@ by about one frame and carry an increasing `sequence`:
 
 `direction` is 1 top, 2 bottom, 3 left, 4 right. `indicator` is the live widget,
 valid only during the event; `path` names it for later. `stub` is the attacking
-enemy's `DogwoodAIStub` path, from the attack task the game begins in the icon's
-frame or the one before; it is nil when no task pairs with the icon or two enemies'
-tasks do, and `unblockable` carries it only when `active`.
-
-## Event host contract
-
-| Operation | Responsibility |
-| --- | --- |
-| `valid(object)` | Safe validity check |
-| `identity(object)` | String identifying a live instance and its generation |
-| `ready(object)` | Whether callbacks may use it |
-| `matches(object, selector)` | Object/class match before `within` filtering |
-| `parent(object)` | Parent for descendant membership, or nil |
-| `find(selector)` | Snapshot of candidates, including unready ones |
-| `screen(object)` | Screen dimensions/reference points, or nil when not ready |
-| `subscribe(sink, getEpoch)` | Subscribe to events; return unsubscribe |
-| `onError(error)` | Report failures |
-| `unwrap(object)` (optional) | Resolve the native object; nil suppresses callbacks |
-| `mutate(callback)` (optional) | Run work inside the host's mutation scope |
-
-Deliver events on the game thread. Capture the epoch before queuing work:
-
-```lua
-sink({kind='changed', object=object, epoch=capturedEpoch})
-```
-
-Old epochs are ignored. `changed` covers creation, readiness and parent changes.
-There is no loss or world event: a destroyed object fails `valid` and is forgotten,
-without a detach callback, at the next reconcile. Partial subscription failures must
-release installed hooks.
-
-Startup enumerates objects; later events reevaluate cached candidates. Missing native notifications cannot be inferred without polling.
-Use the [build guide](BUILD.md) for validation; native hook coverage and timely
-invalidation still require in-game checks.
+enemy's `DogwoodAIStub` path; it is nil when the attacker cannot be told, and
+`unblockable` carries it only when `active`.

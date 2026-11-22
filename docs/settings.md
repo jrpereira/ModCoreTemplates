@@ -7,10 +7,8 @@ that declares a mod's settings up front. MCT cannot ship one because it has no s
 of its own to declare. Its settings come from whichever templates and categories are
 installed, and they change whenever a provider mod is added or removed.
 
-Instead, MCT describes its pages as menu data after the templates load and publishes
-them through ModCoreSettings (MCS), which builds the pages. MCT writes nothing at the
-mod root and never writes DMM manifests. Values are saved in `config.ini` files, not in
-a manifest. Leftover `mod_settings.ini` files from older builds are ignored.
+Instead, ModCore Settings (MCS) shows MCT's pages, built from the installed templates.
+Values are saved in `config.ini` files. A leftover `mod_settings.ini` is ignored.
 
 ## Where values are stored
 
@@ -41,16 +39,15 @@ ParrySize=30|80
 `<Template>` the template's declared `id`. A key is the setting's name as the template
 declares it (a relative field id joined to its group: `Parry` + `.Style` is
 `ParryStyle`); a template's on/off toggle is `Enabled`. Templates declare nothing for
-this. Keys left by older builds (`MCT_...` under `[Templates]`) are ignored: those
-settings start at their defaults.
+this.
 
 Keep all of these when updating. Unknown or retired keys are ignored. Invalid saved
 values fall back to the defaults and never block startup.
 
 ## Settings
 
-MCT generates these rows. Every id is derived from the category, module and template,
-so nothing is stored to keep it, and it is prefixed `MCT_`. These are the menu ids; the
+MCT adds these rows. Every id is derived from the category, module and template and
+is prefixed `MCT_`. These are the menu ids; the
 config saves each row under its section and name, as above. A template's rows are named
 `MCT_<Module>_<Id>_...`: `<Module>` is the module id ModCoreSettings gives for the
 template's mod folder (its `mod.json` `id`, else the folder name) and `<Id>` the
@@ -107,8 +104,7 @@ Field types are inferred from `values`:
 - **Keyed picker**: a list of `{key=, label=, note=, sound=}` choices, saved and delivered
   to the template as the key (`settings.Style == 'fiend'`), so adding or reordering choices
   never moves a saved one. It may also hold `{from='choices/x.lua'}` entries: a list file in
-  the module's `Scripts/` whose choices ModCore Settings puts in that place every time the
-  menu opens, so files added to the mod while the game runs appear the next time. A listed
+  the module's `Scripts/` whose choices are put in that place every time the menu opens, so files added to the mod while the game runs appear the next time. A listed
   picker accepts any well-formed saved key, and the template gets it even when its file is
   gone: fall back for a key you can't serve. See [MENUS.md](MENUS.md#listed-choices).
 
@@ -125,13 +121,13 @@ The example [Wheel Nudge](../examples/wheel-nudge/README.md) declares:
 ### Templates tab
 
 ModCore Settings' Templates tab lists every installed template, grouped by module and
-category, with the active ones marked **Active**. These rows (`MCT_Listed_<n>`) are
-read-only and save nothing.
+category, with the active ones marked **Active**. These rows are read-only and save
+nothing.
 
 ### Merged notice
 
 When all of a module's templates have moved to a slot on another page, the module
-page starts with `MCT_MergedNotice`, a link to the slot (such as Controls), and then
+page starts with a notice linking to the slot (such as Controls), and then
 lists the module's own settings in that slot, editable there too and saved where the
 slot saves them. The notice itself is navigation and saves nothing.
 

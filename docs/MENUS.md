@@ -4,57 +4,31 @@ MCT generates menus after registered templates load, before attaching objects.
 Start with the [developer guide](DEVELOPERS.md) for a complete template. Examples
 below focus on menu declarations; callbacks must still declare their targets.
 
-## Mod layout
+## Where settings are saved
 
-```text
-3_ModCore_Templates/
-└── Scripts/
-    ├── categories/           Category definitions
-    └── cache/
-        ├── config.ini        Template picks and shared category fields
-        └── mcs_menu.<generation>*       Published pages
-YourProvider/
-├── config.ini               Its templates' settings, when generated
-└── Scripts/
-    ├── main.lua             Registers templates
-    └── mc_<name>.lua         Template declaration
-```
+MCT builds its settings pages from your declarations and shows them through ModCore
+Settings. Where a value is saved depends on the row, not the page that shows it:
 
-Published pages and aggregate/category settings go into
-`Scripts/cache`. MCT describes its pages as menu data and publishes them through
-ModCoreSettings' menu-contribution client (`vendor/menu_contributions.lua`, copied
-unchanged from ModCoreSettings); ModCoreSettings builds the pages. MCT writes nothing
-at the mod root and never writes DMM manifests. Where a value is stored depends on the
-row, not the page that shows it. A category's rows (its template picker, priority
-pickers and shared fields) are stored in `Scripts/cache/config.ini` under the MCT root,
-so every page showing them edits one copy. A template's rows (its Enabled toggle and
-settings) are stored in `config.ini` at that template module's root, on module,
-category and slot pages alike: Fangdango's settings are stored in
-`9_ModCore_Fangdango/config.ini`. Pages therefore name their files relative to the
-Mods folder, their `configDirectory`. Both locations contain user settings and must be
-preserved.
+| File | Holds |
+|---|---|
+| `3_ModCore_Templates/Scripts/cache/config.ini` | Each category's template picks and shared fields |
+| `<YourProvider>/config.ini` | Each template's Enabled toggle and settings, on every page that shows them |
 
-MCT replaces every file it writes (configs and published pages) by
-writing `<file>.new`, moving the current file to `<file>.old` and then renaming
-`<file>.new` into place. `<file>.old` is kept as the previous version. After a crash,
-the next read publishes a complete `<file>.new` whose original was already moved out,
-and discards any other `<file>.new`. A file deleted on purpose is not restored from
-its `.old`.
+Both hold player settings and are kept on update. See [settings.md](settings.md) for
+the sections and keys.
 
 ## Where pages appear
 
 - **ModCore Templates:** category selectors, template toggles and shared category settings.
-  It takes the place of the menu entry for MCT's own folder. When it has nothing of its
-  own to show, the entry links to ModCore Settings' Templates tab instead.
+  When it has nothing of its own to show, its entry links to ModCore Settings'
+  Templates tab instead.
 - **Category page:** fields for templates explicitly targeting `templates`, listed under
   ModCore Templates.
 - **Module page:** the default location for template fields. The module is the mod
-  folder of the registered `<Module>/Scripts/<file>.lua` path, and the page attaches to
-  it. ModCoreSettings shows the page as that module: it takes the place of the module's
-  own entry when that entry has no settings, with the name, author, version and icon
-  from the module's `mod.json`, and lists it as a ModCore module when its `mod.json`
-  group is `ModCore`. A module with settings of its own keeps its entry, and the page
-  follows it. MCT never reads `mod.json`.
+  folder that registers the template. ModCore Settings shows the page as that module,
+  with the name, author, version and icon from its `mod.json`, and lists it as a ModCore
+  module when its `mod.json` group is `ModCore`. A module with settings of its own keeps
+  its entry, and the page follows it.
 
 Set `menuTarget='templates'` on a template only when its fields belong on the
 category page rather than its module page.
@@ -66,28 +40,18 @@ category page rather than its module page.
   ```
 
   `provider` is the full provider id, or the lowercase short name of a `ModCore<Name>`
-  provider. MCT publishes the category's Template picker, Enabled toggles, shared
-  category fields and every template's fields on a hidden page (`ModCoreTemplates.slot.<category>`), and
-  contributes those rows to the slot through ModCoreSettings. The category then has no
-  aggregate, category or module rows. Slot rows carry no Category rules, so each row is
-  gated by its own rule: the Template picker and Enabled toggles always show, and the
-  toggles are plain rows there, since slot rows share one group; other rows show while their
-  template is selected, or while their variation value is selected. Navigation links
-  are left out. The picker is stored in the central config, each template's rows in its
-  own module's config. A module whose templates all
-  moved to slots keeps its page in the module group. The page edits the same rows,
-  limited to its own templates, where they are stored. It starts with a small notice,
-  "These settings have been merged into Controls and can also be edited there", whose
-  button opens the slot. That notice is the page's only
-  link; navigation rows are left out, as in the slot. On the slot and on that page the
-  category picker, labelled with the category (`Quickslots`), stands in for its group's
-  heading (`style='category'`), and a template's group labelled with the template's own
-  label is unheaded (`style='none'`): the picker already names the template, so its
-  rows follow the picker's divider. Other template groups keep their headings. A page
-  whose picker sits in the title row, and the ModCore Templates page, keep every heading.
-  When the
-  slot is unavailable (its host is missing or does not declare it), ModCoreSettings shows
-  the hidden page under ModCore Templates instead, with the same storage and Apply.
+  provider. The category's Template picker, Enabled toggles, shared fields and every
+  template's fields then appear in that slot instead of on aggregate, category or
+  module pages. The Template picker and Enabled toggles always show; other rows show
+  while their template, or their variation value, is selected. The picker, labelled
+  with the category (`Quickslots`), heads the section, and the selected template's
+  settings follow under it.
+
+  A module whose templates all moved to slots keeps its page in the module group, over
+  the same settings. It starts with a notice, "These settings have been merged into
+  Controls and can also be edited there", whose button opens the slot. When the slot is
+  unavailable (its host is missing or does not declare it), ModCore Settings shows the
+  category's settings under ModCore Templates instead, saved in the same place.
 
 A category's templates appear in the order their modules register them
 (`MC.registerTemplate`); priority does not affect this order.
@@ -97,22 +61,17 @@ Templates with `uniqueBy = 'category'` share one template picker per category, w
 `<Category> (priority <n>)`, after the category picker and lowest priority first.
 Each template choice notes its module folder; ModCoreSettings shows the module's name
 on a second line under the template's label. `None` and templates without a module have
-no note. Every other template gets an `Enabled` toggle (`mcType=onoff`), saved as
-`MCT_<Module>_<Id>_Enabled`. The toggle is labelled with the template's label and stands
-in for its group's heading (`style='category'` on the row, `style='none'` on the group),
-so the heading row itself turns the template on or off. It is off by default; a template
+no note. Every other template gets an `Enabled` toggle, labelled with the template's label, that
+heads its settings, so the heading row itself turns the template on or off. It is off by default; a template
 declaring `defaultEnabled = true` starts on. A category can have both. A template's
 optional `description` (text) fills the side panel: on its Enabled toggle, and on its
-choice in a template picker while it is selected. A template with `enabled = false` remains represented in the
-menu but cannot invoke lifecycle callbacks. This is declaration-level availability,
-separate from the player's selection.
+choice in a template picker while it is selected. A template that declares `enabled = false` still shows in
+the menu but receives no callbacks, whatever the player selects.
 
 ## Field declarations
 
 Keep runtime values in `settings`. A template's `menu` is its ordered list of
-groups; MCT renders variations first and these groups after them. MCT adds no
-link rows of its own: a slot template reaches its slot host through the merged
-notice above.
+groups; variation pickers show first and these groups after them.
 
 ```lua
 local template = {
@@ -141,10 +100,9 @@ end
 return template
 ```
 
-The leading dot makes a child ID relative and is removed when IDs are composed:
-`Layout + .Size` becomes the existing flat key `LayoutSize`. An absolute child ID
-is left unchanged. A group under a variation may likewise use a relative ID, but
-an absolute group ID is usually clearer and preserves existing keys.
+A leading dot makes a child ID relative to its group: `Layout` + `.Size` becomes
+`LayoutSize`. An absolute child ID is used as written. A group under a variation may
+likewise use a relative ID, but an absolute group ID is usually clearer.
 
 A field declares what it holds (`type`) separately from how it shows (`widget`), with
 `values` the domain and `default` a separate, explicit property. `type` may be left out
@@ -180,8 +138,8 @@ values={[0]='None', [1]={label='Short Swoosh', sound='/Game/Audio/AK_Events/Even
 
 A keyed picker lists `{key=, label=, note=, sound=}` choices and saves the chosen key. Among
 them, `{from=<file>}` entries name a list file relative to the template module's `Scripts/`;
-MCT publishes each with the module's folder, and ModCore Settings runs it every time it
-builds the page, splicing the choices it returns in that place:
+ModCore Settings runs it every time the page opens and puts the choices it returns in
+that place:
 
 ```lua
 {id='.Incoming', label='Attack incoming', default='chime', values={
@@ -210,9 +168,8 @@ Keys are letters, digits and `_ . -`, never a number. The `default` may be a lis
 Rules (`visible`, `label`, `dim`) may name fixed keys only, and a listed picker shows as a
 `picker` or `cycler`. Because the files decide what is offered, a listed picker accepts any
 well-formed saved key and delivers it unchanged: the template must fall back for a key whose
-file is gone. ModCore Settings' reference describes the list file's sandbox, the failure
-rules and the placeholder for a field left with fewer than two choices. The settings
-reference (`tools/settings_reference.lua`) lists what the module's folder holds.
+file is gone. ModCore Settings' reference describes what a list file may do, what happens when it
+fails and what shows for a field left with fewer than two choices.
 
 A field may declare `conditions`, in ModCore Settings' menu-data shapes:
 
@@ -240,30 +197,23 @@ A field may declare `conditions`, in ModCore Settings' menu-data shapes:
   use an absolute ID.
 - The source must be a picker declared earlier in the template. `values` lists
   its values, not its labels.
-- A field in a variation branch must depend on a picker in the same branch. A
-  slot row carries one visibility condition, so it inherits the branch through
-  its source.
+- A field in a variation branch must depend on a picker in the same branch.
 - The template picker and variation conditions still apply. A hidden source
   hides its dependents.
 - Conditions only affect presentation. Hidden fields keep their saved values and
   are still delivered in `params.settings`.
 
-Conditions are published as the row's `conditions` in the menu data, alongside
-the template picker's own rules. They apply on slot pages too.
+Conditions apply on slot pages too.
 
 A field may also appear directly in the `menu` array when it needs no visual group.
-Its ID must be absolute. MCT places it in an unheaded generated section while
-preserving its position in the menu declaration.
+Its ID must be absolute. It shows unheaded, in its place in the menu.
 
-A group with `variation={style=1}` is a branch of that variation. MCT applies the
-condition to the generated group; all its fields inherit it. A group without
-`variation` is shared. Variation values remain ordinary effective settings using
+A group with `variation={style=1}` is a branch of that variation: it and all its fields
+show only while that value is selected. A group without `variation` is shared. Variation values remain ordinary effective settings using
 the title-cased variation ID (`style` becomes `Style`).
 
-Categories retain their shared `menu.groups[].fields` declaration. Their values
-are shared and templates override matching keys. Category text fields remain
-config-only. Generated navigation fields are neither persisted nor delivered to
-callbacks.
+Categories declare shared fields in `menu.groups[].fields`. Their values are shared
+and templates override matching keys. Category text fields are set in the config only.
 
 Template `uniqueBy` controls selection multiplicity:
 
@@ -285,11 +235,11 @@ its module folder; `sound` names the menu group, or a list of groups such as
 `{'Sound','Options'}`, or `true` for every setting of the template, its Enabled toggle
 included, whose settings make the preview sound when ModCore Settings' sound button is on
 Auto). Its module page then gets ModCore Settings' live preview: while the page is open,
-the page's selected templates that declare `preview` attach to the preview host with the
-page's current values, applied or not, and reattach on every change. Each gets its own
-Overlay layer, `objects={hud=<the menu's widget>, cue=<layer>}`, and params with
-`preview=true` and a 1920 by 1080 `screen`. They attach, and their layers stack, by
-`priority` as on the HUD: lowest first and so lowest underneath, then by id.
+the page's selected templates that declare `preview` attach to the preview with the
+page's current values, applied or not, and attach again on every change. Each gets its
+own layer, `objects={hud=<the menu's widget>, cue=<layer>}`, and params with
+`preview=true` and a 1920 by 1080 `screen`. They stack by `priority` as on the HUD:
+lowest underneath, then by id.
 
 A category plays a script into it in a loop: `preview={length=<ms>, events={{at=<ms>,
 attack=<n>, event={...}}, ...}}`. Each event reaches the template's `update` callback with
@@ -297,8 +247,8 @@ attack=<n>, event={...}}, ...}}`. Each event reaches the template's `update` cal
 new each loop, a `sequence`, and `silent=true` when the sound button is Off, or on Auto
 while none of the template's `sound` settings is selected. npc.attacks loops four attacks (left, right, ahead,
 behind: arrow, then critical, then resolved) and one unblockable attack, 9.4 s in all.
-A template that declares `preview` keeps preview events to its preview attachment and game
-events away from it, and shows its preview attachment without waiting for combat.
+A preview attachment receives only preview events, never the game's, and shows without
+waiting for combat.
 
 A module whose templates sit in another provider's slot (player.quickslots, in ModCore
 Controls' Visuals) gets the preview on its own page too.
@@ -308,122 +258,54 @@ Controls' Visuals) gets the preview on its own page too.
 Templates that rearrange the game's own widgets, rather than draw their own, preview on
 those widgets, lent to the preview. A category opts in with `preview={lend=true,
 length=<ms>, events=...}`; it needs exactly one `sharedObjects` created object that
-`adopt`s targets. That shared canvas is lent whole, with the widgets it adopted inside.
-Its optional `unavailable` text shows over the preview's background when there is no game
-to lend from (the main menu); player.quickslots says "Load a game to preview your
-Quickslots". player.quickslots lends its `actions` canvas, which holds both quickslot
-wheels. While the page is open, for the page's selected template of that category, if
-the page owns it and it declares `preview`:
+`adopt`s targets, and that object is lent with the widgets it adopted. Its optional
+`unavailable` text shows over the preview's background when there is no game to lend
+from (the main menu); player.quickslots says "Load a game to preview your Quickslots"
+and lends both quickslot wheels.
 
-1. Open: the category's applied template detaches through its normal path, restoring
-   the natives. Its shared objects attach if they were not (no template applied), and
-   the shared canvas moves from its HUD parent into a SizeBox of the preview host, the
-   game's screen in size and scaled to fit, filling it. The adopted widgets stay in
-   their canvas slots, untouched. The canvas's HUD parent, index and slot are kept (the
-   parent as a weak handle). The template then attaches to the widgets as a managed
-   template with `preview=true`, the game's `screen`, the page's values over its
-   defaults, and a copy of the runtime's state.
-2. A value change or another template detaches and reattaches only that attachment; the
-   canvas stays lent.
-3. The script's events reach only that attachment, as its named event callbacks
-   (`callback(params, event, objects)`) with `event.preview=true` and `params.preview=true`.
-   A `group` or `global` in an event updates the preview's own copy of the state, never
-   the runtime's. Game events never reach it.
-4. Close, page switch or a gone host: the attachment detaches, the canvas returns to its
-   HUD parent, index and slot, and the applied template attaches again as after an Apply.
-   An Apply while lent takes effect then. The widgets never changed parent, so their
-   measured sizes hold; should the applied template still find them unmeasured
-   (`not_ready`), it tries again every 250 ms, one pending timer, at most 40 times.
-
-While lent the canvas counts as lent, not lost: the category's shared attachment stands
-(nothing that validates it reads the canvas's parent), and the adopted widgets still
-resolve through the HUD's members.
-
-A lend that cannot be made (no HUD in the main menu: the preview shows only its picture
-and the category's `unavailable` text) or whose attach fails ends at once: the canvas
-returns and the applied template attaches again. If the HUD, the canvas or the preview's
-panel die while lent (a save load, a HUD rebuild), the next reconcile or preview event
-ends the lend without touching freed objects: the attachment is forgotten and its
-cleanups run, a live canvas whose HUD parent is gone only leaves the preview, and the
-runtime's normal path builds a fresh shared canvas on the new HUD and attaches the
-applied template there. The preview then shows nothing for that category until it is
-opened again.
+While the page is open, the page's selected template of that category, if the page owns
+it and it declares `preview`, attaches to the lent widgets with `preview=true`, the
+game's `screen`, and the page's values over its defaults. The category's applied
+template is detached meanwhile; changing a value or the template attaches the preview
+again. The script's events reach only the preview, as its named event callbacks
+(`callback(params, event, objects)`) with `event.preview=true` and `params.preview=true`;
+a `group` or `global` in an event changes only the preview's copy of the state. When
+the page closes, the widgets return to the HUD and the applied template attaches again,
+with any Apply made while the page was open. If the HUD goes away while lent (a save
+load), the preview shows nothing for that category until the page is opened again.
 
 player.quickslots loops 8 s: the focus moves between the wheels every 2 s, as ModCore
 Controls' `controls.group.focus`, and the consumable Top slot holds a Global key
 (`controls.slots.global`) from 4 s to 6 s, so Double bars show their labels un-merging.
 
-The runtime's side: `runtime:lend(category, request)` with `{destination, template,
-settings, overrides, screen}`, or `nil` to end it; `runtime:previewEvent(category,
-event)`; `runtime:lending(category)`.
+## Saved keys
 
-## Startup integration
-
-`mc.bootstrap.new` exposes `menu` and `menuController` after its
-module-load barrier fires. In addition to the lifecycle host and registration
-options, provide:
-
-| Option | Purpose |
-|---|---|
-| `menuRoot` | Mod root (absolute); generated state and published pages go into `Scripts/cache` |
-| `menuShared` | `ModRef` shared-variable interface for publishing pages to ModCoreSettings; Lua startup supplies it |
-| `settingsApi` | Durable Apply subscriber; the copied client is `require('settings_api')`, from `Scripts/vendor` |
-| `queue` | Game-thread dispatcher for settings callbacks |
-| `menu` | Generator options, such as the release `version` |
-| `menuValues` | Initial committed setting-ID values for an in-memory host without `menuRoot` |
-
-When `menuRoot` is supplied, saved central and module configurations take precedence
-over `menuValues`. Missing config keys are added; existing values and unrelated
-sections are preserved. An invalid saved value is rewritten with its default; startup
-continues.
-Startup creates `Scripts/categories` and `Scripts/cache` as
-needed. The central config and pages are stored directly in
-`Scripts/cache`; template settings are stored in their modules' `config.ini`. Without `menuRoot`,
-generation and Apply routing work in memory and do not write any files.
-
-With `menuShared`, MCT publishes its pages once the barrier has completed and withdraws
-them on stop. A failed publish is reported and the templates keep running on their saved
-settings.
-
-Setting IDs use `MCT_` and are derived from the category, module and template,
-so they survive regeneration, including adding a template before an existing one. The
-config saves a category's template pick as `[Templates] <Category>`, a template's rows
-as `[<Module>.<Template>] <Setting>` and a category's shared fields as
-`[<category>] <Setting>` (see [settings.md](settings.md)), through ModCoreSettings'
-per-field storage.
-Template pickers are keyed enums: each choice's key is the template's full id
-(`<Module>_<Id>`), `None` selects no template, and the config saves the key, such as
-`[Templates] PlayerQuickslots=Fangdango_SingleUnderbar`. ModCoreSettings shows the choices to DMM by
-position and translates on load and Apply. A saved key that is no longer offered loads
-as the default.
+Setting IDs are derived from the category, module and template, so they stay the same
+when templates are added or reordered. The config saves a category's template pick as
+`[Templates] <Category>`, a template's rows as `[<Module>.<Template>] <Setting>` and a
+category's shared fields as `[<category>] <Setting>` (see [settings.md](settings.md)).
+A template picker saves the template's full id (`<Module>_<Id>`), or `None`, such as
+`[Templates] PlayerQuickslots=Fangdango_SingleUnderbar`. A saved id that is no longer
+offered loads as the default. Missing keys are added; an invalid saved value is
+replaced with its default and never stops startup.
 
 ## Apply behavior
 
-Only committed Apply notifications affect the lifecycle. The controller validates
-the provider payload, copies values belonging to that page into its complete saved
-snapshot, and decodes category settings separately from template overrides.
-Unowned fields are omitted from routed pages; their committed values are preserved.
+Only Apply changes what templates see. Managed templates are restored and `attach`
+runs again with the new settings; unmanaged templates receive `update`. Switching
+templates detaches the outgoing one first. Templates whose effective settings did not
+change are left as they are.
 
-The controller calls `runtime:commit` once for a coherent batch. Existing attachments
-receive effective category/template settings. Managed templates restore and rerun
-`attach`; unmanaged templates receive `update`. Switching templates
-detaches outgoing attachments first. Identical committed snapshots and replayed
-provider revisions cause no extra callbacks. Category text values are reread from
-committed config on Apply. Subscription teardown ignores already-queued events;
-`bootstrap:stop()` closes both menu subscriptions and the object runtime.
-
-MCT also subscribes to category-independent ModCore events through
-`Scripts/vendor/mc_events.lua`, copied unchanged from ModCoreControls. The latest `controls.group.focus` transition is owned by
-MCT as `bootstrap.state.controls.group = {from=<number>,to=<number>}`; it is empty
-(`{}`) until ModCore Controls reports a focus. The latest `controls.slots.global` set is
-`bootstrap.state.controls.global = {[1]={bool x4},[2]={bool x4}}`: wheel 1 abilities,
-wheel 2 consumables, slots Left, Top, Right, Bottom; a slot is `true` while its Global
-key fires regardless of focus, and every slot is `false` until ModCore Controls
-reports. The event carries the same table as `event.global`. Template
-callbacks receive a copied snapshot at `params.state`. A transition never calls
-`attach` or `update`: those run only when a template must be rebuilt (settings,
-selection or target changes), and then read the current state. The callback copy
-cannot mutate MCT's stored state.
+MCT keeps the latest ModCore Controls state for templates. The latest
+`controls.group.focus` transition is `params.state.controls.group =
+{from=<number>,to=<number>}`; it is empty (`{}`) until ModCore Controls reports a focus.
+The latest `controls.slots.global` set is `params.state.controls.global =
+{[1]={bool x4},[2]={bool x4}}`: wheel 1 abilities, wheel 2 consumables, slots Left,
+Top, Right, Bottom; a slot is `true` while its Global key fires regardless of focus, and
+every slot is `false` until ModCore Controls reports. The event carries the same table
+as `event.global`. `params.state` is a copy. A transition never calls `attach` or
+`update`: those run only when a template must be rebuilt (settings, selection or target
+changes), and then read the current state.
 
 A template reacts to a transition through an event callback, which MCT calls once
 per live attachment to adjust it in place:
@@ -439,41 +321,15 @@ events={
 }
 ```
 
-MCT validates and registers these declarations only after the provider's load
-hook and full template validation succeed. One transport subscription serves all
-templates declaring the same event. Only active templates receive callbacks, on
-the game thread inside the host's mutation scope; a template with nothing attached
-is not called. Callback failures are isolated and reported.
-Managed templates restore the captured originals on detach or rebuild, so
+Only active templates receive callbacks, on the game thread; a template with nothing
+attached is not called. A failing callback is reported and does not affect other
+templates. Managed templates restore the captured originals on detach or rebuild, so
 in-place changes to declared properties need no cleanup.
 
 MCT publishes one event of its own, `templates.layout.changed`, for categories that
 declare `layoutEvent = true` (today `player.quickslots`). Its payload is
-`{category=<id>}`. It goes out once at the end of each runtime turn that may have
-moved, shown or hidden that category's widgets: any template or shared-object
-attach, update or detach (failed ones included), wake or sleep callback, event
-callback on a live attachment, or attachDelay reveal. One turn sends at most one
-event per category, never one per widget, and a turn that ran no callback sends
-none. Other mods that place widgets beside the category's own, such as ModCore
-Controls' Hold underlines, re-read the layout when it arrives. Per-frame update events
-(`runtime:emit`) do not publish it, and neither does a template's own callback for
-`templates.layout.changed`, so the event cannot feed itself.
-
-Use menu values/config as the selection authority when `settingsApi` is supplied.
-The bootstrap's direct `selections` / `categorySettings` options remain available for
-standalone runtime fixtures and hosts without menu subscriptions. Do not mix direct
-runtime edits with an active menu controller, whose saved snapshot would become stale.
-
-## Tests
-
-```sh
-python3 tools/run-tests.py --lua lua5.4
-```
-
-The runner uses temporary output directories. It validates the published contribution
-with the vendored ModCoreSettings client and exercises Apply routing,
-merged settings, persistence, revisions, subscriptions and lifecycle transitions.
-Passing `--dmm-choices` and `--presentation` also builds the published menu data with
-ModCoreSettings' `menu_data.lua` (beside `presentation.lua`) and parses the pages with
-the actual DMM parser and ModCoreSettings presentation code. These offline checks do
-not establish in-game rendering or startup timing.
+`{category=<id>}`. It goes out at most once per pass that may have moved, shown or
+hidden that category's widgets, never once per widget. Other mods that place widgets
+beside the category's own, such as ModCore Controls' Hold underlines, re-read the
+layout when it arrives. Per-frame update events do not send it, and neither does a
+template's own callback for `templates.layout.changed`.

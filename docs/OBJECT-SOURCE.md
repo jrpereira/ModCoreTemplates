@@ -1,91 +1,44 @@
-# UE4SS object source
+# Object discovery and limits
 
-`Scripts/main.lua` loads category names from `Scripts/categories/mc.lua` and
-accepts template paths registered directly through `mc.registerTemplate`. It performs
-no installed-module scan.
-`mc.lua_startup` creates the Lua object source and reference host, then schedules
-startup on UE4SS's game thread.
+MCT finds the objects a category declares and hands the ready ones to its templates.
+Templates never search for widgets themselves. MCT does not scan installed mods for
+templates: providers register them with `mc.registerTemplate`.
 
-The source subscribes to UE4SS notifications before the runtime's first
-snapshot. The initial snapshot uses `FindAllOf` once per selector, and an
-owner's creation notification looks up its declared children. An unloaded blueprint class may yield no candidates yet. Other
-changes reevaluate cached candidates.
+## Matching
 
-## Path matching
+- A class selector matches instances of that class and its subclasses.
+- A widget selector inside a HUD blueprint matches a widget with the declared class and
+  name that belongs to exactly the declared blueprint class. Class defaults and
+  same-named widgets in other blueprints never match.
+- A blueprint class the game has not loaded yet has no instances to match; they are
+  found once the game creates them.
+- `within` restricts a match to descendants of another selector.
 
-`mc.object_selector` matches class selectors against the object's own class chain,
-read once per class (UE4SS `IsA` with a class path runs `StaticFindObject`, a walk
-over every object), and resolves
-`WidgetTree` object selectors against a live widget's outer chain. The
-QuickslotsSwitcher selector must have the requested widget class and name,
-its immediate outer must be a live `WidgetTree` instance (`WidgetTree` or
-`WidgetTree_<number>`), and that tree's live owner must have
-exactly the declared HUD blueprint class. Class defaults and objects belonging
-to another blueprint with the same final widget name are excluded.
+## When objects are ready
 
-## Readiness and hierarchy
+- Only categories with at least one registered template are watched.
+- A HUD widget is ready once it is shown. A template does not attach in the main menu
+  or on a loading screen.
+- A widget removed from its panel detaches its templates; added back, they attach
+  again.
+- On a map change or save load, the old world's attachments are forgotten without a
+  detach callback, and templates attach to the new HUD once it is shown.
 
-Only categories with at least one registered template are watched: the runtime
-ignores the others, and the source registers its notifications once templates
-are loaded, before the first snapshot. `NotifyOnNewObject` registers for those
-categories' root classes and WidgetTree owners, never for a WidgetTree child's
-widget class. An owner notification looks up its
-declared children on the next three game-thread dispatches. A creation
-notification retains an unready candidate; it does not trigger attachment by
-itself. `from` targets register nothing: they are read again from their root
-on every reconcile.
+## Keeping objects
 
-## Game state
+Use the objects passed to a callback during that callback only. To keep one, hold it
+with `MC.hold(object)` and read it back with `MC.get(handle)`, which returns nil once
+the object is gone. Calling an object kept from an earlier callback after a save load
+can crash the game, and `pcall` does not catch it.
 
-Widget hooks exist only while a root is live:
+MCT requires UE4SSLuaEventBridge 1.3.0 or newer. Without its weak handles or its
+loop-start barrier, MCT does not start; without its function hooks, only
+`MC_NPCAttackIndicator` is unavailable. If the bridge reports its lifetime service
+unavailable, MCT attaches no templates and logs the bridge's reason once.
 
-- idle (boot, main menu, loading): no widget hooks, only root-class
-  notifications, whose classes exist only in a loaded world;
-- waiting (a live root is not ready): all widget hooks, including `AddChild`;
-- ready (every live root is ready): all except `AddChild`.
+## Limits
 
-Hook changes run on the next game-thread dispatch, never inside a callback. A
-hooked call that finds every known root invalid returns the source to idle, so
-leaving a world needs no LoadMap hook. Filters are lookups on known root and
-owner addresses and on the panels that hold them; only `within` groups walk
-widget ancestry. `UserWidget:AddToViewport` and `AddToPlayerScreen` mark the owner ready
-and wake cached candidates. Nested HUD widgets can also become ready when
-they have a live world and a valid panel parent; `IsInViewport()` is not a
-usable signal for Dawnwalker's nested `WBP_GameHUD`. `Widget:RemoveFromParent`
-marks a user-widget owner unready before removal and detaches valid matches.
-An already parented HUD widget may attach from a snapshot.
-
-For widget selectors, hooks on reflected `PanelWidget:AddChild`,
-`PanelWidget:RemoveChild` and `PanelWidget:ClearChildren` wake cached
-candidates when a known root, or a panel holding one, changes. `within` groups
-also wake for changes beneath a known root, and `Widget:RemoveFromParent`
-wakes their descendants after removal. An `AddChild` callback clears a known
-UserWidget's removal marker so it can attach again.
-Non-root widgets require a valid panel parent even when their owner is ready.
-`GetParent` supplies widget ancestry. Other object classes use `GetOuter`.
-MCT registers no LoadMap hooks. On a map change the old world's objects become
-invalid, and their attachments are forgotten at the next lifecycle event; the
-new HUD is found through its creation notification and attaches once shown.
-UE4SS `IsValid` reads the object, so calling it on a wrapper kept across garbage
-collection, as when a save loads from a running game, reads freed memory and
-crashes beyond the reach of `pcall`. MCT therefore keeps every object that
-outlives one call, including known roots, Lua references, created and moved
-widgets, saved parents and cached slots, as a UE4SSLuaEventBridge weak handle,
-and reads it back with `get()`, which checks the native lifetime first. Only a
-`get()` result or a fresh hook argument or lookup result is ever called.
-Identity includes the bridge's lifetime token, which distinguishes a reused
-address and full name through Unreal's object-item serial. MCT requires
-UE4SSLuaEventBridge 1.3.0 or newer: weak handles (`lifetimes.weak` and
-`lifetimes.captureObject`, available since API 6), the loop-start barrier, and
-`Hooks.Request` for `MC_NPCAttackIndicator`. Startup fails without weak handles or
-the loop-start barrier; without `Hooks.Request` only the attack indicator is
-unavailable. If the bridge's
-lifetime service is unavailable, nothing is kept or attached and the bridge's
-reason is reported once; there is no address fallback. A live
-hook survey found `UserWidget:Construct`, `Destruct` and `OnInitialized`
-unavailable to `RegisterHook`. Viewport, parenting and removal hooks registered
-successfully, but direct engine changes can bypass those reflected hooks.
-Group parent changes and timely invalidation remain live validation limits.
-
-Offline tests do not establish live gameplay acceptance; validate the affected
-hooks and templates in game.
+- Some changes the game makes to its widgets are not reported to MCT, so a template
+  may not follow every change of a widget's parent at once.
+- An object that dies is noticed at the next lifecycle event, not immediately.
+- Offline tests cannot show in-game behaviour; check your templates in game.

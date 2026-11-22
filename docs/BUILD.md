@@ -3,18 +3,18 @@
 ## Requirements
 
 Use Lua 5.4 and Python 3. MCT is Lua-only; no compilation is needed. Run commands
-from this repository's root. Live integration requires the dependencies in the
+from this repository's root. In-game use requires the dependencies in the
 [README](README.md).
 
 ## Offline tests
 
-The runner checks runtime syntax and executes every suite in `tests/mc/`:
+Run the tests:
 
 ```sh
 python3 tools/run-tests.py --lua lua5.4
 ```
 
-To also build the published menu data with MCS and parse it with the installed DMM parser and MCS presentation:
+To also check the menus against an installed Dawnwalker Mod Menu and ModCore Settings:
 
 ```sh
 python3 tools/run-tests.py --lua lua5.4 \
@@ -22,16 +22,11 @@ python3 tools/run-tests.py --lua lua5.4 \
   --presentation "/path/to/ModCoreSettings/Scripts/presentation.lua"
 ```
 
-Supply both optional paths together; `menu_data.lua` must sit beside
-`presentation.lua`, as it does in ModCoreSettings. The runner puts that folder on
-`LUA_PATH`. The equivalent environment variables are `MCT_DMM_CHOICES` and
-`MCT_PRESENTATION`. CI runs without them, so it skips these compatibility checks. Tests
-write generated data to a temporary directory. Edit template declarations, not generated
-menu files.
+Supply both paths together, or set `MCT_DMM_CHOICES` and `MCT_PRESENTATION`. Without
+them these checks are skipped.
 
 ## In-game checks
 
-Restart after changing Lua. Check repeated Apply, template switching, load/map
-changes, late events and restoration of every property the template changes.
-Fixtures cover registration, menus, settings and lifecycle transitions; they do
-not establish native rendering, object validity or garbage-collection behavior.
+Restart after changing Lua. Check repeated Apply, template switching, loading saves
+and changing maps, and restoration of every property the template changes. The tests
+do not show in-game behaviour.
