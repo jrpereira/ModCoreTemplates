@@ -32,7 +32,7 @@ For mod authors:
 
 [b]Requirements and installation[/b]
 
-Requires The Blood of Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.3.0 or newer (API 7: weak handles and function hooks), and ModCore Settings 1.9.0 or newer with Dawnwalker Mod Menu. Install and enable under Mods/3_ModCore_Templates and disable the former _UE4SSTemplatingEngine installation. Fully restart after changing Lua files. ModCore Controls supplies the Controls tab whose Quickslots section hosts quickslot template settings.
+Requires The Blood of Dawnwalker, UE4SS with Lua 5.4, UE4SS Lua Extensions 1.4.0 or newer (its Event Bridge's weak handles and function hooks), and ModCore Settings 1.10.0 or newer with Dawnwalker Mod Menu. Install and enable under Mods/3_ModCore_Templates and disable the former _UE4SSTemplatingEngine installation. Fully restart after changing Lua files. ModCore Controls supplies the Controls tab whose Quickslots section hosts quickslot template settings.
 
 Preserve Scripts/cache/config.ini and template-provider config.ini files when updating. Automatic restoration covers declared properties on managed templates. If the bridge's lifetime service is unavailable, MCT attaches no templates and logs the reason once.
 

@@ -133,8 +133,8 @@ slot saves them. The notice itself is navigation and saves nothing.
 
 ## Logging
 
-The default level is WARN. For more detail, install the UE4SS Lua Log Bridge and raise
-ModCoreTemplates' level on its Logs page, or set `ModCoreTemplates=DEBUG` under
+The default level is WARN. For more detail, install UE4SS Lua Extensions and raise
+ModCoreTemplates' level in the Logs section of the Extensions tab of the ModCore Settings page, or set `ModCoreTemplates=DEBUG` under
 `[Levels]` in the bridge's `config.ini`. Messages appear in `UE4SS.log`.
 
 See [Template menus](MENUS.md) for how fields are declared and placed.

@@ -14,13 +14,13 @@
       "url": "https://github.com/UE4SS-RE/RE-UE4SS"
     },
     {
-      "id": "UE4SSLuaEventBridge",
-      "version": "1.3.?+",
+      "id": "UE4SSLuaEXtensions",
+      "version": "1.4.?+",
       "url": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"
     },
     {
       "id": "ModCoreSettings",
-      "version": "1.9.?+",
+      "version": "1.10.?+",
       "url": "https://www.nexusmods.com/thebloodofdawnwalker/mods/590"
     }
   ],

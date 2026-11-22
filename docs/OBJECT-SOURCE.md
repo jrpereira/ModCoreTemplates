@@ -31,7 +31,7 @@ with `MC.hold(object)` and read it back with `MC.get(handle)`, which returns nil
 the object is gone. Calling an object kept from an earlier callback after a save load
 can crash the game, and `pcall` does not catch it.
 
-MCT requires UE4SSLuaEventBridge 1.3.0 or newer. Without its weak handles or its
+MCT requires UE4SS Lua Extensions 1.4.0 or newer. Without its Event Bridge's weak handles or its
 loop-start barrier, MCT does not start; without its function hooks, only
 `MC_NPCAttackIndicator` is unavailable. If the bridge reports its lifetime service
 unavailable, MCT attaches no templates and logs the bridge's reason once.

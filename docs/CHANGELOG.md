@@ -2,6 +2,7 @@
 
 ## v1.10.0
 
+- Requires UE4SS Lua Extensions 1.4.0 and ModCore Settings 1.10.0 or newer.
 - Fixed: on a fresh install, ModCore Templates could not save its settings or show its
   menu, leaving the settings of every module using templates (Preymonition, Fangdango)
   greyed out in the mod menu.
@@ -23,9 +24,9 @@
   chosen template's settings follow right under it. The heading repeating the template's
   name (Single Underbar, ...) is gone, and the slot's picker is no longer labelled
   Template.
-- Log levels no longer come from `log_level.txt`. With the UE4SS Lua Log Bridge installed
-  they are set on its Logs page or under `[Levels]` in its `config.ini`; without it, WARN
-  and above.
+- Log levels no longer come from `log_level.txt`. With UE4SS Lua Extensions installed
+  they are set in the Logs section of the Extensions tab of the ModCore Settings page, or under `[Levels]` in the Log Bridge's `config.ini`; without it,
+  WARN and above.
 - A category that fails while MCT updates the HUD is reported with its id, and the other
   categories still attach, detach and wake their templates.
 - The 256-setting limit applies to each settings page, as in ModCore Settings, not to all

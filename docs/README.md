@@ -61,8 +61,8 @@ Start with the [developer guide](DEVELOPERS.md) and the runnable
 
 ## Requirements and installation
 
-Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.3.0 or newer (API 7,
-weak handles and function hooks), and ModCoreSettings 1.9.0 or newer with Dawnwalker Mod Menu (DMM).
+Use Dawnwalker, UE4SS with Lua 5.4, UE4SS Lua Extensions 1.4.0 or newer (its Event
+Bridge's weak handles and function hooks), and ModCoreSettings 1.10.0 or newer with Dawnwalker Mod Menu (DMM).
 Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
 `_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.
 MCC supplies the Controls tab whose Quickslots section hosts quickslot template settings.
@@ -88,8 +88,8 @@ logs the bridge's reason once. See [Object discovery and limits](OBJECT-SOURCE.m
 
 ## Logging
 
-Logs appear in `UE4SS.log`. The default level is WARN. For more detail, install the
-UE4SS Lua Log Bridge and raise ModCoreTemplates's level on its Logs page, or set
+Logs appear in `UE4SS.log`. The default level is WARN. For more detail, install
+UE4SS Lua Extensions and raise ModCoreTemplates's level in the Logs section of the Extensions tab of the ModCore Settings page, or set
 `ModCoreTemplates=DEBUG` under `[Levels]` in the bridge's `config.ini`.
 
 ## Documentation

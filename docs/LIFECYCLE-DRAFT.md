@@ -180,7 +180,7 @@ per attachment, in priority order:
   its name. Objects in it are valid only during the call.
 
 `MC_NPCAttackIndicator` turns the combat target indicator's icon changes into update
-events. It needs UE4SSLuaEventBridge 1.3.0; without it MCT logs that the indicator is
+events. It needs UE4SS Lua Extensions 1.4.0; without its Event Bridge MCT logs that the indicator is
 unavailable. Events follow the game
 by about one frame and carry an increasing `sequence`:
 
