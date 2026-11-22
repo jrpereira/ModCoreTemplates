@@ -6,6 +6,23 @@ available objects; a **template** selects objects and changes their appearance o
 
 ## Features and benefits
 
+For players:
+
+- **Pick a template per category:** choose a template, or None, for each category
+  (such as the quickslots or the attack indicators) on the module's page; the side
+  panel describes the selected template.
+- **See changes before applying them:** module pages show a looping live preview in
+  ModCore Settings' side panel with the page's current values, applied or not.
+  Quickslot templates preview on the game's own wheels while a game is loaded.
+- **Settings saved per template:** each template keeps its own settings in its mod's
+  `config.ini`, so switching templates and back keeps what you set.
+- **Follows screen changes:** a resolution, window size or UI scale change made
+  mid-session is picked up at the next loading screen or combat start.
+- **Quickslots in one place:** the Quickslots template picker heads the Quickslots
+  section of the Controls tab, with the chosen template's settings right under it.
+
+For mod authors:
+
 - **Declare objects of interest:** select category objects and the properties you
   change; MCT resolves their dependencies and supplies the requested objects.
 - **Let MCT manage object lifecycle:** it waits for ready targets, checks they are
@@ -18,17 +35,18 @@ available objects; a **template** selects objects and changes their appearance o
   `attach`; MCT handles restoration and reruns it after committed settings changes.
 - **Generate settings menus from the template:** declare fields, variations and
   conditions alongside the visual behavior; MCT handles menus, saved values and Apply.
+  Pickers can list choices from files in your mod, so files added while the game
+  runs become choices.
 - **Place settings where players need them:** use module/category pages or a
-  declared slot such as Controls' quickslot visuals area.
+  declared slot such as the Quickslots section of the Controls tab.
+- **Add a live preview:** declare `preview` with a background picture and, optionally,
+  which settings play sound; MCT runs the category's preview loop on your page.
+  See [Template menus](MENUS.md#live-preview).
 - **React to declared events:** active templates receive callbacks on the game
   thread, and one failing callback does not affect the others.
 - **Keep companion widgets in place:** MCT announces `templates.layout.changed`
   whenever the quickslot key indicators may have moved, shown or hidden, so
-  ModCore Controls can keep its Hold underlines under the keys.
-- **Preview templates live:** a template declaring `preview` gives its module page
-  a looping live preview in ModCore Settings' side panel, with the page's current
-  values. Templates that rearrange the game's own widgets, such as the quickslot
-  wheels, preview on those widgets while the page is open; this needs a loaded game. See [Template menus](MENUS.md#live-preview).
+  ModCore Controls keeps its key outlines under the keys.
 
 ## Choose the right module
 
@@ -47,7 +65,7 @@ Use Dawnwalker, UE4SS with Lua 5.4, UE4SSLuaEventBridge 1.3.0 or newer (API 7,
 weak handles and function hooks), and ModCoreSettings 1.9.0 or newer with Dawnwalker Mod Menu (DMM).
 Install and enable MCT under `Mods/3_ModCore_Templates`. Disable the old
 `_UE4SSTemplatingEngine` installation. Fully restart after changing Lua files.
-MCC supplies the Controls page that hosts quickslot visual settings.
+MCC supplies the Controls tab whose Quickslots section hosts quickslot template settings.
 
 Providers register their templates with `require('mc')` from their
 `Scripts/main.lua`; MCT does not scan installed mods for templates. A provider must load after MCT: UE4SS starts the mods in
@@ -61,8 +79,9 @@ Managed templates declare the properties they change and implement
 properties. Apply restores the previous values and attaches again with the new
 settings; selecting None restores the original state.
 
-Keep `Scripts/cache/config.ini` and provider `config.ini` files when updating; they
-hold the player's settings. Edit Lua menu declarations to change a page.
+Keep `Scripts/cache/config.ini` (each category's template pick and shared fields) and
+provider `config.ini` files (each template's settings) when updating; they hold the
+player's settings. Edit Lua menu declarations to change a page.
 
 If the bridge reports its lifetime service unavailable, MCT attaches no templates and
 logs the bridge's reason once. See [Object discovery and limits](OBJECT-SOURCE.md).
